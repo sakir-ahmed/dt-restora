@@ -612,6 +612,8 @@ const posActions = computed(() => {
     return Object.fromEntries(Object.entries(DEFAULT_ACTIONS).map(([key, defaults]) => [key, { ...defaults, ...(configured[key] ?? {}) }]));
 });
 const reviewBeforeSave = computed(() => Boolean(branch.value.pos_settings?.review_before_save));
+// Whether this branch lets staff share the invoice as a picture (Settings, POS and billing).
+const shareImageEnabled = computed(() => branch.value.pos_settings?.invoice_share_image === true);
 const orderEditEnabled = computed(() => branch.value.pos_settings?.order_edit_enabled !== false);
 const orderDeleteEnabled = computed(() => branch.value.pos_settings?.order_delete_enabled !== false);
 // Bill review: the modal shows the cart and amounts before a new invoice is saved
@@ -641,8 +643,10 @@ const primarySpanClass = computed(() => {
 
     return { 1: 'col-span-6', 2: 'col-span-3', 3: 'col-span-2' }[visible] ?? 'col-span-6';
 });
-// Due, Print and New order share the second row; the Due button can be switched off per branch.
-const secondaryRowSpanClass = computed(() => (posActions.value.due_sale.enabled ? 'col-span-2' : 'col-span-3'));
+// Due, Print, Share as image and New order fill the rows below the main buttons. Due and the image button can be
+// switched off per branch, so the width of each follows how many show: 2 or 4 make halves, 3 make thirds.
+const secondaryButtonCount = computed(() => 2 + (posActions.value.due_sale.enabled ? 1 : 0) + (shareImageEnabled.value ? 1 : 0));
+const secondaryRowSpanClass = computed(() => (secondaryButtonCount.value === 3 ? 'col-span-2' : 'col-span-3'));
 const mobileTab = ref('menu');
 
 function findByMenuNumber(number) {
@@ -1811,7 +1815,6 @@ async function startShift() {
     });
 }
 
-const shareImageEnabled = computed(() => branch.value.pos_settings?.invoice_share_image === true);
 
 // The invoice as a picture to copy or share, for the order just sent or paid. The same page that would print.
 function shareCustomerImage() {
@@ -3055,7 +3058,8 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         type="button"
                         :disabled="! canQuickDue"
                         :title="t('orders.due_sale_title')"
-                        class="col-span-2 flex h-7 items-center justify-center gap-1 rounded-md border border-warning/50 bg-warning/10 text-xs font-semibold text-foreground hover:bg-warning/25 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-muted disabled:opacity-50"
+                        :class="secondaryRowSpanClass"
+                        class="flex h-7 items-center justify-center gap-1 rounded-md border border-warning/50 bg-warning/10 text-xs font-semibold text-foreground hover:bg-warning/25 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-muted disabled:opacity-50"
                         @click="openDueDialog"
                     >
                         <AppIcon name="hand-holding-dollar" size="11" />
@@ -3075,7 +3079,8 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         v-if="shareImageEnabled"
                         type="button"
                         :disabled="! lastPayment && ! latestOrder"
-                        class="col-span-6 flex h-7 items-center justify-center gap-1 rounded-md border border-border bg-background text-xs font-medium text-foreground hover:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        :class="secondaryRowSpanClass"
+                        class="flex h-7 items-center justify-center gap-1 rounded-md border border-border bg-background text-xs font-medium text-foreground hover:border-accent disabled:cursor-not-allowed disabled:opacity-50"
                         @click="shareCustomerImage"
                     >
                         <AppIcon name="image" size="11" />
