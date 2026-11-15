@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToBranch;
+use App\Models\Concerns\SafeDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,10 +14,12 @@ use Illuminate\Support\Str;
 /**
  * Food a guest chose from the menu book ahead of the visit. Unlike a reservation it holds no
  * table and no time slot: a table, a time, a name and a mobile number are all optional.
+ *
+ * @property-read RestaurantTable|null $table
  */
 class Preorder extends Model
 {
-    use BelongsToBranch, HasFactory;
+    use BelongsToBranch, HasFactory, SafeDeletes;
 
     public const PENDING = 'pending';
 

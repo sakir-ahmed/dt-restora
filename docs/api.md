@@ -86,7 +86,7 @@ All branch routes are prefixed `/api/v1/branches/{branch}`.
 | ------ | ----------------------------------- | ------------------------- | ----- |
 | GET    | `/dues`                             | `orders.view`             | Open due sales with `balance`, `paid`, `collections`; `outstanding` total; `methods` that can collect a due (enabled, not manual wallets) |
 | POST   | `/dues/{order}/collect`             | `orders.create`           | `method`, `amount` (not above the balance), optional `reference`. Needs `Idempotency-Key`. |
-| GET    | `/preorders?filter[status]=`        | `preorders.view`          | Menu-book pre-orders (latest 200), `share_url`, `can_manage` |
+| GET    | `/preorders?filter[status]=`        | `preorders.view`          | Menu-book pre-orders (latest 200; a deleted one is never listed), `share_url`, `can_manage` |
 | POST   | `/preorders`                        | `preorders.manage`        | `items` (menu_item_id, variant_id, quantity, add_ons) plus optional `customer_name`, `customer_mobile`, `address`, `party_size`, `expected_at`, `restaurant_table_id`, `advance_amount` (not above the total), `note`. Needs `Idempotency-Key`. |
 | POST   | `/preorders/{preorder}/complete` or `/cancel` | `preorders.manage` | Only a waiting pre-order can change; otherwise 422 |
 

@@ -81,3 +81,11 @@ export function parseInvoiceSequence(settings, invoiceNo, branchCode, terminal) 
 
     return match ? Number(match[1]) : null;
 }
+
+/**
+ * The last two parts of an invoice number are enough to tell two bills apart
+ * at a glance. The full number stays in the title attribute and on copy.
+ */
+export function shortInvoice(invoiceNo) {
+    return `#${String(invoiceNo ?? '').split('-').slice(-2).join('-')}`;
+}

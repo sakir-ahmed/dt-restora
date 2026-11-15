@@ -15,7 +15,7 @@ import { dishKind, localized } from '@/lib/site';
 import { cacheBootstrap, findOutbox, getCachedMenu, getDataVersion, getDeviceId, getLocalShift, nextLocalInvoice, queueOutbox, rememberInvoiceCursor, rememberLocalShift, updateOutboxPayload } from '@/lib/offline';
 import { useIncomingOrders } from '@/lib/incomingOrders';
 import { notify } from '@/lib/notify';
-import { parseInvoiceSequence } from '@/lib/invoice';
+import { parseInvoiceSequence, shortInvoice } from '@/lib/invoice';
 import { openInvoiceImage } from '@/lib/invoiceImage';
 import { printHtml, printSequence, printUrl } from '@/lib/print';
 import { playSound } from '@/lib/sounds';
@@ -268,11 +268,6 @@ const filteredItems = computed(() => {
 });
 
 const selectedTable = computed(() => tables.value.find((table) => table.id === tableId.value) ?? null);
-
-// The last two parts of an invoice number are enough to tell two bills apart at a glance.
-function shortInvoice(invoiceNo) {
-    return `#${String(invoiceNo ?? '').split('-').slice(-2).join('-')}`;
-}
 
 function pickTable(id) {
     tableId.value = id;

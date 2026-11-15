@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
+use App\Actions\Sales\DeletePreorderAction;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\MenuCategory;
@@ -11,6 +12,7 @@ use App\Models\Preorder;
 use App\Models\RestaurantTable;
 use App\Services\PosSettings;
 use App\Services\PreorderService;
+use App\Support\DeleteReasons;
 use App\Support\MenuBookContact;
 use App\Support\PreorderInput;
 use Illuminate\Http\RedirectResponse;
@@ -51,6 +53,7 @@ class PreorderController extends Controller
         $preorders = Preorder::query()
             ->where('branch_id', $branch->id)
             ->with('table:id,name')
+            ->visible()
             ->latest('id')
             ->limit(200)
             ->get()
@@ -109,6 +112,23 @@ class PreorderController extends Controller
         activity()->performedOn($preorder)->causedBy($request->user('staff'))->log('preorders.'.$status);
 
         return back()->with('success', __('preorders.status_'.$status.'_done'));
+    }
+
+    /**
+     * Delete a pre-order taken by mistake. The row is kept, marked as deleted, and follows the
+     * "Show deleted items" setting in the list.
+     */
+    public function destroy(Request $request, Preorder $preorder, DeletePreorderAction $action): RedirectResponse
+    {
+        $this->authorize('preorders.manage');
+
+        abort_unless($request->user('staff')->canAccessBranch($preorder->branch_id), 404);
+
+        $reason = DeleteReasons::validate($request);
+
+        $action->execute($preorder, $request->user('staff'), $reason['reason'], $reason['note']);
+
+        return back()->with('success', __('preorders.deleted_done'));
     }
 
     /**
@@ -190,6 +210,7 @@ class PreorderController extends Controller
             'balance_due' => number_format($preorder->balanceDue(), 2, '.', ''),
             'sms_sent' => $preorder->sms_sent_at !== null,
             'created_at' => $preorder->created_at->toIso8601String(),
+            'deleted_at' => $preorder->deleted_at?->toIso8601String(),
             'print_url' => route('admin.preorders.print', ['preorder' => $preorder->id]),
         ];
     }
