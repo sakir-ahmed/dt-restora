@@ -36,6 +36,8 @@
 
 `super-admin` (Datatech support) exists in addition.
 
+**Roles are editable.** The roles above are the standard set; the product also ships `supervisor`, `host`, `store-keeper`, `hr-manager`, `marketing-manager` and `delivery-manager`. The owner manages them on Roles and permissions (`/admin/roles`, permission `roles.manage`): tick what each role may do, create custom roles (optionally copied from another), mark a role as working across every branch, and reset one role or all standard roles back to their defaults. `owner` and `super-admin` always hold every permission and cannot be edited, every role keeps `admin.access` (needed to sign in), and nobody can remove the Roles screen from their own role. A role in use cannot be deleted.
+
 **Customers are not staff users.** They live in a separate `customers` table with their own auth guard (mobile OTP or Google). They can never reach `/admin`. Walk-in customers captured at the POS by mobile number are the same customer records, so loyalty works across every channel.
 
 Permissions are seeded per role (e.g. `orders.void`, `discounts.override`, `stock.adjust`, `journals.post`).

@@ -30,6 +30,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Role;
 
 /**
  * Customers, staff, attendance and payroll for the mobile app, matching the web panel's rules.
@@ -37,8 +38,6 @@ use Illuminate\Validation\ValidationException;
 class PeopleApiController extends Controller
 {
     use InteractsWithApi;
-
-    private const ROLES = ['super-admin', 'owner', 'branch-manager', 'cashier', 'waiter', 'kitchen-manager', 'accountant', 'rider'];
 
     public function customer(Request $request, Customer $customer): JsonResponse
     {
@@ -102,7 +101,7 @@ class PeopleApiController extends Controller
                 ->get()
                 ->map(fn (User $account): array => $this->userPayload($account))
                 ->all(),
-            'roles' => array_values(array_diff(self::ROLES, ['super-admin'])),
+            'roles' => Role::query()->where('guard_name', 'staff')->where('name', '!=', 'super-admin')->orderBy('id')->pluck('name')->all(),
             'pay_bases' => array_column(PayBasis::cases(), 'value'),
             'can_manage' => $user->can('employees.manage'),
             'can_manage_users' => $user->can('staff.manage'),
@@ -463,7 +462,7 @@ class PeopleApiController extends Controller
             'password' => [$account === null ? 'required' : 'nullable', 'string', 'min:8'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'roles' => ['required', 'array', 'min:1'],
-            'roles.*' => [Rule::in(self::ROLES)],
+            'roles.*' => [Rule::exists('roles', 'name')->where('guard_name', 'staff')],
             'is_active' => ['boolean'],
         ]);
 
@@ -483,7 +482,7 @@ class PeopleApiController extends Controller
         $roles = (array) $request->input('roles', []);
         $branchId = $request->integer('branch_id', 0);
 
-        if (array_intersect($roles, ['owner', 'super-admin', 'accountant']) !== [] && $branchId === 0) {
+        if (Role::query()->whereIn('name', $roles)->where('guard_name', 'staff')->where('all_branches', true)->exists() && $branchId === 0) {
             return null;
         }
 

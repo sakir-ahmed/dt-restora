@@ -24,6 +24,7 @@ return [
     'sms' => 'SMS',
     'customers' => 'Customers',
     'staff' => 'Staff',
+    'roles' => 'Roles and permissions',
     'attendance' => 'Attendance',
     'letters' => 'Letters',
     'payroll' => 'Payroll',

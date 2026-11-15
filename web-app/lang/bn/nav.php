@@ -24,6 +24,7 @@ return [
     'sms' => 'এসএমএস',
     'customers' => 'গ্রাহক',
     'staff' => 'স্টাফ',
+    'roles' => 'রোল ও অনুমতি',
     'attendance' => 'হাজিরা',
     'letters' => 'চিঠি',
     'payroll' => 'বেতন',

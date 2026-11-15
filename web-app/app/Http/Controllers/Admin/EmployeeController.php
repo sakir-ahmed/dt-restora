@@ -9,11 +9,13 @@ use App\Http\Requests\Admin\EmployeeRequest;
 use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\User;
+use App\Support\Rbac\RoleDefaults;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Spatie\Permission\Models\Role;
 
 class EmployeeController extends Controller
 {
@@ -50,7 +52,12 @@ class EmployeeController extends Controller
         return Inertia::render('admin/staff/Index', [
             'employees' => $employees,
             'users' => $users,
-            'roles' => ['owner', 'branch-manager', 'cashier', 'waiter', 'kitchen-manager', 'accountant', 'rider'],
+            'roles' => Role::query()->where('guard_name', 'staff')->where('name', '!=', 'super-admin')->orderBy('id')->get()->map(fn (Role $role): array => [
+                'name' => $role->name,
+                'label' => RoleDefaults::isDefault($role->name)
+                    ? __('permissions.roles.'.$role->name.'.name')
+                    : ((app()->getLocale() === 'bn' && $role->label_bn) ? $role->label_bn : ($role->label ?: $role->name)),
+            ])->all(),
             'canManage' => $request->user('staff')?->can('employees.manage'),
             'canManageUsers' => $request->user('staff')?->can('staff.manage'),
         ]);

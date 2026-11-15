@@ -91,6 +91,7 @@ const nav = computed(() => {
                 { label: t('nav.sms'), href: '/admin/sms', icon: 'paper-plane', permission: 'sms.manage' },
                 { label: t('coupons.title'), href: '/admin/coupons', icon: 'ticket', permission: 'coupons.manage' },
                 { label: t('nav.staff'), href: '/admin/staff', icon: 'user-shield', permission: 'staff.view' },
+                { label: t('nav.roles'), href: '/admin/roles', icon: 'shield-halved', permission: 'roles.manage' },
                 { label: t('nav.attendance'), href: '/admin/attendance', icon: 'clock', permission: 'attendance.manage' },
                 { label: t('nav.letters'), href: '/admin/letters', icon: 'envelope', permission: 'letters.manage' },
                 { label: t('nav.careers'), href: '/admin/careers', icon: 'briefcase', permission: 'careers.manage' },

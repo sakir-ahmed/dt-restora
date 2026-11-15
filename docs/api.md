@@ -148,7 +148,7 @@ Deletes are `POST .../delete` with `reason_code` (`entry_mistake`, `duplicate_en
 | ------ | ---- | ---------- | ----- |
 | GET | `/api/v1/customers/{customer}` | `customers.view` | Points, order count and the latest 30 orders |
 | DELETE | `/api/v1/coupons/{coupon}` | `coupons.manage` | Switches the coupon off; the list carries `redemptions_count` |
-| GET | `/staff` | `staff.view` | `employees`, `users` with roles, `roles`, `pay_bases` |
+| GET | `/staff` | `staff.view` | `employees`, `users` with roles, `roles` (every role name, including custom ones; never `super-admin`), `pay_bases` |
 | PUT / DELETE | `/employees/{employee}` | `employees.manage` | Update (pay basis, rate or salary, device id) or switch off; `POST /employees/{employee}/photo` uploads or removes the photo |
 | POST / PUT / DELETE | `/users[/{account}]` | `staff.manage` | System sign-in accounts with `roles`; DELETE switches off (not yourself) |
 | GET / POST | `/attendance` | `attendance.manage` | Day board (`?date=`) with devices; POST records a day by hand (present with clock in and out, or absent) |

@@ -85,6 +85,8 @@ Spatie Permission. Default seed is **replaced by the roles listed in `prd.md`**.
 - `super-admin` (Datatech support, full access)
 - the product roles from the PRD (for a restaurant: `owner`, `branch-manager`, `cashier`, `waiter`, `kitchen-manager`)
 
+The permission list (`App\Support\Rbac\PermissionCatalog`) and the standard roles with their default permissions (`App\Support\Rbac\RoleDefaults`) are the single source: `RoleSeeder`, the install migration and the Roles screen's reset all read them. Roles are rows, not code: owners edit permissions and make custom roles at `/admin/roles`, so lists of roles (user forms, API) read the `roles` table and never hard-code names. `roles.all_branches` says a role works across every branch.
+
 Use permissions (`orders.void`), not role names, in policies and `@can` checks. Seed a default root account from `.env` values (never hard-code a password in code).
 
 ---

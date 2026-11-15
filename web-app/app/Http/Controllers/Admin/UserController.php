@@ -12,6 +12,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
 {
@@ -87,7 +88,8 @@ class UserController extends Controller
 
         $roles = (array) $request->input('roles', []);
 
-        if (array_intersect($roles, ['owner', 'super-admin', 'accountant']) !== [] && $request->integer('branch_id', 0) === 0) {
+        // A role marked "works across every branch" (owner, accountant, ...) keeps the all-branches assignment.
+        if (Role::query()->whereIn('name', $roles)->where('guard_name', 'staff')->where('all_branches', true)->exists() && $request->integer('branch_id', 0) === 0) {
             return null;
         }
 
