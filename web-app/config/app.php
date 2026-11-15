@@ -72,12 +72,13 @@ return [
     |--------------------------------------------------------------------------
     |
     | Here you may specify the default timezone for your application, which
-    | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
+    | will be used by the PHP date and date-time functions. It is also the
+    | clock invoices, shifts, reports and "today" use, so it is Bangladesh
+    | time unless APP_TIMEZONE says otherwise. Times are stored in this zone.
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'Asia/Dhaka'),
 
     /*
     |--------------------------------------------------------------------------
