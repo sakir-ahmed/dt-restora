@@ -469,3 +469,23 @@ it('gives each booking its own readable number', function (): void {
 
     expect($first->booking_no)->toMatch('/^RSV-\d{4}-[A-Z2-9]{4}$/')->and($second->booking_no)->not->toBe($first->booking_no);
 });
+
+it('finds bookings from other days through the search', function (): void {
+    bookWith($this, [
+        'guest_name' => 'Rahim Uddin',
+        'guest_mobile' => '01711000001',
+        'starts_at' => now()->subDay()->setTime(19, 0)->toIso8601String(),
+        'ends_at' => now()->subDay()->setTime(20, 0)->toIso8601String(),
+    ]);
+    bookWith($this);
+
+    $response = $this->actingAs($this->manager, 'staff')
+        ->get(route('admin.reservations.index', ['q' => 'Rahim']));
+
+    $props = $response->viewData('page')['props'];
+    $rows = collect($props['reservations']);
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()['guest_name'])->toBe('Rahim Uddin')
+        ->and($props['search'])->toBe('Rahim');
+});

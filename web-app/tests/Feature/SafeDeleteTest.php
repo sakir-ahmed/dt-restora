@@ -55,6 +55,14 @@ function stockOf(Ingredient $ingredient): float
         ->value('stock_qty') ?? 0);
 }
 
+function costOf(Ingredient $ingredient): float
+{
+    return (float) (IngredientStock::query()
+        ->where('branch_id', test()->branch->id)
+        ->where('ingredient_id', $ingredient->id)
+        ->value('avg_cost') ?? 0);
+}
+
 function receivedPurchase(): Purchase
 {
     $purchase = Purchase::query()->create([
@@ -89,7 +97,8 @@ function trialBalanceNet(): float
 
 it('deletes a received purchase: stock, cost and journal go back, the row is kept as deleted', function (): void {
     $purchase = receivedPurchase();
-    expect(stockOf($this->ingredient))->toBe(5000.0);
+    expect(stockOf($this->ingredient))->toBe(5000.0)
+        ->and(costOf($this->ingredient))->toBe(0.3);
 
     $this->actingAs($this->owner, 'staff')
         ->delete(route('admin.purchases.destroy', $purchase), deletePayload())
@@ -104,6 +113,8 @@ it('deletes a received purchase: stock, cost and journal go back, the row is kep
         ->and($kept->deleted_by)->toBe($this->owner->id)
         ->and($kept->delete_reason)->toBe('entry_mistake')
         ->and(stockOf($this->ingredient))->toBe(0.0)
+        // No purchase stands behind the cost any more, so it is zero, not the deleted average.
+        ->and(costOf($this->ingredient))->toBe(0.0)
         ->and(Journal::query()->where('source_type', $purchase->getMorphClass())->where('source_id', $purchase->id)->where('status', Journal::STATUS_POSTED)->count())->toBe(0)
         ->and(Journal::query()->where('status', Journal::STATUS_REVERSED)->count())->toBe(1);
 });

@@ -8,10 +8,12 @@ import StatusBadge from '@/components/ui-kit/StatusBadge.vue';
 import DataTable from '@/components/ui-kit/DataTable.vue';
 import DateText from '@/components/ui-kit/DateText.vue';
 import MoneyText from '@/components/ui-kit/MoneyText.vue';
-import PreorderDetailModal from '@/components/admin/PreorderDetailModal.vue';
+import PreorderDetailPanel from '@/components/admin/PreorderDetailPanel.vue';
 import { useConfirm } from '@/components/ui-kit/useConfirm.js';
 import { formatMoney } from '@/lib/format';
 import { t } from '@/lib/i18n';
+import { openInvoiceImage } from '@/lib/invoiceImage';
+import { printUrl } from '@/lib/print';
 import { useSafeDelete } from '@/lib/safeDelete';
 
 const props = defineProps({
@@ -23,6 +25,7 @@ const props = defineProps({
     shareUrl: { type: String, required: true },
     placed: { type: Object, default: null },
     canManage: { type: Boolean, default: false },
+    canShareImage: { type: Boolean, default: false },
 });
 
 const confirm = useConfirm();
@@ -32,12 +35,19 @@ const pendingCount = computed(() => props.preorders.filter((entry) => entry.stat
 
 // The status pills above the list work on the shown status, so a deleted row only appears under All.
 const statusFilter = ref('all');
+const sourceFilter = ref('all');
 
 const statusFilters = [
     { value: 'all', label: t('preorders.filter_all') },
     { value: 'pending', label: t('status.pending') },
     { value: 'completed', label: t('status.completed') },
     { value: 'cancelled', label: t('status.cancelled') },
+];
+
+const sourceFilters = [
+    { value: 'all', label: t('preorders.filter_all') },
+    { value: 'staff', label: t('preorders.source_staff') },
+    { value: 'public', label: t('preorders.source_public') },
 ];
 
 const columns = computed(() => [
@@ -50,13 +60,14 @@ const columns = computed(() => [
     { key: 'table', label: t('receipt.table'), align: 'left' },
     { key: 'source', label: t('preorders.source'), align: 'left' },
     { key: 'total', label: t('inventory.total'), type: 'money', sortable: true, minWidth: '96px' },
-    { key: 'actions', label: '', align: 'right', type: 'component', minWidth: '220px' },
+    { key: 'actions', label: '', align: 'right', type: 'component' },
 ]);
 
 const shownStatus = (entry) => (entry.deleted_at ? 'deleted' : entry.status);
 
 const rows = computed(() => props.preorders
     .filter((entry) => statusFilter.value === 'all' || (! entry.deleted_at && entry.status === statusFilter.value))
+    .filter((entry) => sourceFilter.value === 'all' || entry.source === sourceFilter.value)
     .map((entry) => ({
         id: entry.id,
         created_at: entry.created_at,
@@ -70,6 +81,9 @@ const rows = computed(() => props.preorders
         source: entry.source,
         total: entry.total,
         deleted: Boolean(entry.deleted_at),
+        // The table search box matches this haystack, so the mobile, address and linked invoice count too.
+        search: [entry.order_no, entry.customer_name, entry.customer_mobile, entry.address, entry.note, entry.order_invoice_no]
+            .filter((part) => part).join(' ').toLowerCase(),
         raw: entry,
     })));
 
@@ -93,11 +107,27 @@ function remove(entry) {
 }
 
 function printEntry(entry) {
-    window.open(entry.print_url, '_blank', 'noopener');
+    printUrl(entry.print_url);
+}
+
+// The slip as a picture, like the POS share-as-image button.
+function shareImage(entry) {
+    openInvoiceImage({
+        url: entry.print_url,
+        invoiceNo: entry.order_no,
+        total: entry.total,
+        mobile: entry.customer_mobile,
+        customerName: entry.customer_name,
+    });
 }
 
 function act(entry, action) {
     router.post(route('admin.preorders.transition', { preorder: entry.id, action }), {}, { preserveScroll: true });
+}
+
+// The pre-order becomes the real order the kitchen and the till work from.
+function sendToOrder(entry) {
+    router.post(route('admin.preorders.send', entry.id), {}, { preserveScroll: true });
 }
 
 async function cancel(entry) {
@@ -176,14 +206,34 @@ export default { layout: AdminLayout };
                     >
                         {{ filter.label }}
                     </button>
+                    <span class="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
+                    <button
+                        v-for="filter in sourceFilters"
+                        :key="filter.value"
+                        type="button"
+                        class="h-6 shrink-0 rounded-full border px-2 text-[11px] font-medium"
+                        :class="sourceFilter === filter.value ? 'border-accent bg-accent/15 text-primary' : 'border-border bg-surface text-muted hover:text-foreground'"
+                        @click="sourceFilter = filter.value"
+                    >
+                        {{ filter.label }}
+                    </button>
                 </div>
 
-                <DataTable :columns="columns" :rows="rows" :empty-title="t('preorders.list_empty')" clickable @row-click="(row) => selectedId = row.id">
+                <DataTable
+                    :columns="columns"
+                    :rows="rows"
+                    :empty-title="t('preorders.list_empty')"
+                    searchable
+                    :search-placeholder="t('preorders.search_placeholder')"
+                    clickable
+                    @row-click="(row) => selectedId = row.id"
+                >
                     <template #cell(created_at)="{ value }">
                         <DateText :value="value" relative />
                     </template>
-                    <template #cell(order_no)="{ value }">
-                        <span class="font-mono text-[12px] tabular-nums text-foreground">{{ value }}</span>
+                    <template #cell(order_no)="{ row }">
+                        <span class="font-mono text-[12px] tabular-nums text-foreground">{{ row.order_no }}</span>
+                        <span v-if="row.raw.order_invoice_no" class="block font-mono text-[10px] text-muted" :title="row.raw.order_invoice_no">{{ row.raw.order_invoice_no }}</span>
                     </template>
                     <template #cell(customer)="{ row }">
                         <span class="text-foreground">{{ row.customer }}</span>
@@ -205,22 +255,40 @@ export default { layout: AdminLayout };
                     </template>
                     <template #cell(actions)="{ row }">
                         <div class="flex items-center justify-end gap-1">
-                            <a
-                                :href="row.raw.print_url"
-                                target="_blank"
-                                rel="noopener"
+                            <button
+                                type="button"
                                 class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-background hover:text-foreground"
                                 :aria-label="t('preorders.print')"
                                 :title="t('preorders.print')"
-                                @click.stop
+                                @click.stop="printEntry(row.raw)"
                             >
                                 <AppIcon name="print" size="12" />
-                            </a>
+                            </button>
+                            <button
+                                v-if="canShareImage && ! row.deleted"
+                                type="button"
+                                class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-background hover:text-foreground"
+                                :aria-label="t('orders.share_image')"
+                                :title="t('orders.share_image')"
+                                @click.stop="shareImage(row.raw)"
+                            >
+                                <AppIcon name="image" size="12" />
+                            </button>
                             <template v-if="canManage && ! row.deleted">
+                                <button
+                                    v-if="row.raw.status === 'pending' && ! row.raw.order_invoice_no"
+                                    type="button"
+                                    class="flex h-6 items-center gap-1 rounded border border-accent/60 px-1.5 text-[11px] font-medium text-primary hover:bg-accent/10"
+                                    :title="t('preorders.send_to_order_hint')"
+                                    @click.stop="sendToOrder(row.raw)"
+                                >
+                                    <AppIcon name="utensils" size="10" />
+                                    {{ t('preorders.send_to_order') }}
+                                </button>
                                 <button
                                     v-if="row.raw.status === 'pending'"
                                     type="button"
-                                    class="flex h-6 items-center gap-1 rounded border border-accent/60 px-1.5 text-[11px] font-medium text-primary hover:bg-accent/10"
+                                    class="flex h-6 items-center gap-1 rounded border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-background"
                                     @click.stop="act(row.raw, 'complete')"
                                 >
                                     <AppIcon name="circle-check" size="10" />
@@ -234,7 +302,7 @@ export default { layout: AdminLayout };
                                     :title="t('preorders.cancel')"
                                     @click.stop="cancel(row.raw)"
                                 >
-                                    <AppIcon name="ban" size="12" />
+                                    <AppIcon name="xmark" size="12" />
                                 </button>
                                 <button
                                     type="button"
@@ -252,6 +320,6 @@ export default { layout: AdminLayout };
             </template>
         </section>
 
-        <PreorderDetailModal :preorder="selected" @close="selectedId = null" @print="printEntry" />
+        <PreorderDetailPanel :preorder="selected" :can-share="canShareImage" @close="selectedId = null" @print="printEntry" @share="shareImage" />
     </div>
 </template>

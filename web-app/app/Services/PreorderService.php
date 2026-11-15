@@ -4,9 +4,17 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Actions\Sales\CreateOrderAction;
+use App\Enums\OrderChannel;
+use App\Enums\OrderKind;
+use App\Enums\OrderType;
+use App\Events\OrderCreated;
 use App\Jobs\SendSmsJob;
 use App\Models\Branch;
+use App\Models\Order;
 use App\Models\Preorder;
+use App\Models\Shift;
+use App\Models\User;
 use App\Services\Sms\SmsFeatures;
 use App\Services\Sms\SmsTemplates;
 use Illuminate\Support\Carbon;
@@ -19,7 +27,7 @@ use Illuminate\Validation\ValidationException;
  */
 class PreorderService
 {
-    public function __construct(private readonly ReservationService $pricing) {}
+    public function __construct(private readonly ReservationService $pricing, private readonly CreateOrderAction $orders) {}
 
     /**
      * @param  array<int, array<string, mixed>>  $lines
@@ -82,6 +90,64 @@ class PreorderService
         if (SmsFeatures::enabled('preorder_confirmed')) {
             $preorder->forceFill(['sms_sent_at' => now()])->save();
         }
+    }
+
+    /**
+     * Turn a waiting pre-order into the real order the kitchen and the till work from, the same
+     * way seating a reservation sends its pre-ordered food. The order carries the pre-order's
+     * dishes and wanted time, and keeps the link through preorder_id. The pre-order itself ends
+     * here: its status becomes completed, because the order is the live record now.
+     *
+     * The lead-time rule is overridden on purpose: the guest pre-ordered when the request was
+     * taken, so this is fulfilment, not a fresh order.
+     */
+    public function sendToOrder(Preorder $preorder, User $user): Order
+    {
+        $branch = Branch::query()->findOrFail($preorder->branch_id);
+        $table = $preorder->table;
+        $shift = Shift::query()->where('branch_id', $branch->id)->where('user_id', $user->id)->whereNull('closed_at')->first();
+        $wanted = $preorder->expected_at?->copy();
+
+        $order = $this->orders->execute(
+            branch: $branch,
+            type: $table !== null ? OrderType::DineIn : OrderType::Takeaway,
+            lines: array_map(fn (array $line): array => [
+                'menu_item_id' => $line['menu_item_id'],
+                'variant_id' => $line['variant_id'] ?? null,
+                'quantity' => $line['quantity'],
+                'add_ons' => array_map(fn (array $addOn): array => ['id' => $addOn['id'], 'qty' => $addOn['qty']], $line['add_ons'] ?? []),
+            ], (array) $preorder->items),
+            cashier: $user,
+            tableId: $table?->id,
+            note: __('preorders.order_note', ['number' => $preorder->order_no, 'guest' => $preorder->customer_name ?? __('preorders.walk_in')]),
+            channel: OrderChannel::Pos,
+            shift: $shift,
+            terminalCode: 'PRE',
+            scheduledFor: $wanted ?? now(),
+            kind: OrderKind::Preorder,
+            preorderId: $preorder->id,
+            overridePreorder: true,
+        );
+
+        // The kitchen gets it now when the guest's time is due (or was never set); an order for
+        // later stays held back until a manager releases it, like any other pre-order order.
+        if ($wanted === null || $wanted->lte(now())) {
+            $order->update(['released_at' => now()]);
+        }
+
+        $preorder->update(['status' => Preorder::COMPLETED]);
+
+        activity()->performedOn($preorder)->causedBy($user)->withProperties(['invoice' => $order->invoice_no])->log('preorders.sent');
+
+        broadcast(new OrderCreated($branch->id, [
+            'order_id' => $order->id,
+            'invoice_no' => $order->invoice_no,
+            'order_type' => $order->order_type->value,
+            'table' => $table?->name,
+            'items' => $order->items->map(fn ($item): array => ['name' => $item->name, 'quantity' => $item->quantity])->all(),
+        ]));
+
+        return $order;
     }
 
     /**

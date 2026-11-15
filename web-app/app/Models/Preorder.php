@@ -9,6 +9,7 @@ use App\Models\Concerns\SafeDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 /**
@@ -90,6 +91,16 @@ class Preorder extends Model
     public function table(): BelongsTo
     {
         return $this->belongsTo(RestaurantTable::class, 'restaurant_table_id')->withoutGlobalScopes();
+    }
+
+    /**
+     * The real order staff made out of this pre-order, if it was sent on.
+     *
+     * @return HasOne<Order, $this>
+     */
+    public function order(): HasOne
+    {
+        return $this->hasOne(Order::class)->latestOfMany();
     }
 
     /** What is still to pay when the guest arrives. */

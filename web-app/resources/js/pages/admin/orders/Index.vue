@@ -68,7 +68,7 @@ const columns = computed(() => [
     { key: 'total_display', label: t('inventory.total'), type: 'money', sortable: true, minWidth: '96px' },
     { key: 'order_status', label: t('orders.order_status'), minWidth: '104px' },
     { key: 'payment_status', label: t('orders.payment_status'), minWidth: '104px' },
-    { key: 'actions', label: '', align: 'right', type: 'component', minWidth: '250px' },
+    { key: 'actions', label: '', align: 'right', type: 'component' },
 ]);
 
 function receivedAmount(order) {

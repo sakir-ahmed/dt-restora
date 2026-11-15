@@ -6,6 +6,7 @@ use App\Jobs\SendSmsJob;
 use App\Models\Branch;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
+use App\Models\Order;
 use App\Models\Preorder;
 use App\Models\Reservation;
 use App\Models\RestaurantTable;
@@ -301,4 +302,56 @@ it('deletes a pre-order with a reason and follows the show-deleted setting', fun
 
     $this->actingAs($this->manager, 'staff')->get(route('admin.preorders.index'))
         ->assertInertia(fn ($page) => $page->has('preorders', 0));
+});
+
+it('sends a waiting pre-order on as a real order linked to it', function (): void {
+    $preorder = Preorder::query()->create([
+        'branch_id' => $this->branch->id,
+        'items' => [['menu_item_id' => $this->item->id, 'name' => $this->item->name, 'quantity' => 2, 'variant_id' => null, 'add_ons' => []]],
+        'total' => 400,
+        'customer_name' => 'Karim',
+        'expected_at' => now()->subHour(),
+    ]);
+
+    $this->actingAs($this->manager, 'staff')
+        ->post(route('admin.preorders.send', $preorder))
+        ->assertRedirect();
+
+    $order = Order::query()->firstOrFail();
+
+    expect($order->kind->value)->toBe('preorder')
+        ->and($order->preorder_id)->toBe($preorder->id)
+        ->and($order->scheduled_for)->not->toBeNull()
+        ->and($order->released_at)->not->toBeNull()
+        ->and($order->items->first()->quantity)->toBe(2)
+        ->and($preorder->fresh()->status)->toBe(Preorder::COMPLETED);
+
+    // The kitchen already has it, so sending again is refused.
+    $this->actingAs($this->manager, 'staff')
+        ->post(route('admin.preorders.send', $preorder))
+        ->assertSessionHas('error');
+
+    $response = $this->actingAs($this->manager, 'staff')->get(route('admin.preorders.index'));
+    $shown = collect($response->viewData('page')['props']['preorders']);
+
+    expect($shown->first()['order_invoice_no'])->toBe($order->invoice_no);
+});
+
+it('holds a pre-order back from the kitchen when its wanted time is still ahead', function (): void {
+    $preorder = Preorder::query()->create([
+        'branch_id' => $this->branch->id,
+        'items' => [['menu_item_id' => $this->item->id, 'name' => $this->item->name, 'quantity' => 1, 'variant_id' => null, 'add_ons' => []]],
+        'total' => 200,
+        'expected_at' => now()->addDay(),
+    ]);
+
+    $this->actingAs($this->manager, 'staff')
+        ->post(route('admin.preorders.send', $preorder))
+        ->assertRedirect();
+
+    $order = Order::query()->firstOrFail();
+
+    expect($order->kind->value)->toBe('preorder')
+        ->and($order->released_at)->toBeNull()
+        ->and($order->scheduled_for->format('Ymd His'))->toBe($preorder->expected_at->format('Ymd His'));
 });

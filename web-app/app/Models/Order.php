@@ -27,7 +27,7 @@ class Order extends Model
     protected $fillable = [
         'branch_id', 'invoice_no', 'order_type', 'channel',
         'restaurant_table_id', 'waiter_id', 'cashier_id', 'customer_id', 'shift_id',
-        'kind', 'reservation_id', 'released_at', 'status', 'kitchen_status', 'approval_status', 'prepared_by', 'is_due', 'subtotal', 'discount_type', 'discount_value', 'discount_amount',
+        'kind', 'reservation_id', 'preorder_id', 'released_at', 'status', 'kitchen_status', 'approval_status', 'prepared_by', 'is_due', 'subtotal', 'discount_type', 'discount_value', 'discount_amount',
         'service_charge', 'extra_charge', 'vat_amount', 'delivery_fee', 'rounding', 'total',
         'food_cost', 'client_id', 'note', 'paid_at', 'paid_via_payment_id',
         'delivery_zone_id', 'delivery_address', 'scheduled_for', 'tracking_token',
@@ -100,6 +100,12 @@ class Order extends Model
     public function reservation(): BelongsTo
     {
         return $this->belongsTo(Reservation::class);
+    }
+
+    /** @return BelongsTo<Preorder, $this> */
+    public function preorder(): BelongsTo
+    {
+        return $this->belongsTo(Preorder::class);
     }
 
     /**

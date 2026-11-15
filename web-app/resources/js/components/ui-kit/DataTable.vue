@@ -52,11 +52,18 @@ const filtered = computed(() => {
 
     const needle = search.value.trim().toLowerCase();
 
-    return props.rows.filter((row) => props.columns.some((column) => {
-        const value = row[column.key];
+    return props.rows.filter((row) => {
+        // A row may carry its own haystack in `search` for fields that are not columns.
+        if (typeof row.search === 'string' && row.search.toLowerCase().includes(needle)) {
+            return true;
+        }
 
-        return value !== null && value !== undefined && String(value).toLowerCase().includes(needle);
-    }));
+        return props.columns.some((column) => {
+            const value = row[column.key];
+
+            return value !== null && value !== undefined && String(value).toLowerCase().includes(needle);
+        });
+    });
 });
 
 const sorted = computed(() => {
@@ -210,11 +217,13 @@ function cellDisplay(row, column) {
                         :class="clickable ? 'cursor-pointer' : ''"
                         @click="clickable && emit('row-click', row)"
                     >
+                        <!-- max-w-0 only on truncating columns: clamping every cell would cap each
+                             column at its header width and pile the leftover table width on the right. -->
                         <td
                             v-for="column in columns"
                             :key="column.key"
-                            class="max-w-0 px-3 py-1.5 align-middle text-foreground"
-                            :class="[alignClass(column), column.type === 'component' ? 'p-0' : '']"
+                            class="px-3 py-1.5 align-middle text-foreground"
+                            :class="[alignClass(column), column.type === 'component' ? 'p-0' : '', column.truncate ? 'max-w-0' : '']"
                         >
                             <slot
                                 :name="`cell(${column.key})`"
