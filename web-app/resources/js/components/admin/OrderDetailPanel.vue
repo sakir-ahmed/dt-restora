@@ -21,9 +21,11 @@ const props = defineProps({
     canDelete: { type: Boolean, default: false },
     canApprovePayments: { type: Boolean, default: false },
     canChangeStatus: { type: Boolean, default: false },
+    canApproveOrder: { type: Boolean, default: false },
+    canShareImage: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['close', 'pay', 'collect', 'edit', 'print', 'delete', 'approve', 'status', 'due']);
+const emit = defineEmits(['close', 'pay', 'collect', 'edit', 'print', 'delete', 'approve', 'approve-order', 'share-image', 'status', 'due']);
 
 const status = computed(() => props.order?.status ?? '');
 const isVoid = computed(() => status.value === 'void' || props.order?.deleted === true);
@@ -170,6 +172,10 @@ const buttonBase = 'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-
                     <AppIcon name="trash" size="12" />
                     {{ t('common.delete') }}
                 </button>
+                <button v-if="canShareImage" type="button" :class="[buttonBase, 'border border-border bg-surface text-foreground hover:bg-background']" @click="emit('share-image', order)">
+                    <AppIcon name="image" size="12" />
+                    {{ t('orders.share_image') }}
+                </button>
                 <button type="button" :class="[buttonBase, 'border border-border bg-surface text-foreground hover:bg-background']" @click="emit('print', order)">
                     <AppIcon name="print" size="12" />
                     {{ t('receipt.print') }}
@@ -181,6 +187,10 @@ const buttonBase = 'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-
                 <button v-if="canApprovePayments && pendingPayment" type="button" :class="[buttonBase, 'border border-warning/60 text-warning hover:bg-warning/10']" @click="emit('approve', pendingPayment)">
                     <AppIcon name="user-shield" size="12" />
                     {{ t('payments.verify') }}
+                </button>
+                <button v-if="canApproveOrder && order.order_status === 'awaiting'" type="button" :class="[buttonBase, 'bg-accent text-accent-foreground hover:opacity-90']" @click="emit('approve-order', order)">
+                    <AppIcon name="utensils" size="12" />
+                    {{ t('orders.send_to_kitchen') }}
                 </button>
                 <button v-if="canPay && isOpen && order.customer" type="button" :class="[buttonBase, 'border border-warning/60 text-warning hover:bg-warning/10']" @click="emit('due', order)">
                     <AppIcon name="hand-holding-dollar" size="12" />

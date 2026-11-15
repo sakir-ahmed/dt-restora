@@ -121,9 +121,33 @@ class HandleInertiaRequests extends Middleware
      */
     private function cachedNotifications(User $user): array
     {
+        // Alerts the person marked as read stay hidden until their text changes.
+        $read = (array) $user->notifications_read;
+
+        return array_values(array_filter(
+            $this->currentNotifications($user),
+            fn (array $item): bool => ($read[$item['id']] ?? null) !== self::fingerprint($item),
+        ));
+    }
+
+    /**
+     * Every alert for the person's branch, read or not (cached for a minute, shared by the people on that branch).
+     *
+     * @return array<int, array{id: string, icon: string, title: string, body: string, href: string}>
+     */
+    public function currentNotifications(User $user): array
+    {
         $branchId = $this->currentBranchId($user);
 
         return Cache::remember('admin-alerts:'.($branchId ?? 'all').':'.app()->getLocale(), 60, fn (): array => $this->notifications($user));
+    }
+
+    /**
+     * @param  array{id: string, title: string, body: string}  $item
+     */
+    public static function fingerprint(array $item): string
+    {
+        return md5($item['id'].'|'.$item['title'].'|'.$item['body']);
     }
 
     /**

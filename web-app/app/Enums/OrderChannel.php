@@ -10,4 +10,12 @@ enum OrderChannel: string
     case Website = 'website';
     case Qr = 'qr';
     case Aggregator = 'aggregator';
+
+    /**
+     * Guest orders (website, online menu, table QR) are only placed. A manager sends them to the kitchen.
+     */
+    public function needsApproval(): bool
+    {
+        return in_array($this, [self::Website, self::Qr], true);
+    }
 }

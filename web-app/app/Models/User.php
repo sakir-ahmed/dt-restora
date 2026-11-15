@@ -33,6 +33,7 @@ class User extends Authenticatable
         'is_active' => 'boolean',
         'password' => 'hashed',
         'pin' => 'hashed',
+        'notifications_read' => 'array',
     ];
 
     /**

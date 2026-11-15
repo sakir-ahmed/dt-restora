@@ -17,6 +17,7 @@ import { localized } from '@/lib/site';
 import { formatMoney } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { notify } from '@/lib/notify';
+import { openInvoiceImage } from '@/lib/invoiceImage';
 import { printUrl } from '@/lib/print';
 
 const props = defineProps({
@@ -25,6 +26,7 @@ const props = defineProps({
     canCollect: { type: Boolean, default: false },
     canDelete: { type: Boolean, default: false },
     canEdit: { type: Boolean, default: false },
+    shareImage: { type: Boolean, default: false },
 });
 
 const selectedId = ref(null);
@@ -99,6 +101,18 @@ function methodLabel(code) {
     const entry = props.methods.find((method) => method.method === code);
 
     return entry ? localized(entry, 'name') : code;
+}
+
+function shareInvoiceImage(order) {
+    openInvoiceImage({
+        url: route('admin.orders.receipt', order.id),
+        invoiceNo: order.invoice_no,
+        orderId: order.id,
+        total: order.total,
+        mobile: order.customer?.mobile ?? '',
+        customerName: order.customer?.name ?? '',
+        hasCustomer: Boolean(order.customer),
+    });
 }
 
 function printReceipt(order) {
@@ -190,10 +204,12 @@ function submit() {
             :can-collect="canCollect"
             :can-edit="canEdit"
             :can-delete="canDelete"
+            :can-share-image="shareImage"
             @close="selectedId = null"
             @collect="openCollect"
             @edit="editOrder"
             @print="printReceipt"
+            @share-image="shareInvoiceImage"
             @delete="removeDue"
         />
 

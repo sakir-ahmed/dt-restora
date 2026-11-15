@@ -15,6 +15,7 @@ use App\Actions\Payroll\CalculateStaffPayAction;
 use App\Actions\Sales\ApproveOrderVoidAction;
 use App\Actions\Sales\CloseShiftAction;
 use App\Actions\Sales\CreateOrderAction;
+use App\Actions\Sales\HandOrderToKitchenAction;
 use App\Actions\Sales\OpenShiftAction;
 use App\Actions\Sales\PayOrderAction;
 use App\Actions\Sales\RequestOrderVoidAction;
@@ -72,11 +73,10 @@ class StaffApiController extends Controller
         $branchModel = $this->branchOrFail($request, $branch);
 
         $categories = MenuCategory::query()
-            ->regular()
             ->where('branch_id', $branchModel->id)
             ->active()
             ->ordered()
-            ->with(['items' => fn ($query) => $query->available()->regular()->with(['variants', 'addOns'])])
+            ->with(['items' => fn ($query) => $query->available()->with(['variants', 'addOns'])])
             ->get();
 
         return $this->success($categories);
@@ -167,6 +167,7 @@ class StaffApiController extends Controller
                 channel: OrderChannel::Pos,
                 shift: $shift,
                 terminalCode: $validated['terminal'] ?? 'T01',
+                overridePreorder: (bool) $user->can('orders.approve'),
             );
 
             broadcast(new OrderCreated($branchModel->id, [
@@ -200,10 +201,49 @@ class StaffApiController extends Controller
         ]);
 
         $next = OrderStatus::from($validated['status']);
+
+        abort_if($order->isAwaitingApproval(), 422, __('orders.awaiting_approval_locked'));
+        abort_if($order->isHeldBack(PosSettings::preorderReleaseMinutes($branchModel)), 422, __('orders.held_back_locked'));
         abort_unless($order->status->canTransitionTo($next), 422, __('orders.invalid_status'));
-        $order->update(['status' => $next, 'kitchen_status' => $next]);
+
+        $order->update([
+            'status' => $next,
+            'kitchen_status' => $next,
+            // The kitchen user who picks the order up is shown on its ticket.
+            'prepared_by' => $next === OrderStatus::Preparing ? $user->id : $order->prepared_by,
+        ]);
 
         return $this->success($this->orderPayload($order->fresh()));
+    }
+
+    /**
+     * A manager approves a guest order (table QR, website, online menu): it now reaches the kitchen.
+     */
+    public function approveOrder(Request $request, string $branch, Order $order, HandOrderToKitchenAction $action): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'orders.approve');
+        $branchModel = $this->branchOrFail($request, $branch);
+        abort_unless($order->branch_id === $branchModel->id, 404);
+
+        $action->approve($order, $user);
+
+        return $this->success($this->orderPayload($order->fresh()), __('orders.sent_to_kitchen', ['invoice' => $order->invoice_no]));
+    }
+
+    /**
+     * A manager hands a pre-order or reservation meal to the kitchen before its time.
+     */
+    public function releaseOrder(Request $request, string $branch, Order $order, HandOrderToKitchenAction $action): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'orders.approve');
+        $branchModel = $this->branchOrFail($request, $branch);
+        abort_unless($order->branch_id === $branchModel->id, 404);
+
+        $action->release($order, $user);
+
+        return $this->success($this->orderPayload($order->fresh()), __('orders.sent_to_kitchen', ['invoice' => $order->invoice_no]));
     }
 
     public function pay(Request $request, string $branch, Order $order, PayOrderAction $action): JsonResponse
@@ -390,6 +430,8 @@ class StaffApiController extends Controller
             'base_price' => ['required', 'numeric', 'min:0'],
             'is_available' => ['boolean'],
             'is_vegetarian' => ['boolean'],
+            'pre_order_required' => ['nullable', 'boolean'],
+            'pre_order_lead_hours' => ['nullable', 'integer', 'min:0', 'max:720'],
             'variants' => ['nullable', 'array'],
             'variants.*.name' => ['required_with:variants', 'string', 'max:150'],
             'variants.*.price' => ['required_with:variants', 'numeric', 'min:0'],

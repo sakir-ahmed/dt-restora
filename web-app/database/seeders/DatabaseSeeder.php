@@ -5,21 +5,25 @@ declare(strict_types=1);
 namespace Database\Seeders;
 
 use App\Models\Branch;
+use App\Support\ProductionCompanies;
+use Database\Seeders\Production\DtRestora\CompanySeeder as DtRestoraSeeder;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
+    public const SKIP = 'skip';
+
     /**
      * The bootstrap data (roles, chart of accounts, units, payment methods,
-     * settings, root administrator) always seeds. The rest depends on IS_DEMO:
+     * settings, root administrator) always seeds. Then the company:
      *
-     * - IS_DEMO=false (production): the real restaurant, menu and gallery, see
-     *   ProductionDataSeeder. This only happens on a fresh install (no branch
-     *   yet), so later runs never overwrite edits made in the admin panel. To
-     *   re-sync from the catalog on purpose, run:
-     *   php artisan db:seed --class=ProductionDataSeeder --force
-     * - IS_DEMO=true: sample branches, staff, menu, customers, inventory, sales
-     *   and delivery channels.
+     * - IS_DEMO=true: DT Restora, the demo company.
+     * - IS_DEMO=false: a customer install. It asks which company this install is
+     *   for: DT Restora (Demo), one folder of database/seeders/production, or skip.
+     *   It only asks while there is no branch, so admin-panel edits are never
+     *   overwritten. Set SEED_PROFILE (demo, a company slug or skip) to answer
+     *   without a terminal. To re-sync one company on purpose:
+     *   php artisan db:seed --class="Database\Seeders\Production\ArmansKitchen\CompanySeeder" --force
      */
     public function run(): void
     {
@@ -33,30 +37,37 @@ class DatabaseSeeder extends Seeder
         ]);
 
         if (config('app.is_demo') === true) {
-            $this->call($this->demoSeeders());
+            $this->call(DtRestoraSeeder::class);
 
             return;
         }
 
-        if (Branch::query()->doesntExist()) {
-            $this->call(ProductionDataSeeder::class);
-        }
+        $this->chooseCompany();
     }
 
-    /**
-     * @return list<class-string<Seeder>>
-     */
-    private function demoSeeders(): array
+    private function chooseCompany(): void
     {
-        return [
-            BranchSeeder::class,
-            DemoStaffSeeder::class,
-            DemoMenuSeeder::class,
-            DemoCustomerSeeder::class,
-            DemoInventorySeeder::class,
-            DemoSalesSeeder::class,
-            DemoOperationsSeeder::class,
-            DemoAggregatorSeeder::class,
-        ];
+        if (Branch::query()->exists()) {
+            return;
+        }
+
+        $companies = ProductionCompanies::all();
+        $options = array_map(fn (array $company): string => $company['label'], $companies) + [self::SKIP => 'Skip, set everything up later in the admin panel'];
+
+        $this->command?->newLine();
+        $this->command?->warn('This install has no branch yet.');
+
+        $profile = (string) config('brand.seed_profile');
+        $default = array_key_exists($profile, $options) ? $profile : self::SKIP;
+        $asks = $this->command !== null && ! $this->command->option('no-interaction');
+        $choice = $asks ? $this->command->choice('Which company is this install for?', $options, $default) : $default;
+
+        if (isset($companies[$choice])) {
+            $this->call($companies[$choice]['class']);
+
+            return;
+        }
+
+        $this->command?->info('Skipped. Sign in as admin and add the first branch under Branches.');
     }
 }

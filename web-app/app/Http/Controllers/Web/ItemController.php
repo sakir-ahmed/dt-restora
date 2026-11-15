@@ -27,7 +27,7 @@ class ItemController extends Controller
         $item->load(['variants', 'addOns', 'category:id,name,name_bn']);
 
         $related = MenuItem::query()
-            ->available()->regular()
+            ->available()
             ->where('branch_id', $branch->id)
             ->where('menu_category_id', $item->menu_category_id)
             ->whereKeyNot($item->id)
@@ -54,6 +54,8 @@ class ItemController extends Controller
                 'description_bn' => $item->description_bn,
                 'base_price' => (string) $item->base_price,
                 'is_vegetarian' => $item->is_vegetarian,
+                'requires_pre_order' => $item->requires_pre_order,
+                'pre_order_lead' => $item->pre_order_lead,
                 'photo_path' => $item->photo_path,
                 'category' => $item->category?->name,
                 'category_bn' => $item->category?->name_bn,

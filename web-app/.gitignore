@@ -32,3 +32,8 @@ Thumbs.db
 # Generated test output
 /test-results
 /playwright-report
+
+# Runtime copies of the selected company's files, written by its seeder
+# (database/seeders/production). Never committed.
+/customer
+/public/images/customer

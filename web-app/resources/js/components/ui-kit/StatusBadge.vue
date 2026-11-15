@@ -18,6 +18,7 @@ const MAP = {
     unpaid: { classes: 'bg-warning/15 text-warning', icon: 'clock' },
     partial: { classes: 'bg-accent/15 text-primary', icon: 'hand-holding-dollar' },
     due: { classes: 'bg-danger/10 text-danger', icon: 'hand-holding-dollar' },
+    awaiting: { classes: 'bg-danger/10 text-danger', icon: 'bell' },
     pending: { classes: 'bg-warning/15 text-warning', icon: 'clock' },
     preparing: { classes: 'bg-warning/15 text-warning', icon: 'hourglass-half' },
     ready: { classes: 'bg-accent/15 text-primary', icon: 'bell' },

@@ -30,7 +30,7 @@ class UserRequest extends FormRequest
             'password' => [$this->isMethod('POST') ? 'required' : 'nullable', 'string', 'min:8'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'roles' => ['required', 'array', 'min:1'],
-            'roles.*' => [Rule::in(['super-admin', 'owner', 'branch-manager', 'cashier', 'waiter', 'kitchen-manager', 'accountant', 'rider'])],
+            'roles.*' => [Rule::exists('roles', 'name')->where('guard_name', 'staff')],
             'is_active' => ['boolean'],
         ];
     }

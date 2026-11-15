@@ -11,19 +11,20 @@ use Database\Seeders\RoleSeeder;
 use Database\Seeders\RootAdminSeeder;
 use Illuminate\Support\Facades\Hash;
 
-it("seeds bootstrap data, the Arman's Kitchen outlet and a random admin password when demo mode is off", function (): void {
+it('seeds bootstrap data and a random admin password, and invents no restaurant when no company is chosen', function (): void {
     config(['app.is_demo' => false]);
 
     $this->artisan('db:seed', ['--class' => DatabaseSeeder::class])
         ->expectsOutputToContain('Root administrator created')
+        ->expectsChoice('Which company is this install for?', 'skip', ['demo' => 'DT Restora (Demo)', 'skip' => 'Skip, set everything up later in the admin panel'])
         ->assertSuccessful();
 
     $admin = User::query()->where('username', 'admin')->firstOrFail();
 
     expect($admin->hasRole('super-admin'))->toBeTrue()
         ->and($admin->branch_id)->toBeNull()
-        ->and(Branch::query()->pluck('code')->all())->toBe(['AK01'])
-        ->and(MenuItem::query()->withoutGlobalScopes()->count())->toBe(55)
+        ->and(Branch::query()->count())->toBe(0)
+        ->and(MenuItem::query()->withoutGlobalScopes()->count())->toBe(0)
         ->and(Setting::query()->count())->toBe(1)
         ->and(User::query()->count())->toBe(1);
 });
@@ -80,15 +81,4 @@ it('lets the fresh production admin open the back office before any branch exist
 
         expect($status)->toBeLessThan(500, "{$path} returned {$status}");
     }
-});
-
-it('does not overwrite menu edits when the seeder runs again', function (): void {
-    config(['app.is_demo' => false]);
-    $this->seed(DatabaseSeeder::class);
-
-    MenuItem::query()->withoutGlobalScopes()->where('name', 'Student Burger')->update(['base_price' => 99]);
-
-    $this->seed(DatabaseSeeder::class);
-
-    expect((int) MenuItem::query()->withoutGlobalScopes()->where('name', 'Student Burger')->value('base_price'))->toBe(99);
 });

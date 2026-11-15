@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Sales\CreateOrderAction;
+use App\Actions\Sales\PayOrderAction;
 use App\Enums\OrderChannel;
+use App\Enums\OrderKind;
 use App\Enums\OrderType;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\Branch;
@@ -19,6 +21,7 @@ use Database\Seeders\RoleSeeder;
 use Database\Seeders\UnitSeeder;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Validation\ValidationException;
 
 beforeEach(function (): void {
     $this->seed([ChartOfAccountsSeeder::class, RoleSeeder::class, UnitSeeder::class]);
@@ -118,7 +121,7 @@ it('renews every code of the branch at once', function (): void {
         ->and($second->fresh()->qr_token)->not->toBe($before[1]);
 });
 
-it('sends a guest order straight to the kitchen with the table already chosen', function (): void {
+it('places a guest order for a manager to approve, with the table already chosen', function (): void {
     Event::fake();
 
     $this->post(route('web.table.order', ['token' => $this->table->qr_token]), [
@@ -133,6 +136,7 @@ it('sends a guest order straight to the kitchen with the table already chosen', 
         ->and($order->order_type)->toBe(OrderType::DineIn)
         ->and($order->restaurant_table_id)->toBe($this->table->id)
         ->and($order->status->value)->toBe('pending')
+        ->and($order->approval_status)->toBe('awaiting')
         ->and($order->invoice_no)->toContain('-QR-')
         ->and($order->note)->toContain('Rafi')->toContain('less spicy')
         ->and($this->table->fresh()->status)->toBe('occupied');
@@ -314,4 +318,159 @@ it('does not take the booking from another table into account', function (): voi
     booking($other, Reservation::BOOKED, -10, 90);
 
     $this->get(qrUrl($this->table))->assertInertia(fn ($page) => $page->where('ordering.allowed', true));
+});
+
+it('keeps a guest order off the kitchen board until a manager sends it', function (): void {
+    $this->post(route('web.table.order', ['token' => $this->table->qr_token]), [
+        'items' => [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+    ])->assertRedirect();
+
+    $order = Order::query()->firstOrFail();
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))
+        ->assertInertia(fn ($page) => $page->has('orders', 0));
+
+    // Nobody can move it along the kitchen steps meanwhile, and a cashier cannot approve it.
+    $this->actingAs($this->cashier, 'staff')->patch(route('admin.orders.status', $order), ['status' => 'preparing'])->assertSessionHas('error');
+    $this->actingAs($this->cashier, 'staff')->post(route('admin.orders.approve', $order))->assertForbidden();
+
+    $this->actingAs($this->manager, 'staff')->post(route('admin.orders.approve', $order))->assertSessionHas('success');
+
+    expect($order->fresh()->approval_status)->toBe('approved');
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))
+        ->assertInertia(fn ($page) => $page->has('orders', 1)->where('orders.0.table.name', 'T3'));
+});
+
+it('lets a manager cancel an awaiting guest order with a reason', function (): void {
+    $this->post(route('web.table.order', ['token' => $this->table->qr_token]), [
+        'items' => [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+    ])->assertRedirect();
+
+    $order = Order::query()->firstOrFail();
+
+    $this->actingAs($this->manager, 'staff')
+        ->post(route('admin.orders.delete', $order), ['reason_code' => 'duplicate_order'])
+        ->assertSessionHas('success');
+
+    expect($order->fresh()->status->value)->toBe('void');
+});
+
+it('serves a ready order from the kitchen board and shows who prepared it', function (): void {
+    $order = app(CreateOrderAction::class)->execute($this->branch, OrderType::DineIn, [['menu_item_id' => $this->item->id, 'quantity' => 1]], tableId: $this->table->id);
+
+    $this->actingAs($this->manager, 'staff')->patch(route('admin.orders.status', $order), ['status' => 'preparing'])->assertSessionHas('success');
+    expect($order->fresh()->prepared_by)->toBe($this->manager->id);
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))
+        ->assertInertia(fn ($page) => $page->where('orders.0.preparer.name', $this->manager->name));
+
+    $this->actingAs($this->manager, 'staff')->patch(route('admin.orders.status', $order), ['status' => 'ready'])->assertSessionHas('success');
+    $this->actingAs($this->manager, 'staff')->patch(route('admin.orders.status', $order), ['status' => 'served'])->assertSessionHas('success');
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))
+        ->assertInertia(fn ($page) => $page->has('orders', 0));
+});
+
+it('blocks a pre-order only dish on a table order and on the POS for a cashier, but lets a manager sell it', function (): void {
+    $this->item->category()->update(['pre_order_required' => true, 'pre_order_lead_hours' => 6]);
+
+    $this->post(route('web.table.order', ['token' => $this->table->qr_token]), [
+        'items' => [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+    ])->assertSessionHasErrors('items');
+
+    expect(Order::query()->count())->toBe(0);
+
+    $payload = ['order_type' => 'takeaway', 'items' => [['menu_item_id' => $this->item->id, 'quantity' => 1]], 'terminal' => 'T01'];
+
+    $this->actingAs($this->cashier, 'staff')->post('/admin/orders', $payload)->assertSessionHasErrors('items');
+    $this->actingAs($this->manager, 'staff')->post('/admin/orders', $payload)->assertSessionHasNoErrors();
+
+    expect(Order::query()->count())->toBe(1);
+});
+
+it('lets a dish opt out of its category pre-order rule', function (): void {
+    $this->item->category()->update(['pre_order_required' => true]);
+    $this->item->update(['pre_order_required' => false]);
+    MenuItem::forgetCategoryRules();
+
+    $this->post(route('web.table.order', ['token' => $this->table->qr_token]), [
+        'items' => [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+    ])->assertSessionHasNoErrors();
+});
+
+it('takes a website pre-order for a required dish only far enough ahead, and keeps it off the kitchen board until released', function (): void {
+    $this->item->update(['pre_order_required' => true, 'pre_order_lead_hours' => 12]);
+    $order = fn (string $when) => app(CreateOrderAction::class)->execute(
+        $this->branch,
+        OrderType::Takeaway,
+        [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+        scheduledFor: new DateTimeImmutable($when),
+        kind: OrderKind::Preorder,
+    );
+
+    expect(fn () => $order('+3 hours'))->toThrow(ValidationException::class);
+
+    $placed = $order('+2 days');
+
+    expect($placed->kind)->toBe(OrderKind::Preorder);
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))->assertInertia(fn ($page) => $page->has('orders', 0));
+
+    // Not yet due, so the kitchen steps are locked; the manager hands it over early.
+    $this->actingAs($this->manager, 'staff')->patch(route('admin.orders.status', $placed), ['status' => 'preparing'])->assertSessionHas('error');
+    $this->actingAs($this->cashier, 'staff')->post(route('admin.orders.release', $placed))->assertForbidden();
+    $this->actingAs($this->manager, 'staff')->post(route('admin.orders.release', $placed))->assertSessionHas('success');
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))->assertInertia(fn ($page) => $page->has('orders', 1));
+
+    // The release is by the clock too: a pre-order due within the lead time shows without a click.
+    $soon = app(CreateOrderAction::class)->execute($this->branch, OrderType::Takeaway, [['menu_item_id' => $this->item->id, 'quantity' => 1]], scheduledFor: new DateTimeImmutable('+30 minutes'), kind: OrderKind::Preorder, overridePreorder: true);
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))->assertInertia(fn ($page) => $page->has('orders', 2));
+    expect($soon->fresh()->released_at)->toBeNull();
+});
+
+it('gives the approve permission to managers and not to cashiers', function (): void {
+    expect($this->manager->can('orders.approve'))->toBeTrue()
+        ->and($this->cashier->can('orders.approve'))->toBeFalse();
+});
+
+it('filters the orders list by kind, including regular orders', function (): void {
+    $regular = app(CreateOrderAction::class)->execute($this->branch, OrderType::Takeaway, [['menu_item_id' => $this->item->id, 'quantity' => 1]]);
+    $preorder = app(CreateOrderAction::class)->execute($this->branch, OrderType::Takeaway, [['menu_item_id' => $this->item->id, 'quantity' => 1]], scheduledFor: new DateTimeImmutable('+2 days'), kind: OrderKind::Preorder);
+
+    $ids = fn (string $kind) => collect($this->actingAs($this->manager, 'staff')->get(route('admin.orders.index', ['kind' => $kind]))->viewData('page')['props']['orders'])->pluck('id')->all();
+
+    expect($ids('regular'))->toBe([$regular->id])
+        ->and($ids('preorder'))->toBe([$preorder->id]);
+});
+
+it('filters the orders list by cashier, cook, waiter, table, channel, type, payment and date', function (): void {
+    $make = fn (array $args = []) => app(CreateOrderAction::class)->execute($this->branch, $args['type'] ?? OrderType::Takeaway, [['menu_item_id' => $this->item->id, 'quantity' => 1]], ...($args['with'] ?? []));
+    $cook = User::factory()->role('kitchen-manager', $this->branch->id)->create();
+
+    $a = $make(['type' => OrderType::DineIn, 'with' => ['cashier' => $this->cashier, 'waiter' => $this->manager, 'tableId' => $this->table->id]]);
+    $a->update(['prepared_by' => $cook->id]);
+    $b = $make();
+    app(PayOrderAction::class)->executeCash($b, 5000, $this->cashier);
+    $c = $make(['with' => ['channel' => OrderChannel::Website]]);
+    $c->forceFill(['created_at' => now()->subDays(10)])->save();
+
+    $ids = fn (array $query) => collect($this->actingAs($this->manager, 'staff')->get(route('admin.orders.index', $query))->viewData('page')['props']['orders'])->pluck('id')->sort()->values()->all();
+
+    expect($ids(['cashier' => $this->cashier->id]))->toBe(collect([$a->id, $b->id])->sort()->values()->all())
+        ->and($ids(['cook' => $cook->id]))->toBe([$a->id])
+        ->and($ids(['waiter' => $this->manager->id]))->toBe([$a->id])
+        ->and($ids(['table' => $this->table->id]))->toBe([$a->id])
+        ->and($ids(['channel' => 'website']))->toBe([$c->id])
+        ->and($ids(['type' => 'dine_in']))->toBe([$a->id])
+        ->and($ids(['payment' => 'paid']))->toBe([$b->id])
+        ->and($ids(['payment' => 'unpaid']))->toBe(collect([$a->id, $c->id])->sort()->values()->all())
+        ->and($ids(['from' => now()->subDay()->toDateString()]))->toBe(collect([$a->id, $b->id])->sort()->values()->all())
+        ->and($ids(['to' => now()->subDays(5)->toDateString()]))->toBe([$c->id]);
+
+    $props = $this->actingAs($this->manager, 'staff')->get(route('admin.orders.index'))->viewData('page')['props'];
+    expect(collect($props['staffOptions'])->pluck('id')->all())->toContain($this->cashier->id, $cook->id)
+        ->and(collect($props['tableOptions'])->pluck('id')->all())->toContain($this->table->id);
 });

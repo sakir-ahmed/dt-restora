@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Actions\Sales\ApproveOrderVoidAction;
 use App\Actions\Sales\CreateOrderAction;
+use App\Actions\Sales\HandOrderToKitchenAction;
 use App\Actions\Sales\PayOrderAction;
 use App\Actions\Sales\RequestOrderVoidAction;
 use App\Actions\Sales\ReviseSettledSaleAction;
@@ -19,14 +20,17 @@ use App\Http\Requests\Admin\CreateOrderRequest;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Order;
+use App\Models\RestaurantTable;
 use App\Models\Setting;
 use App\Models\Shift;
+use App\Models\User;
 use App\Models\VoidRequest;
 use App\Services\Aggregators\PlatformAdapters;
 use App\Services\PosSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -44,7 +48,25 @@ class OrderController extends Controller
         $orders = Order::query()
             ->where('branch_id', $branch->id)
             ->with(['table:id,name', 'waiter:id,name', 'cashier:id,name', 'customer:id,name,mobile', 'items:id,order_id,name,name_bn,quantity,unit_price,add_ons,add_ons_total,line_total', 'voidRequest', 'payments', 'aggregatorChannel:id,key,name'])
-            ->when($request->string('status')->toString(), fn ($query, $status) => $query->where('status', $status))
+            ->with('preparer:id,name')
+            ->when($request->string('kind')->toString(), fn ($query, $kind) => $query->where('kind', $kind))
+            ->when($request->integer('cashier'), fn ($query, $id) => $query->where('cashier_id', $id))
+            ->when($request->integer('cook'), fn ($query, $id) => $query->where('prepared_by', $id))
+            ->when($request->integer('waiter'), fn ($query, $id) => $query->where('waiter_id', $id))
+            ->when($request->integer('table'), fn ($query, $id) => $query->where('restaurant_table_id', $id))
+            ->when($request->string('channel')->toString(), fn ($query, $channel) => $query->where('channel', $channel))
+            ->when($request->string('type')->toString(), fn ($query, $type) => $query->where('order_type', $type))
+            ->when($request->string('payment')->toString(), fn ($query, $payment) => match ($payment) {
+                'paid' => $query->where('status', OrderStatus::Paid->value)->where('is_due', false),
+                'due' => $query->where('is_due', true),
+                'unpaid' => $query->whereNotIn('status', [OrderStatus::Paid->value, OrderStatus::Void->value])->where('is_due', false),
+                default => $query,
+            })
+            ->when($request->string('from')->toString(), fn ($query, $from) => $query->where('created_at', '>=', Carbon::parse($from)->startOfDay()))
+            ->when($request->string('to')->toString(), fn ($query, $to) => $query->where('created_at', '<=', Carbon::parse($to)->endOfDay()))
+            ->when($request->string('status')->toString(), fn ($query, $status) => $status === 'awaiting'
+                ? $query->where('approval_status', Order::APPROVAL_AWAITING)->where('status', '!=', OrderStatus::Void->value)
+                : $query->where('status', $status))
             ->when($request->string('search')->toString(), function ($query, $search): void {
                 $query->where('invoice_no', 'like', "%{$search}%");
             })
@@ -57,12 +79,20 @@ class OrderController extends Controller
 
         return Inertia::render('admin/orders/Index', [
             'orders' => $orders,
-            'filters' => $request->only(['status', 'search']),
+            'filters' => $request->only(['status', 'search', 'kind', 'cashier', 'cook', 'waiter', 'table', 'channel', 'type', 'payment', 'from', 'to']),
+            // People and tables to filter by: the branch's staff (and head office), and its tables.
+            'staffOptions' => User::query()
+                ->where(fn ($query) => $query->where('branch_id', $branch->id)->orWhereNull('branch_id'))
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'tableOptions' => RestaurantTable::query()->where('branch_id', $branch->id)->orderBy('name')->get(['id', 'name']),
+            'canApproveOrders' => (bool) $request->user('staff')?->can('orders.approve'),
             'canVoid' => PosSettings::orderDeleteEnabled($branch) && $request->user('staff')?->can('orders.void'),
             'canApproveVoid' => PosSettings::orderDeleteEnabled($branch) && $request->user('staff')?->can('orders.void'),
             'canApprovePayments' => $request->user('staff')?->can('payments.manage'),
             'canPay' => (bool) $request->user('staff')?->can('orders.create'),
             'canEdit' => PosSettings::orderEditEnabled($branch) && $request->user('staff')?->can('orders.create'),
+            'shareImage' => PosSettings::invoiceShareImageEnabled($branch),
         ]);
     }
 
@@ -90,7 +120,7 @@ class OrderController extends Controller
             ->with(['aggregatorChannel:id,key,name', 'table:id,name'])
             ->orderBy('id')
             ->limit(20)
-            ->get(['id', 'invoice_no', 'channel', 'total', 'aggregator_channel_id', 'restaurant_table_id']);
+            ->get(['id', 'invoice_no', 'channel', 'total', 'aggregator_channel_id', 'restaurant_table_id', 'approval_status']);
 
         return response()->json([
             'last_id' => (int) max($after, $orders->max('id') ?? 0),
@@ -143,6 +173,7 @@ class OrderController extends Controller
             clientId: $request->validated('client_id'),
             shift: $openShift,
             terminalCode: $request->input('terminal', 'T01'),
+            overridePreorder: (bool) $user->can('orders.approve'),
         );
 
         $this->broadcastSafely(fn () => broadcast(new OrderCreated($branch->id, [
@@ -245,6 +276,49 @@ class OrderController extends Controller
         ]);
     }
 
+    /**
+     * Put the customer's mobile number on an order that has no customer yet, so the number sent an invoice
+     * to is kept in the customer list. An order that already has a customer keeps them.
+     */
+    public function attachCustomer(Request $request, Order $order): JsonResponse
+    {
+        $this->authorize('orders.create');
+
+        $user = $request->user('staff');
+        abort_unless($user->canAccessBranch($order->branch_id), 404);
+
+        $validated = $request->validate([
+            'customer_mobile' => ['required', 'string', 'max:20'],
+            'customer_name' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $mobile = normalize_bd_mobile($validated['customer_mobile']);
+
+        if (! is_bd_mobile($mobile)) {
+            throw ValidationException::withMessages(['customer_mobile' => __('web.err_mobile')]);
+        }
+
+        $linked = false;
+        $customer = $order->customer;
+
+        if ($customer === null) {
+            $customer = Customer::query()->firstOrCreate(
+                ['mobile' => $mobile],
+                ['name' => trim((string) ($validated['customer_name'] ?? '')) ?: __('orders.walk_in_customer')],
+            );
+
+            $order->update(['customer_id' => $customer->id]);
+            $linked = true;
+
+            activity()->performedOn($order)->causedBy($user)->log('order.customer_attached');
+        }
+
+        return response()->json([
+            'linked' => $linked,
+            'customer' => ['id' => $customer->id, 'name' => $customer->name, 'mobile' => $customer->mobile],
+        ]);
+    }
+
     public function pay(Request $request, Order $order, PayOrderAction $action): RedirectResponse
     {
         $this->authorize('orders.create');
@@ -328,6 +402,14 @@ class OrderController extends Controller
             'status' => ['required', 'in:pending,preparing,ready,served,paid'],
         ]);
 
+        if ($order->isAwaitingApproval()) {
+            return back()->with('error', __('orders.awaiting_approval_locked'));
+        }
+
+        if ($order->isHeldBack(PosSettings::preorderReleaseMinutes($order->branch))) {
+            return back()->with('error', __('orders.held_back_locked'));
+        }
+
         $next = OrderStatus::from($validated['status']);
         $current = $order->kitchen_status ?? $order->status;
 
@@ -340,9 +422,11 @@ class OrderController extends Controller
             }
 
             // An order still open carries the step as its status too. A paid one stays paid.
-            $order->update($order->status->isKitchenActive()
+            $order->update(($order->status->isKitchenActive()
                 ? ['status' => $next->value, 'kitchen_status' => $next->value]
-                : ['kitchen_status' => $next->value]);
+                : ['kitchen_status' => $next->value])
+                // The kitchen user who picks the order up is shown on its ticket.
+                + ($next === OrderStatus::Preparing ? ['prepared_by' => $request->user('staff')->id] : []));
 
             activity()->performedOn($order)->causedBy($request->user('staff'))
                 ->withProperties(['from' => $current->value, 'to' => $next->value])
@@ -358,6 +442,41 @@ class OrderController extends Controller
         ])));
 
         return back()->with('success', __('orders.status_updated'));
+    }
+
+    /**
+     * A manager sends a guest order (table QR, website, online menu) to the kitchen. Until then it
+     * is only placed: the kitchen board does not list it. Cancelling it goes through deleteOrder.
+     */
+    public function approve(Request $request, Order $order, HandOrderToKitchenAction $action): RedirectResponse
+    {
+        $user = $request->user('staff');
+        abort_unless($user->canAccessBranch($order->branch_id), 404);
+
+        try {
+            $action->approve($order, $user);
+        } catch (ValidationException $exception) {
+            return back()->with('error', $exception->validator->errors()->first());
+        }
+
+        return back()->with('success', __('orders.sent_to_kitchen', ['invoice' => $order->invoice_no]));
+    }
+
+    /**
+     * A manager hands an approved pre-order or reservation meal to the kitchen before its time.
+     */
+    public function release(Request $request, Order $order, HandOrderToKitchenAction $action): RedirectResponse
+    {
+        $user = $request->user('staff');
+        abort_unless($user->canAccessBranch($order->branch_id), 404);
+
+        try {
+            $action->release($order, $user);
+        } catch (ValidationException $exception) {
+            return back()->with('error', $exception->validator->errors()->first());
+        }
+
+        return back()->with('success', __('orders.sent_to_kitchen', ['invoice' => $order->invoice_no]));
     }
 
     /**
@@ -382,7 +501,7 @@ class OrderController extends Controller
         $current = $order->kitchen_status ?? OrderStatus::Pending;
 
         // A deleted order is out of the kitchen. A paid one is not: paying first is allowed.
-        if ($order->status === OrderStatus::Void || ! in_array($next, $steps, true) || $next === $current) {
+        if ($order->status === OrderStatus::Void || $order->isAwaitingApproval() || $order->isHeldBack(PosSettings::preorderReleaseMinutes($order->branch)) || ! in_array($next, $steps, true) || $next === $current) {
             return false;
         }
 

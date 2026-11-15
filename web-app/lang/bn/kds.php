@@ -10,4 +10,5 @@ return [
     'start_preparing' => 'তৈরি শুরু করুন',
     'mark_ready' => 'প্রস্তুত করুন',
     'mark_served' => 'পরিবেশিত করুন',
+    'prepared_by' => 'রান্না করছেন: :name',
 ];

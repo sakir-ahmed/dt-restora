@@ -23,8 +23,8 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 /**
  * Ordering from the QR code on a table. The code carries a long random secret, not the table
  * name, and each table can issue a new one at any time: the old printed code then lands on the
- * "expired" page. An order placed here goes straight to the kitchen and shows up on the POS
- * with the table already chosen.
+ * "expired" page. An order placed here is only placed: it shows up on the POS with the table already
+ * chosen, and a manager sends it to the kitchen or cancels it.
  */
 class TableMenuController extends Controller
 {
@@ -45,11 +45,10 @@ class TableMenuController extends Controller
         $branch = $table->branch;
 
         $categories = MenuCategory::query()
-            ->regular()
             ->where('branch_id', $branch->id)
             ->active()
             ->ordered()
-            ->with(['items' => fn ($query) => $query->available()->regular()->with(['variants', 'addOns', 'media'])->orderBy('sort_order')])
+            ->with(['items' => fn ($query) => $query->available()->with(['variants', 'addOns', 'media'])->orderBy('sort_order')])
             ->get()
             ->filter(fn (MenuCategory $category): bool => $category->items->isNotEmpty())
             ->values();
@@ -124,6 +123,7 @@ class TableMenuController extends Controller
             'invoice_no' => $order->invoice_no,
             'order_type' => $order->order_type->value,
             'channel' => OrderChannel::Qr->value,
+            'awaiting' => true,
             'table' => $table->name,
             'items' => $order->items->map(fn ($item): array => ['name' => $item->name, 'quantity' => $item->quantity])->all(),
         ]));

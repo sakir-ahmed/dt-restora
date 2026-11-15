@@ -69,8 +69,16 @@ export function localReceiptHtml(receipt) {
         Number(receipt.vat) > 0 ? row(t('receipt.vat'), money(receipt.vat)) : '',
     ].join('');
 
+    const settings = branch.pos_settings ?? {};
+    const logo = settings.invoice_logo && branch.receipt_logo
+        ? `<div class="center"><img src="${escapeHtml(branch.receipt_logo)}" alt="" style="max-width:14mm;max-height:14mm;height:auto;margin:0 auto 4px;display:block;"></div>`
+        : '';
+    const footer = settings.invoice_footer !== false && branch.receipt_footer
+        ? `<div class="center">${escapeHtml(branch.receipt_footer)}</div>`
+        : '';
+
     const change = Number(receipt.change) > 0
-        ? row(t('receipt.change'), money(receipt.change))
+        ? row(t('receipt.received'), money(receipt.received)) + row(t('receipt.change'), money(receipt.change))
         : '';
 
     return `<!DOCTYPE html>
@@ -81,7 +89,7 @@ export function localReceiptHtml(receipt) {
 <style>${receiptCss(receipt.layout, receipt.paper)}</style>
 </head>
 <body class="layout-${escapeHtml(receipt.layout ?? 'classic')} paper-${escapeHtml(receipt.paper ?? '80mm')}">
-<div class="brand center"><div class="bold large">${escapeHtml(branch.name ?? '')}</div>
+<div class="brand center">${logo}<div class="bold large">${escapeHtml(branch.name ?? '')}</div>
 ${branch.address ? `<div class="center">${escapeHtml(branch.address)}</div>` : ''}
 ${branch.tax_registration_no ? `<div class="center">${escapeHtml(t('receipt.bin'))}: ${escapeHtml(branch.tax_registration_no)}</div>` : ''}
 ${branch.phone ? `<div class="center">${escapeHtml(t('receipt.phone'))}: ${escapeHtml(branch.phone)}</div>` : ''}
@@ -100,7 +108,7 @@ ${extras}
 ${change}
 </table>
 <div class="hr"></div>
-${branch.receipt_footer ? `<div class="center">${escapeHtml(branch.receipt_footer)}</div>` : ''}
+${footer}
 <div class="center">${escapeHtml(t('receipt.thank_you'))}</div>
 <div class="center">${escapeHtml(t('sync.queued'))}</div>
 </body>

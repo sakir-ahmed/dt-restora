@@ -27,8 +27,11 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // Demo mode shows neutral wording on top of the production text (lang/demo).
-        if (Brand::isDemo() && $this->app['translation.loader'] instanceof FileLoader) {
+        // One brand name everywhere: the settings table (cached) decides, not APP_NAME.
+        config(['app.name' => Brand::name()]);
+
+        // A customer install may add its own wording on top of the neutral text (customer/lang).
+        if (! Brand::isDemo() && is_dir(Brand::languageOverridePath()) && $this->app['translation.loader'] instanceof FileLoader) {
             $this->app['translation.loader']->addPath(Brand::languageOverridePath());
         }
 

@@ -300,6 +300,18 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
+  /// A manager approves a guest order or hands a pre-order to the kitchen early.
+  Future<void> _handToKitchen(String step) async {
+    final app = AppScope.read(context);
+    final ok = await guarded(context, () async {
+      await app.api.post('/branches/${app.branchId}/orders/${_order['id']}/$step');
+      await _refresh();
+    });
+    if (ok && mounted) {
+      snack(context, 'Order ${_order['invoice_no']} sent to the kitchen.');
+    }
+  }
+
   Future<void> _setStatus(String status) async {
     final app = AppScope.read(context);
     var queued = false;
@@ -551,10 +563,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final app = AppScope.of(context);
     final status = '${_order['status']}';
     final items = asRows(_order['items']);
+    // Guest orders wait for a manager; pre-orders and reservation meals also wait for their time.
+    final awaiting = '${_order['approval_status']}' == 'awaiting';
     const flow = ['pending', 'preparing', 'ready', 'served', 'paid'];
     final step = flow.indexOf(status);
-    final next = step >= 0 && step < flow.length - 2 ? flow[step + 1] : null;
+    final next = !awaiting && step >= 0 && step < flow.length - 2 ? flow[step + 1] : null;
     final voidPending = '${_order['void_status']}' == 'pending';
+    final kind = '${_order['kind'] ?? 'regular'}';
+    final scheduled = kind != 'regular';
+    final canSendNow = scheduled && !awaiting && _order['released_at'] == null && status == 'pending';
     final canPay = status != 'paid' && status != 'void';
     final totals = <MapEntry<String, String>>[
       MapEntry('Subtotal', fmtMoney(_order['subtotal'] ?? _order['total'])),
@@ -584,12 +601,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + MediaQuery.paddingOf(context).bottom),
           children: [
           Row(children: [
-            StatusChip(status),
+            StatusChip(awaiting ? 'awaiting' : status),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 [
                   titleCase('${_order['order_type']}'),
+                  if (scheduled) titleCase(kind),
+                  if (_order['scheduled_for'] != null) 'For ${fmtDate(_order['scheduled_for'])}',
                   if (_order['table'] != null) 'Table ${_order['table']}',
                   if (_order['created_at'] != null) fmtDate(_order['created_at']),
                 ].join('  -  '),
@@ -616,6 +635,26 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             const SizedBox(height: 4),
             Text('Step ${step + 1} of ${flow.length}: ${titleCase(status)}', style: TextStyle(color: context.muted, fontSize: 11)),
           ],
+          if (awaiting)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: context.warnBg, borderRadius: BorderRadius.circular(10)),
+                child: Row(children: [
+                  Icon(Icons.hourglass_top, size: 18, color: context.warnFg),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      app.can('orders.approve')
+                          ? 'This order came from a guest and is waiting for your approval. The kitchen does not see it yet.'
+                          : 'Waiting for a manager to approve this guest order.',
+                      style: TextStyle(color: context.warnFg),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
           if (voidPending)
             Padding(
               padding: const EdgeInsets.only(top: 12),
@@ -682,6 +721,20 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             ),
           ],
           const SizedBox(height: 16),
+          if (awaiting && app.can('orders.approve'))
+            FilledButton.icon(
+              onPressed: () => _handToKitchen('approve'),
+              icon: const Icon(Icons.restaurant),
+              label: Text(scheduled ? 'Approve' : 'Send to kitchen'),
+            ),
+          if (canSendNow && app.can('orders.approve')) ...[
+            const SizedBox(height: 8),
+            FilledButton.tonalIcon(
+              onPressed: () => _handToKitchen('release'),
+              icon: const Icon(Icons.restaurant),
+              label: const Text('Send now'),
+            ),
+          ],
           if (next != null && app.can('orders.create'))
             FilledButton.icon(
               onPressed: () => _setStatus(next),

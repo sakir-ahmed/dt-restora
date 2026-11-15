@@ -255,7 +255,10 @@ onBeforeUnmount(() => {
                 <div v-if="sheetItem" class="site fixed inset-0 z-50 flex items-end justify-center bg-black/60 text-foreground sm:items-center" @click.self="sheetItem = null">
                     <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-[2rem] border border-border bg-surface p-6 sm:rounded-xl" role="dialog" aria-modal="true" :aria-label="localized(sheetItem, 'name')">
                         <div class="flex items-start justify-between gap-3">
-                            <h3 class="text-2xl font-bold">{{ localized(sheetItem, 'name') }}</h3>
+                            <div>
+                                <h3 class="text-2xl font-bold">{{ localized(sheetItem, 'name') }}</h3>
+                                <p v-if="sheetItem.requires_pre_order" class="mt-1 w-fit rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning">{{ t('menu.pre_order_badge') }}</p>
+                            </div>
                             <button type="button" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border text-muted hover:text-foreground" :aria-label="t('common.close')" @click="sheetItem = null">
                                 <AppIcon name="xmark" size="15" />
                             </button>

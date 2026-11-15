@@ -8,6 +8,7 @@ use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\StockTransfer;
 use App\Models\User;
+use App\Support\BranchLimit;
 use Database\Seeders\RoleSeeder;
 
 beforeEach(function (): void {
@@ -120,4 +121,51 @@ it('hides stock transfers between other branches from a branch manager', functio
     $this->actingAs($manager, 'staff')
         ->post(route('admin.stock-transfers.receive', $transfer))
         ->assertNotFound();
+});
+
+it('stops new branches once the installation limit is reached, and says how to get more', function (): void {
+    config(['app.max_branches' => 1]);
+
+    $owner = User::factory()->role('owner')->create();
+    $before = Branch::query()->count();
+    $payload = ['name' => 'Extra Branch', 'code' => 'XB01', 'is_active' => true, 'vat_percent' => '5.00', 'service_charge_percent' => '0.00'];
+
+    // The limit counts branches that already exist, so with one or more in place nothing new can be added.
+    expect($before)->toBeGreaterThanOrEqual(1);
+
+    $this->actingAs($owner, 'staff')->post(route('admin.branches.store'), $payload)
+        ->assertSessionHasErrors(['branch' => __('branches.limit_message', ['max' => 1])]);
+
+    expect(Branch::query()->count())->toBe($before)
+        ->and(__('branches.limit_message', ['max' => 1]))->toContain('Datatech BD Ltd.');
+
+    // The branches page tells the screen where it stands.
+    $this->actingAs($owner, 'staff')->get(route('admin.branches.index'))->assertInertia(fn ($page) => $page
+        ->where('limit.max', 1)
+        ->where('limit.used', $before)
+        ->where('limit.reached', true));
+
+    // Raising the limit in .env lets one more in, and only up to the new number.
+    config(['app.max_branches' => $before + 1]);
+
+    $this->actingAs($owner, 'staff')->post(route('admin.branches.store'), $payload)->assertSessionHasNoErrors();
+    $this->actingAs($owner, 'staff')->post(route('admin.branches.store'), [...$payload, 'name' => 'Another', 'code' => 'XB02'])
+        ->assertSessionHasErrors('branch');
+
+    expect(Branch::query()->count())->toBe($before + 1);
+});
+
+it('applies the branch limit to the mobile API too, and never goes below one', function (): void {
+    config(['app.max_branches' => 0]);
+
+    expect(BranchLimit::max())->toBe(1);
+
+    config(['app.max_branches' => 1]);
+
+    $owner = User::factory()->role('owner')->create();
+    $token = $owner->createToken('staff', ['staff'])->plainTextToken;
+
+    $this->withToken($token)->postJson('/api/v1/branches', ['name' => 'Api Branch', 'code' => 'AB01'])
+        ->assertUnprocessable()
+        ->assertSee('Datatech BD Ltd.');
 });

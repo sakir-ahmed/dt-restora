@@ -18,14 +18,20 @@ class MenuCategory extends Model
     use FlushesPublicCache;
 
     protected $fillable = [
-        'branch_id', 'name', 'name_bn', 'sort_order', 'is_active', 'is_preorder_only',
+        'branch_id', 'name', 'name_bn', 'sort_order', 'is_active', 'pre_order_required', 'pre_order_lead_hours',
     ];
 
     protected $casts = [
         'sort_order' => 'integer',
         'is_active' => 'boolean',
-        'is_preorder_only' => 'boolean',
+        'pre_order_required' => 'boolean',
+        'pre_order_lead_hours' => 'integer',
     ];
+
+    protected static function booted(): void
+    {
+        static::saved(fn () => MenuItem::forgetCategoryRules());
+    }
 
     /** @return BelongsTo<Branch, $this> */
     public function branch(): BelongsTo
@@ -37,15 +43,6 @@ class MenuCategory extends Model
     public function items(): HasMany
     {
         return $this->hasMany(MenuItem::class);
-    }
-
-    /**
-     * Categories that can be ordered any time. The Saudi Arabian categories are pre-order only:
-     * they live in the menu book and stay out of the POS, the website menu and the table menu.
-     */
-    public function scopeRegular(Builder $builder): Builder
-    {
-        return $builder->where('is_preorder_only', false);
     }
 
     public function scopeActive(Builder $builder): Builder

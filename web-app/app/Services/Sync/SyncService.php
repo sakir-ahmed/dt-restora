@@ -31,6 +31,7 @@ use App\Models\SyncItem;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\PosSettings;
+use App\Support\Brand;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -205,6 +206,7 @@ class SyncService
             clientId: $clientId,
             terminalCode: (string) ($payload['terminal'] ?? 'T01'),
             invoiceNo: isset($payload['invoice_no']) ? (string) $payload['invoice_no'] : null,
+            overridePreorder: (bool) $user->can('orders.approve'),
         );
 
         if (! empty($payload['tendered'])) {
@@ -585,14 +587,14 @@ class SyncService
             'branch' => [
                 ...$branch->only(['id', 'name', 'name_bn', 'code', 'phone', 'address', 'vat_percent', 'vat_inclusive', 'service_charge_percent', 'receipt_footer']),
                 'pos_settings' => PosSettings::for($branch),
+                'receipt_logo' => Brand::logo(),
                 'tax_registration_no' => Setting::current()->tax_registration_no,
             ],
             'categories' => MenuCategory::query()
-                ->regular()
                 ->where('branch_id', $branch->id)
                 ->active()
                 ->ordered()
-                ->with(['items' => fn ($query) => $query->available()->regular()->with(['variants', 'addOns', 'media'])])
+                ->with(['items' => fn ($query) => $query->available()->with(['variants', 'addOns', 'media'])])
                 ->get(),
             'tables' => RestaurantTable::query()
                 ->where('branch_id', $branch->id)

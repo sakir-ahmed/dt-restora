@@ -6,6 +6,9 @@ return [
     'title' => 'Pre-order',
     'subtitle' => 'Open the menu book with a guest, take their pre-order, or share the book.',
     'tab_book' => 'Menu book',
+    'add' => 'Add pre-order',
+    'back_to_list' => 'Back to the list',
+    'list_subtitle' => 'Pre-orders waiting for their day, and past ones.',
     'tab_list' => 'Pre-orders',
     'sms_confirmed' => 'Pre-order :order at :branch: :items. Total Tk :total. :when Thank you!',
     'sms_when' => 'For :when.',
@@ -19,7 +22,7 @@ return [
     'status_cancelled_done' => 'Pre-order cancelled.',
 
     // List
-    'list_empty' => 'No pre-orders yet. Open the menu book and take the first one.',
+    'list_empty' => 'No pre-orders yet. Press Add pre-order to take the first one.',
     'status' => ['pending' => 'Waiting', 'completed' => 'Served', 'cancelled' => 'Cancelled'],
     'source_staff' => 'Taken by staff',
     'source_public' => 'From the shared link',

@@ -45,6 +45,8 @@ class ReceiptController extends Controller
                 'isReprint' => $isReprint,
                 'layout' => PosSettings::for($order->branch)['invoice_layout'],
                 'paper' => PosSettings::for($order->branch)['invoice_paper'],
+                'showLogo' => PosSettings::for($order->branch)['invoice_logo'],
+                'showFooter' => PosSettings::for($order->branch)['invoice_footer'],
             ])
             ->header('Content-Type', 'text/html; charset=UTF-8');
     }
@@ -60,6 +62,9 @@ class ReceiptController extends Controller
         $data = $request->validate([
             'layout' => ['required', Rule::in(ReceiptStyle::LAYOUTS)],
             'paper' => ['required', Rule::in(ReceiptStyle::PAPERS)],
+            'show_logo' => ['sometimes', 'boolean'],
+            'show_footer' => ['sometimes', 'boolean'],
+            'footer' => ['nullable', 'string', 'max:255'],
         ]);
 
         $user = $request->user('staff');
@@ -80,7 +85,7 @@ class ReceiptController extends Controller
         $order->setRelation('branch', $branch);
         $order->setRelation('table', null);
         $order->setRelation('waiter', $user);
-        $order->setRelation('payments', collect([new Payment(['method' => 'cash', 'amount' => '1200.00', 'change_due' => '75.00'])]));
+        $order->setRelation('payments', collect([new Payment(['method' => 'cash', 'amount' => '1125.00', 'tendered' => '1200.00', 'change_due' => '75.00'])]));
         $order->setRelation('items', collect([
             new OrderItem(['name' => 'Chicken Biryani', 'name_bn' => 'চিকেন বিরিয়ানি', 'unit_price' => '350.00', 'quantity' => 2, 'line_total' => '700.00', 'add_ons' => [['name' => 'Extra egg', 'qty' => 1, 'price' => '30.00']]]),
             new OrderItem(['name' => 'Beef Tehari', 'name_bn' => 'বিফ তেহারি', 'unit_price' => '320.00', 'quantity' => 1, 'line_total' => '320.00', 'add_ons' => null]),
@@ -93,6 +98,10 @@ class ReceiptController extends Controller
                 'isSample' => true,
                 'layout' => $data['layout'],
                 'paper' => $data['paper'],
+                'showLogo' => $request->boolean('show_logo'),
+                'showFooter' => $request->boolean('show_footer', true),
+                // The preview shows the text being typed, before it is saved.
+                'footerText' => $request->has('footer') ? (string) ($data['footer'] ?? '') : $branch->receipt_footer,
             ])
             ->header('Content-Type', 'text/html; charset=UTF-8');
     }

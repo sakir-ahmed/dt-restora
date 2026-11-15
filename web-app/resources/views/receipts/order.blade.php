@@ -14,6 +14,9 @@
 @endphp
 <body class="layout-{{ $layout }} paper-{{ $paper }}">
     <div class="brand center">
+    @if ($showLogo ?? false)
+        <div class="center"><img src="{{ \App\Support\Brand::logo() }}" alt="" style="max-width: 14mm; max-height: 14mm; height: auto; margin: 0 auto 4px; display: block;"></div>
+    @endif
     <div class="center bold large">{{ $order->branch->name }}</div>
     @if ($order->branch->name_bn)
         <div class="center">{{ $order->branch->name_bn }}</div>
@@ -134,7 +137,11 @@
                 <td>{{ \App\Models\PaymentMethod::findByCode((string) $payment->method)?->displayName(app()->getLocale()) ?? $payment->method }}</td>
                 <td class="right">{{ \Illuminate\Support\Number::format((float) $payment->amount, 2) }}</td>
             </tr>
-            @if ($payment->change_due !== null && (float) $payment->change_due > 0)
+            @if ($payment->tendered !== null && (float) $payment->tendered >= (float) $payment->amount && (float) $payment->change_due > 0)
+                <tr>
+                    <td>{{ __('receipt.received') }}</td>
+                    <td class="right">{{ \Illuminate\Support\Number::format((float) $payment->tendered, 2) }}</td>
+                </tr>
                 <tr>
                     <td>{{ __('receipt.change') }}</td>
                     <td class="right">{{ \Illuminate\Support\Number::format((float) $payment->change_due, 2) }}</td>
@@ -145,8 +152,8 @@
 
     <div class="hr"></div>
 
-    @if ($order->branch->receipt_footer)
-        <div class="center">{{ $order->branch->receipt_footer }}</div>
+    @if (($showFooter ?? true) && ($footerText ?? $order->branch->receipt_footer))
+        <div class="center">{{ $footerText ?? $order->branch->receipt_footer }}</div>
     @endif
     <div class="center">{{ __('receipt.thank_you') }}</div>
 
@@ -156,9 +163,5 @@
     @if ($isSample ?? false)
         <div class="center bold no-print">{{ __('receipt.sample') }}</div>
     @endif
-
-    <div class="center no-print" style="margin-top: 12px;">
-        <button onclick="window.print()" style="padding: 6px 16px; font-size: 12px;">{{ __('receipt.print') }}</button>
-    </div>
 </body>
 </html>

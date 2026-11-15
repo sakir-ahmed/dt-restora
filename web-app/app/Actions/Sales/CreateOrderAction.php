@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Sales;
 
 use App\Enums\OrderChannel;
+use App\Enums\OrderKind;
 use App\Enums\OrderStatus;
 use App\Enums\OrderType;
 use App\Exceptions\InsufficientStockException;
@@ -70,6 +71,9 @@ class CreateOrderAction
         ?string $invoiceNo = null,
         ?Order $revising = null,
         bool $revisingSettled = false,
+        OrderKind $kind = OrderKind::Regular,
+        ?int $reservationId = null,
+        bool $overridePreorder = false,
     ): Order {
         if ($clientId !== null && $revising === null) {
             $existing = Order::query()->where('client_id', $clientId)->first();
@@ -81,7 +85,7 @@ class CreateOrderAction
 
         $lines = collect($lines);
 
-        return DB::transaction(function () use ($branch, $type, $lines, $cashier, $waiter, $tableId, $customer, $discount, $note, $channel, $clientId, $shift, $terminalCode, $deliveryFee, $deliveryZoneId, $deliveryAddress, $scheduledFor, $couponCode, $invoiceNo, $revising, $revisingSettled): Order {
+        return DB::transaction(function () use ($branch, $type, $lines, $cashier, $waiter, $tableId, $customer, $discount, $note, $channel, $clientId, $shift, $terminalCode, $deliveryFee, $deliveryZoneId, $deliveryAddress, $scheduledFor, $couponCode, $invoiceNo, $revising, $revisingSettled, $kind, $reservationId, $overridePreorder): Order {
             $branch = Branch::query()->whereKey($branch->id)->lockForUpdate()->firstOrFail();
 
             $keptCoupon = false;
@@ -116,6 +120,10 @@ class CreateOrderAction
             $items = $lines->map(function (array $line) use ($branch): array {
                 return $this->resolveLine($branch, $line);
             });
+
+            if ($revising === null && $channel !== OrderChannel::Aggregator) {
+                $this->assertPreorderRules($items, $kind, $scheduledFor, $overridePreorder);
+            }
 
             $subtotal = round($items->sum(fn (array $item) => (float) $item['line_total']), 2);
             $adjustments = $this->lineAdjustments(
@@ -204,7 +212,7 @@ class CreateOrderAction
                 'note' => $note,
                 'delivery_zone_id' => $type === OrderType::Delivery ? $deliveryZoneId : null,
                 'delivery_address' => $type === OrderType::Delivery ? $deliveryAddress : null,
-                'scheduled_for' => $scheduledFor,
+                'scheduled_for' => $scheduledFor ?? $revising?->scheduled_for,
             ];
 
             if ($revising !== null) {
@@ -217,11 +225,14 @@ class CreateOrderAction
                         ? $this->invoices->claim($branch, $terminal, $invoiceNo)
                         : $this->invoices->next($branch, $terminal),
                     'channel' => $channel->value,
+                    'kind' => $kind->value,
+                    'reservation_id' => $reservationId,
                     'waiter_id' => $waiter?->id,
                     'cashier_id' => $cashier?->id,
                     'shift_id' => $shift?->id,
                     'status' => OrderStatus::Pending->value,
                     'kitchen_status' => OrderStatus::Pending->value,
+                    'approval_status' => $channel->needsApproval() ? Order::APPROVAL_AWAITING : null,
                     'client_id' => $clientId,
                     'tracking_token' => bin2hex(random_bytes(20)),
                 ]);
@@ -293,13 +304,6 @@ class CreateOrderAction
             ]);
         }
 
-        // Pre-order-only dishes are taken through the menu book, never as an ordinary order.
-        if ($item->isPreorderOnly()) {
-            throw ValidationException::withMessages([
-                'items' => __('orders.preorder_only_item', ['item' => $item->name]),
-            ]);
-        }
-
         $variant = null;
 
         if ($item->variants->isNotEmpty()) {
@@ -354,6 +358,8 @@ class CreateOrderAction
             'variant_id' => $variant?->id,
             'name' => $item->name,
             'name_bn' => $item->name_bn,
+            'requires_pre_order' => $item->requires_pre_order,
+            'pre_order_lead' => $item->pre_order_lead,
             'unit_price' => $unitPrice,
             'quantity' => $quantity,
             'add_ons' => $addOnsPayload ?: null,
@@ -361,6 +367,41 @@ class CreateOrderAction
             'line_total' => number_format($lineTotal, 2, '.', ''),
             'line_cost' => number_format(round($lineCost, 4), 4, '.', ''),
         ];
+    }
+
+    /**
+     * Dishes marked "pre-order only" cannot go on an ordinary order: the order must be a pre-order (or a
+     * reservation meal) for a later time, at least the dish's lead hours away. A manager may override it.
+     *
+     * @param  Collection<int, array<string, mixed>>  $items
+     */
+    private function assertPreorderRules(Collection $items, OrderKind $kind, ?\DateTimeInterface $scheduledFor, bool $overridePreorder): void
+    {
+        if ($overridePreorder) {
+            return;
+        }
+
+        $required = $items->filter(fn (array $item): bool => (bool) $item['requires_pre_order']);
+
+        if ($required->isEmpty() && ! $kind->isScheduled()) {
+            return;
+        }
+
+        $names = $required->pluck('name')->unique()->implode(', ');
+
+        if ($required->isNotEmpty() && ! $kind->isScheduled()) {
+            throw ValidationException::withMessages(['items' => __('orders.preorder_required', ['items' => $names])]);
+        }
+
+        if ($kind->isScheduled() && $scheduledFor === null) {
+            throw ValidationException::withMessages(['scheduled_for' => __('orders.preorder_needs_time')]);
+        }
+
+        $lead = (int) $required->max('pre_order_lead');
+
+        if ($kind === OrderKind::Preorder && $scheduledFor !== null && $scheduledFor < now()->addHours($lead)) {
+            throw ValidationException::withMessages(['scheduled_for' => __('orders.preorder_lead', ['hours' => $lead, 'items' => $names])]);
+        }
     }
 
     private function recipeCost(Branch $branch, MenuItem $item): float

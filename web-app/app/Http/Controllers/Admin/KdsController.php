@@ -8,6 +8,7 @@ use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Order;
+use App\Services\PosSettings;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -23,10 +24,15 @@ class KdsController extends Controller
         $orders = Order::query()
             ->where('branch_id', $branch->id)
             ->where('status', '!=', OrderStatus::Void->value)
+            // Guest orders wait for a manager's go-ahead, and pre-orders for their time, before they reach the kitchen.
+            ->visibleToKitchen(PosSettings::preorderReleaseMinutes($branch))
             ->whereIn('kitchen_status', [OrderStatus::Pending->value, OrderStatus::Preparing->value, OrderStatus::Ready->value])
-            ->with(['items:id,order_id,name,name_bn,quantity,add_ons', 'table:id,name', 'waiter:id,name', 'aggregatorChannel:id,key,name'])
-            ->oldest()
+            ->with(['items:id,order_id,name,name_bn,quantity,add_ons', 'table:id,name', 'waiter:id,name', 'preparer:id,name', 'aggregatorChannel:id,key,name'])
+            // The newest tickets only, so a huge backlog of old orders can never run the page out of memory.
+            ->latest()
+            ->limit(200)
             ->get()
+            ->reverse()
             // The kitchen board goes by the kitchen step, whether or not the bill is paid yet.
             ->map(fn (Order $order): array => ['status' => $order->kitchen_status?->value] + $order->toArray())
             ->values();

@@ -68,6 +68,11 @@ const inputClass = 'h-7 w-full rounded-md border border-border bg-surface px-2 t
     </section>
 
     <section>
+        <SwitchField v-model="pos.invoice_share_image" :label="t('settings.invoice_share_image')" />
+        <p class="mt-1 text-xs text-muted">{{ t('settings.invoice_share_image_helper') }}</p>
+    </section>
+
+    <section>
         <SwitchField v-model="pos.order_edit_enabled" :label="t('settings.order_edit_enabled')" />
         <p class="mt-1 text-xs text-muted">{{ t('settings.order_edit_enabled_helper') }}</p>
     </section>

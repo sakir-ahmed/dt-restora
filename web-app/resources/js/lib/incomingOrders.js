@@ -31,7 +31,7 @@ export function useIncomingOrders(branchId, { pollMs = 15000 } = {}) {
 
         seen.add(key);
         playOrderChime(order);
-        notify.info(t('orders.incoming_order', {
+        notify.info(t(order.awaiting || order.approval_status === 'awaiting' ? 'orders.incoming_order_pending' : 'orders.incoming_order', {
             source: order.aggregator ?? order.aggregator_channel?.name ?? (order.channel === 'qr'
                 ? `${t('orders.channel_qr')}${(order.table?.name ?? order.table) ? ` ${order.table?.name ?? order.table}` : ''}`
                 : t(order.channel === 'website' ? 'orders.channel_website' : 'orders.channel_pos')),

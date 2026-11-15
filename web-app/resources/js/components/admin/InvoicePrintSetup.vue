@@ -20,14 +20,23 @@ const props = defineProps({
 const form = useForm({
     layout: props.invoicePrint.layout,
     paper: props.invoicePrint.paper,
+    show_logo: props.invoicePrint.show_logo,
+    show_footer: props.invoicePrint.show_footer,
+    footer: props.invoicePrint.footer ?? '',
 });
 
 // On-screen width of each paper at 96 dpi, so the preview shows the real proportions.
 const PAPER_WIDTH = { '58mm': 220, '80mm': 302, a5: 560, a4: 794 };
 
-const previewUrl = computed(() => route('admin.settings.invoice-preview', { layout: form.layout, paper: form.paper }));
+const previewUrl = computed(() => route('admin.settings.invoice-preview', {
+    layout: form.layout,
+    paper: form.paper,
+    show_logo: form.show_logo ? 1 : 0,
+    show_footer: form.show_footer ? 1 : 0,
+    footer: form.footer ?? '',
+}));
 const previewWidth = computed(() => PAPER_WIDTH[form.paper] ?? 302);
-const dirty = computed(() => form.layout !== props.invoicePrint.layout || form.paper !== props.invoicePrint.paper);
+const dirty = computed(() => form.isDirty);
 
 function save() {
     form.put(route('admin.settings.invoice-print'), {
@@ -76,6 +85,33 @@ const cardClass = (active) => [
                     </div>
                 </template>
             </FormField>
+
+            <div class="space-y-2">
+                <label class="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                    <input v-model="form.show_logo" type="checkbox" class="accent-[var(--color-primary)]">
+                    {{ t('settings.invoice_show_logo') }}
+                </label>
+                <p class="text-xs text-muted">{{ t('settings.invoice_show_logo_helper') }}</p>
+            </div>
+
+            <div class="space-y-2">
+                <label class="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                    <input v-model="form.show_footer" type="checkbox" class="accent-[var(--color-primary)]">
+                    {{ t('settings.invoice_show_footer') }}
+                </label>
+                <FormField :label="t('settings.receipt_footer')" :error="form.errors.footer">
+                    <template #default>
+                        <textarea
+                            v-model="form.footer"
+                            rows="2"
+                            maxlength="255"
+                            :disabled="! form.show_footer"
+                            :placeholder="t('settings.invoice_footer_placeholder')"
+                            class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[13px] text-foreground outline-none focus:border-accent disabled:opacity-50"
+                        />
+                    </template>
+                </FormField>
+            </div>
 
             <div class="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
                 <button type="button" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] text-foreground hover:bg-background" @click="testPrint">

@@ -16,6 +16,7 @@ import { cacheBootstrap, findOutbox, getCachedMenu, getDataVersion, getDeviceId,
 import { useIncomingOrders } from '@/lib/incomingOrders';
 import { notify } from '@/lib/notify';
 import { parseInvoiceSequence } from '@/lib/invoice';
+import { openInvoiceImage } from '@/lib/invoiceImage';
 import { printHtml, printSequence, printUrl } from '@/lib/print';
 import { playSound } from '@/lib/sounds';
 import { localKitchenTokenHtml, localReceiptHtml } from '@/lib/receipt';
@@ -611,6 +612,8 @@ const posActions = computed(() => {
     return Object.fromEntries(Object.entries(DEFAULT_ACTIONS).map(([key, defaults]) => [key, { ...defaults, ...(configured[key] ?? {}) }]));
 });
 const reviewBeforeSave = computed(() => Boolean(branch.value.pos_settings?.review_before_save));
+// Whether this branch lets staff share the invoice as a picture (Settings, POS and billing).
+const shareImageEnabled = computed(() => branch.value.pos_settings?.invoice_share_image === true);
 const orderEditEnabled = computed(() => branch.value.pos_settings?.order_edit_enabled !== false);
 const orderDeleteEnabled = computed(() => branch.value.pos_settings?.order_delete_enabled !== false);
 // Bill review: the modal shows the cart and amounts before a new invoice is saved
@@ -640,8 +643,10 @@ const primarySpanClass = computed(() => {
 
     return { 1: 'col-span-6', 2: 'col-span-3', 3: 'col-span-2' }[visible] ?? 'col-span-6';
 });
-// Due, Print and New order share the second row; the Due button can be switched off per branch.
-const secondaryRowSpanClass = computed(() => (posActions.value.due_sale.enabled ? 'col-span-2' : 'col-span-3'));
+// Due, Print, Share as image and New order fill the rows below the main buttons. Due and the image button can be
+// switched off per branch, so the width of each follows how many show: 2 or 4 make halves, 3 make thirds.
+const secondaryButtonCount = computed(() => 2 + (posActions.value.due_sale.enabled ? 1 : 0) + (shareImageEnabled.value ? 1 : 0));
+const secondaryRowSpanClass = computed(() => (secondaryButtonCount.value === 3 ? 'col-span-2' : 'col-span-3'));
 const mobileTab = ref('menu');
 
 function findByMenuNumber(number) {
@@ -1613,6 +1618,8 @@ function localInvoiceHtml(order) {
         vat: vatAmount.value,
         total: order.total ?? total.value,
         change: changeShown.value,
+        // The cash handed over is the total plus the change, so the slip shows both.
+        received: changeShown.value > 0 ? Number(order.total ?? total.value) + changeShown.value : 0,
     });
 }
 
@@ -1805,6 +1812,36 @@ async function startShift() {
             shiftDialogOpen.value = false;
             notify.success(t('orders.shift_opened'));
         },
+    });
+}
+
+
+// The invoice as a picture to copy or share, for the order just sent or paid. The same page that would print.
+function shareCustomerImage() {
+    const order = latestOrder.value;
+    const orderId = lastPayment.value?.order_id ?? order?.id;
+
+    if (! orderId && order?.invoice_no) {
+        openInvoiceImage({ html: localInvoiceHtml(order), invoiceNo: order.invoice_no, total: order.total ?? total.value, mobile: customerMobile.value, customerName: customerName.value });
+
+        return;
+    }
+
+    if (! orderId) {
+        notify.info(t('orders.send_before_print'));
+
+        return;
+    }
+
+    // An order sent with a customer mobile already has that customer; otherwise the number typed in the window is kept.
+    openInvoiceImage({
+        url: route('admin.orders.receipt', orderId),
+        invoiceNo: order?.invoice_no ?? lastPayment.value?.invoice_no ?? '',
+        orderId,
+        total: order?.total ?? null,
+        mobile: customerMobile.value,
+        customerName: customerName.value,
+        hasCustomer: Boolean(customerMobile.value),
     });
 }
 
@@ -2657,6 +2694,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                     </span>
                     <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span class="line-clamp-2 text-sm font-medium text-foreground">{{ localized(item, 'name') }}</span>
+                        <span v-if="item.requires_pre_order" class="w-fit rounded bg-warning/15 px-1 text-[10px] font-semibold uppercase tracking-wide text-warning">{{ t('menu.pre_order_badge') }}</span>
                         <span class="flex items-center justify-between gap-1">
                             <span class="inline-flex items-baseline gap-1 text-sm font-semibold tabular-nums text-foreground">
                                 <span v-if="itemHasVariants(item)" class="text-[11px] font-medium uppercase tracking-wide text-muted">{{ t('orders.from_price') }}</span>
@@ -3020,7 +3058,8 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         type="button"
                         :disabled="! canQuickDue"
                         :title="t('orders.due_sale_title')"
-                        class="col-span-2 flex h-7 items-center justify-center gap-1 rounded-md border border-warning/50 bg-warning/10 text-xs font-semibold text-foreground hover:bg-warning/25 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-muted disabled:opacity-50"
+                        :class="secondaryRowSpanClass"
+                        class="flex h-7 items-center justify-center gap-1 rounded-md border border-warning/50 bg-warning/10 text-xs font-semibold text-foreground hover:bg-warning/25 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-muted disabled:opacity-50"
                         @click="openDueDialog"
                     >
                         <AppIcon name="hand-holding-dollar" size="11" />
@@ -3035,6 +3074,17 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                     >
                         <AppIcon name="print" size="11" />
                         {{ t('orders.print_short') }}
+                    </button>
+                    <button
+                        v-if="shareImageEnabled"
+                        type="button"
+                        :disabled="! lastPayment && ! latestOrder"
+                        :class="secondaryRowSpanClass"
+                        class="flex h-7 items-center justify-center gap-1 rounded-md border border-border bg-background text-xs font-medium text-foreground hover:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        @click="shareCustomerImage"
+                    >
+                        <AppIcon name="image" size="11" />
+                        {{ t('orders.share_image') }}
                     </button>
                     <button
                         type="button"
@@ -3059,7 +3109,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                     :aria-label="t('orders.choose_size')"
                     class="grid max-h-[min(32rem,calc(100vh-1.5rem))] w-full max-w-xl overflow-hidden rounded-xl border border-border bg-surface sm:grid-cols-[11rem_minmax(0,1fr)]"
                 >
-                    <div class="relative h-36 overflow-hidden bg-[#f6efe4] dark:bg-background sm:h-auto sm:min-h-full">
+                    <div class="relative h-36 overflow-hidden bg-background sm:h-auto sm:min-h-full">
                         <img
                             v-if="itemPhotoSrc(variantPicker)"
                             :src="itemPhotoSrc(variantPicker)"
@@ -3128,7 +3178,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                     :aria-label="t('orders.customize')"
                     class="grid max-h-[min(36rem,calc(100vh-1.5rem))] w-full max-w-xl overflow-hidden rounded-xl border border-border bg-surface sm:grid-cols-[11rem_minmax(0,1fr)]"
                 >
-                    <div class="relative h-24 overflow-hidden bg-[#f6efe4] dark:bg-background sm:h-auto sm:min-h-full">
+                    <div class="relative h-24 overflow-hidden bg-background sm:h-auto sm:min-h-full">
                         <img
                             v-if="itemPhotoSrc(optionsDialog.item)"
                             :src="itemPhotoSrc(optionsDialog.item)"
@@ -3367,8 +3417,8 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
 
         <!-- Table picker: free tables to select, busy tables to reopen their order -->
         <Teleport to="body">
-            <div v-if="tablePickerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="tablePickerOpen = false" @keydown.esc="tablePickerOpen = false">
-                <div class="flex max-h-[88vh] w-full max-w-xl flex-col rounded-xl border border-border bg-surface" role="dialog" aria-modal="true" :aria-label="t('orders.select_table')">
+            <div v-if="tablePickerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4" @click.self="tablePickerOpen = false" @keydown.esc="tablePickerOpen = false">
+                <div class="flex h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl" role="dialog" aria-modal="true" :aria-label="t('orders.select_table')">
                     <div class="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
                         <div class="min-w-0">
                             <h2 class="text-base font-semibold text-foreground">{{ t('orders.select_table') }}</h2>
@@ -3385,7 +3435,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-accent" />{{ t('orders.table_selected') }}</span>
                     </div>
 
-                    <div class="thin-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+                    <div class="thin-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto p-4 sm:p-5">
                         <button
                             type="button"
                             :disabled="orderType !== 'dine_in'"
@@ -3398,8 +3448,8 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         </button>
 
                         <section v-for="group in tablesByArea" :key="group.area || 'tables'">
-                            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">{{ group.area || t('orders.table_short') }}</h3>
-                            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                            <h3 class="mb-3 border-b border-border pb-1 text-sm font-semibold uppercase tracking-wide text-muted">{{ group.area || t('orders.table_short') }}</h3>
+                            <div class="grid grid-cols-2 gap-x-4 gap-y-7 pb-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                                 <PosTableTile v-for="table in group.tables" :key="table.id" :seats="table.seats" :tone="table.id === tableId ? 'selected' : openOrderByTable.get(table.id) ? 'busy' : table.status === 'occupied' ? 'blocked' : 'free'">
                                     <button
                                         type="button"

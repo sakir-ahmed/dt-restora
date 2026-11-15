@@ -25,6 +25,7 @@ use App\Http\Controllers\Admin\LoyaltyController;
 use App\Http\Controllers\Admin\LoyaltyRedemptionController;
 use App\Http\Controllers\Admin\MediaController as AdminMediaController;
 use App\Http\Controllers\Admin\MenuController as AdminMenuController;
+use App\Http\Controllers\Admin\NotificationController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\PaymentController;
 use App\Http\Controllers\Admin\PaymentMethodController;
@@ -38,6 +39,7 @@ use App\Http\Controllers\Admin\RecipeController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\ReservationController;
 use App\Http\Controllers\Admin\RestaurantTableController;
+use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\ShiftController;
 use App\Http\Controllers\Admin\SmsController;
@@ -193,6 +195,7 @@ Route::prefix('admin')
 
         Route::get('profile', [ProfileController::class, 'show'])->name('profile.show');
         Route::post('profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::post('notifications/read', [NotificationController::class, 'markAllRead'])->name('notifications.read');
         Route::put('profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
 
         Route::post('branch-switch', BranchSwitchController::class)->name('branch-switch');
@@ -256,6 +259,12 @@ Route::prefix('admin')
         Route::post('staff/employees', [EmployeeController::class, 'store'])->name('staff.employees.store')->middleware('permission:employees.manage');
         Route::put('staff/employees/{employee}', [EmployeeController::class, 'update'])->name('staff.employees.update')->middleware('permission:employees.manage');
         Route::delete('staff/employees/{employee}', [EmployeeController::class, 'destroy'])->name('staff.employees.destroy')->middleware('permission:employees.manage');
+        Route::get('roles', [RoleController::class, 'index'])->name('roles.index')->middleware('permission:roles.manage');
+        Route::post('roles', [RoleController::class, 'store'])->name('roles.store')->middleware('permission:roles.manage');
+        Route::post('roles/reset-all', [RoleController::class, 'resetAll'])->name('roles.reset-all')->middleware('permission:roles.manage');
+        Route::put('roles/{role}', [RoleController::class, 'update'])->name('roles.update')->middleware('permission:roles.manage');
+        Route::delete('roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy')->middleware('permission:roles.manage');
+        Route::post('roles/{role}/reset', [RoleController::class, 'reset'])->name('roles.reset')->middleware('permission:roles.manage');
         Route::post('staff/users', [UserController::class, 'store'])->name('staff.users.store')->middleware('permission:staff.manage');
         Route::put('staff/users/{user}', [UserController::class, 'update'])->name('staff.users.update')->middleware('permission:staff.manage');
         Route::delete('staff/users/{user}', [UserController::class, 'destroy'])->name('staff.users.destroy')->middleware('permission:staff.manage');
@@ -328,6 +337,7 @@ Route::prefix('admin')
         Route::get('orders/incoming', [OrderController::class, 'incoming'])->name('orders.incoming')->middleware('permission:orders.create');
         Route::post('orders', [OrderController::class, 'store'])->name('orders.store')->middleware('permission:orders.create');
         Route::put('orders/{order}', [OrderController::class, 'update'])->name('orders.update')->middleware('permission:orders.create');
+        Route::post('orders/{order}/customer', [OrderController::class, 'attachCustomer'])->name('orders.customer')->middleware('permission:orders.create');
         Route::post('orders/{order}/pay', [OrderController::class, 'pay'])->name('orders.pay')->middleware('permission:orders.create');
         Route::post('orders/{order}/due', [OrderController::class, 'due'])->name('orders.due')->middleware('permission:orders.create');
         Route::get('dues', [DueController::class, 'index'])->name('dues.index')->middleware('permission:orders.view');
@@ -339,6 +349,8 @@ Route::prefix('admin')
         Route::post('orders/{order}/manual-payment', [PaymentController::class, 'recordManual'])->name('payments.manual')->middleware('permission:orders.create');
         Route::post('payments/{payment}/approve', [PaymentController::class, 'approveManual'])->name('payments.approve')->middleware('permission:payments.manage');
         Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.status')->middleware('permission:orders.create');
+        Route::post('orders/{order}/approve', [OrderController::class, 'approve'])->name('orders.approve')->middleware('permission:orders.approve');
+        Route::post('orders/{order}/release', [OrderController::class, 'release'])->name('orders.release')->middleware('permission:orders.approve');
         Route::post('orders/{order}/delete', [OrderController::class, 'deleteOrder'])->name('orders.delete')->middleware('permission:orders.void');
         Route::post('orders/{order}/void-request', [OrderController::class, 'requestVoid'])->name('orders.void-request')->middleware('permission:orders.create');
         Route::post('orders/{order}/approve-void', [OrderController::class, 'approveVoid'])->name('orders.approve-void')->middleware('permission:orders.void');

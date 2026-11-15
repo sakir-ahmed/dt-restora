@@ -17,6 +17,7 @@ use App\Models\MenuItem;
 use App\Models\User;
 use App\Services\LetterheadPdf;
 use App\Services\PosSettings;
+use App\Support\BranchLimit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -455,6 +456,8 @@ class ContentApiController extends Controller
     public function storeBranch(Request $request): JsonResponse
     {
         $this->permit($this->staffUser($request), 'branches.manage');
+
+        BranchLimit::assertCanAdd();
 
         $branch = Branch::query()->create($this->branchAttributes($request));
 

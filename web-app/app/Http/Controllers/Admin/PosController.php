@@ -23,6 +23,7 @@ use App\Models\Shift;
 use App\Models\VoidRequest;
 use App\Services\PosSettings;
 use App\Services\Sms\SmsFeatures;
+use App\Support\Brand;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -44,11 +45,10 @@ class PosController extends Controller
         $user = $request->user('staff');
 
         $categories = MenuCategory::query()
-            ->regular()
             ->where('branch_id', $branch->id)
             ->active()
             ->ordered()
-            ->with(['items' => fn ($query) => $query->available()->regular()->with(['variants', 'addOns', 'media'])->orderBy('sort_order')])
+            ->with(['items' => fn ($query) => $query->available()->with(['variants', 'addOns', 'media'])->orderBy('sort_order')])
             ->get();
 
         $openShift = Shift::query()
@@ -81,6 +81,7 @@ class PosController extends Controller
             'branch' => [
                 ...$branch->only(['id', 'name', 'name_bn', 'code', 'phone', 'address', 'vat_percent', 'vat_inclusive', 'service_charge_percent', 'receipt_footer']),
                 'pos_settings' => PosSettings::for($branch),
+                'receipt_logo' => Brand::logo(),
                 'tax_registration_no' => Setting::current()->tax_registration_no,
             ],
             'openShift' => $openShift,

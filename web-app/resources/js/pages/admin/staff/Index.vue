@@ -54,7 +54,15 @@ const userColumns = computed(() => [
     { key: 'is_active', label: t('common.status'), minWidth: '104px' },
 ]);
 
-const userRows = computed(() => props.users.map((user) => ({ ...user, roles_display: user.roles.join(', ') })));
+// Roles that are not in the picker (super-admin) still read well in the table.
+function standardRoleName(name) {
+    const key = `permissions.roles.${name}.name`;
+
+    return t(key) === key ? name : t(key);
+}
+
+const roleLabels = computed(() => Object.fromEntries(props.roles.map((role) => [role.name, role.label])));
+const userRows = computed(() => props.users.map((user) => ({ ...user, roles_display: user.roles.map((name) => roleLabels.value[name] ?? standardRoleName(name)).join(', ') })));
 
 // Employee dialog
 const employeeOpen = ref(false);
@@ -427,7 +435,7 @@ async function deactivateUser(user) {
                     <FormField :label="t('staff.roles')" required :error="userForm.errors.roles">
                         <template #default="{ id }">
                             <select :id="id" v-model="userForm.roles[0]" class="h-7 w-full rounded-md border bg-surface px-2 text-[13px] text-foreground outline-none focus:ring-2 focus:ring-accent/40" :class="userForm.errors.roles ? 'border-danger' : 'border-border focus:border-accent'">
-                                <option v-for="role in roles" :key="role" :value="role">{{ role }}</option>
+                                <option v-for="role in roles" :key="role.name" :value="role.name">{{ role.label }}</option>
                             </select>
                         </template>
                     </FormField>

@@ -19,6 +19,7 @@ return [
     'vat' => 'ভ্যাট',
     'rounding' => 'ভগ্নাংশ',
     'grand_total' => 'মোট',
+    'received' => 'গ্রহণ করা নগদ',
     'change' => 'ফেরত',
     'kitchen_token' => 'কিচেন টোকেন',
     'thank_you' => 'ধন্যবাদ। আবার আসবেন।',

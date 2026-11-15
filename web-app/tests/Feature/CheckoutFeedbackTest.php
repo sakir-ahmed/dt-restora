@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Enums\OrderKind;
+use App\Enums\OrderType;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\DeliveryZone;
@@ -139,4 +141,42 @@ it('ships every translation the checkout page prints', function (): void {
     foreach (['receipt.subtotal', 'receipt.vat', 'receipt.grand_total', 'receipt.discount', 'receipt.service_charge', 'orders.type.delivery', 'payment_method.bkash', 'coupons.code', 'staff.mobile', 'common.apply'] as $key) {
         expect($translations)->toHaveKey($key);
     }
+});
+
+it('ships the pre-order wording to the checkout and menu pages', function (): void {
+    $checkout = $this->get('/checkout')->viewData('page')['props']['translations'];
+
+    foreach (['web.when_title', 'web.order_for_later', 'web.at_restaurant', 'web.party_size', 'orders.preorder_needs_time', 'orders.preorder_lead', 'orders.kind.preorder'] as $key) {
+        expect($checkout)->toHaveKey($key);
+    }
+
+    expect($this->get('/menu/BR01')->viewData('page')['props']['translations'])->toHaveKey('menu.pre_order_badge');
+});
+
+it('places a guest pre-order to eat at the restaurant as a pending order for a manager', function (): void {
+    Event::fake();
+    Queue::fake();
+
+    $customer = Customer::query()->create(['name' => 'Ayesha', 'mobile' => '8801711000099']);
+    $payload = [
+        'order_type' => 'dine_in',
+        'party_size' => 4,
+        'payment_method' => 'cod',
+        'items' => [['menu_item_id' => $this->item->id, 'quantity' => 2]],
+    ];
+
+    // Eating at the restaurant needs a date and time.
+    $this->actingAs($customer, 'customer')->post('/checkout', $payload)->assertSessionHasErrors('order_type');
+
+    $this->actingAs($customer, 'customer')->post('/checkout', $payload + ['scheduled_for' => now()->addDays(2)->format('Y-m-d H:i:s')])
+        ->assertSessionHasNoErrors();
+
+    $order = Order::query()->firstOrFail();
+
+    expect($order->kind)->toBe(OrderKind::Preorder)
+        ->and($order->order_type)->toBe(OrderType::DineIn)
+        ->and($order->approval_status)->toBe('awaiting')
+        ->and($order->restaurant_table_id)->toBeNull()
+        ->and($order->note)->toContain('4')
+        ->and($order->scheduled_for)->not->toBeNull();
 });

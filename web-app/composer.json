@@ -40,7 +40,7 @@
             "Database\\Seeders\\": "database/seeders/"
         },
         "classmap": [
-            "database/seeders/production-data"
+            "database/seeders/production"
         ],
         "files": [
             "app/helpers.php"

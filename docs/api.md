@@ -71,6 +71,8 @@ All branch routes are prefixed `/api/v1/branches/{branch}`.
 | POST   | `/orders`                          | Create order (table, waiter, items). Needs `Idempotency-Key`. Broadcasts `OrderCreated` to KDS. |
 | GET    | `/orders/{order}`                  | Order detail                                                                                    |
 | PATCH  | `/orders/{order}/status`           | `pending → preparing → ready → served` (KDS uses this)                                          |
+| POST   | `/orders/{order}/approve`          | `orders.approve`: a guest order (table QR, website, online menu) with `approval_status` `awaiting` is approved and reaches the kitchen. Otherwise 422. |
+| POST   | `/orders/{order}/release`          | `orders.approve`: hand an approved pre-order or reservation meal (`kind` not `regular`) to the kitchen before its time. Otherwise 422. |
 | POST   | `/orders/{order}/payments`         | One or many payment lines. Needs `Idempotency-Key`.                                             |
 | POST   | `/orders/{order}/void-requests`    | Cashier requests a void with reason                                                             |
 | POST   | `/void-requests/{request}/approve` | Manager approval                                                                                |
@@ -146,7 +148,7 @@ Deletes are `POST .../delete` with `reason_code` (`entry_mistake`, `duplicate_en
 | ------ | ---- | ---------- | ----- |
 | GET | `/api/v1/customers/{customer}` | `customers.view` | Points, order count and the latest 30 orders |
 | DELETE | `/api/v1/coupons/{coupon}` | `coupons.manage` | Switches the coupon off; the list carries `redemptions_count` |
-| GET | `/staff` | `staff.view` | `employees`, `users` with roles, `roles`, `pay_bases` |
+| GET | `/staff` | `staff.view` | `employees`, `users` with roles, `roles` (every role name, including custom ones; never `super-admin`), `pay_bases` |
 | PUT / DELETE | `/employees/{employee}` | `employees.manage` | Update (pay basis, rate or salary, device id) or switch off; `POST /employees/{employee}/photo` uploads or removes the photo |
 | POST / PUT / DELETE | `/users[/{account}]` | `staff.manage` | System sign-in accounts with `roles`; DELETE switches off (not yourself) |
 | GET / POST | `/attendance` | `attendance.manage` | Day board (`?date=`) with devices; POST records a day by hand (present with clock in and out, or absent) |
@@ -173,7 +175,7 @@ Deletes are `POST .../delete` with `reason_code` (`entry_mistake`, `duplicate_en
 
 The sync `order_edit` item now also revises a paid order in place (payments kept, books fixed), as the web panel does; a new total below what was received is returned as a conflict.
 
-`GET /api/v1/dashboard` also returns `dues` (same shape as the web dashboard: `outstanding`, `open_count`, `top`) and `preorders_waiting`. Order payloads carry `is_due` and `customer_name`.
+`GET /api/v1/dashboard` also returns `dues` (same shape as the web dashboard: `outstanding`, `open_count`, `top`) and `preorders_waiting`. Order payloads carry `is_due`, `customer_name` and `approval_status` (`awaiting` for a guest order from the table QR, website or online menu that a manager has not yet sent to the kitchen; `approved` or null otherwise). They also carry `kind` (`regular`, `preorder` or `reservation`), `scheduled_for` (when the guest wants the food) and `released_at` (when the kitchen was handed a pre-order). Changing the kitchen status of an order that is awaiting approval, or a pre-order not yet due, returns 422. Menu items and categories carry `pre_order_required` and `pre_order_lead_hours` (an item with `pre_order_required` null follows its category; menu item responses also show the effective `requires_pre_order` and `pre_order_lead`). A pre-order only dish needs an order with a later `scheduled_for` (at least its lead hours away): the customer `POST /orders` accepts `scheduled_for`, and an ordinary order with such a dish returns 422 for guests and cashiers (a manager may still sell it at the POS).
 
 ### Inventory & Recipes
 

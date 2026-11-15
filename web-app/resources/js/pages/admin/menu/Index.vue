@@ -11,6 +11,7 @@ import MediaManager from '@/components/admin/MediaManager.vue';
 import MenuQr from '@/components/admin/MenuQr.vue';
 import SlideOver from '@/components/ui-kit/SlideOver.vue';
 import StatusBadge from '@/components/ui-kit/StatusBadge.vue';
+import NoticeHoursField from '@/components/admin/NoticeHoursField.vue';
 import SwitchField from '@/components/ui-kit/SwitchField.vue';
 import { useConfirm } from '@/components/ui-kit/useConfirm.js';
 import { t } from '@/lib/i18n';
@@ -52,7 +53,7 @@ const filteredCategories = computed(() => {
 // Category dialog
 const categoryOpen = ref(false);
 const editingCategoryId = ref(null);
-const categoryForm = useForm({ name: '', name_bn: '', sort_order: 0, is_active: true, is_preorder_only: false });
+const categoryForm = useForm({ name: '', name_bn: '', sort_order: 0, is_active: true, pre_order_required: false, pre_order_lead_hours: '' });
 
 function openCategory(category = null) {
     editingCategoryId.value = category?.id ?? null;
@@ -61,7 +62,8 @@ function openCategory(category = null) {
         name_bn: category?.name_bn ?? '',
         sort_order: category?.sort_order ?? 0,
         is_active: category?.is_active ?? true,
-        is_preorder_only: category?.is_preorder_only ?? false,
+        pre_order_required: category?.pre_order_required ?? false,
+        pre_order_lead_hours: category?.pre_order_lead_hours ?? '',
     }).reset();
     categoryOpen.value = true;
 }
@@ -110,8 +112,9 @@ const editingItemId = ref(null);
 const emptyItem = () => ({
     menu_category_id: '',
     name: '', name_bn: '', description: '', description_bn: '',
-    barcode: '', base_price: '0.00', is_available: true, is_vegetarian: false, is_preorder_only: false,
+    barcode: '', base_price: '0.00', is_available: true, is_vegetarian: false,
     sort_order: 0,
+    pre_order_required: false, pre_order_lead_hours: '',
     variants: [],
     addons: [],
 });
@@ -145,16 +148,31 @@ function openItem(item = null, categoryId = null) {
             base_price: item.base_price,
             is_available: item.is_available,
             is_vegetarian: item.is_vegetarian,
-            is_preorder_only: item.is_preorder_only ?? false,
             sort_order: item.sort_order,
+            pre_order_required: item.pre_order_required === true,
+            pre_order_lead_hours: item.pre_order_lead_hours ?? '',
             variants: (item.variants ?? []).map((variant) => ({ ...variant })),
             addons: (item.add_ons ?? []).map((addOn) => ({ ...addOn })),
         }
         : { ...emptyItem(), menu_category_id: categoryId ?? '' };
 
     itemForm.defaults(defaults).reset();
+    // Untouched, a dish simply follows its category; once the switch is flipped it keeps its own answer.
+    preOrderTouched.value = item?.pre_order_required !== null && item?.pre_order_required !== undefined;
     itemOpen.value = true;
 }
+
+const preOrderTouched = ref(false);
+const categoryNeedsPreOrder = computed(() => Boolean(props.categories.find((category) => String(category.id) === String(itemForm.menu_category_id))?.pre_order_required));
+
+// The switch shows what will happen to the dish: its own answer once chosen, else its category's.
+const itemNeedsPreOrder = computed({
+    get: () => (preOrderTouched.value ? itemForm.pre_order_required : categoryNeedsPreOrder.value),
+    set: (value) => {
+        preOrderTouched.value = true;
+        itemForm.pre_order_required = value;
+    },
+});
 
 function saveItem() {
     const options = {
@@ -163,6 +181,14 @@ function saveItem() {
             notify.success(editingItemId.value === null ? t('menu.item_created') : t('menu.item_updated'));
         },
     };
+
+    // Only an answer that differs from the category's is stored; otherwise the dish keeps following it.
+    itemForm.transform((data) => ({
+        ...data,
+        pre_order_required: preOrderTouched.value && data.pre_order_required !== categoryNeedsPreOrder.value ? data.pre_order_required : null,
+        // Notice hours only mean something while the dish needs a pre-order.
+        pre_order_lead_hours: itemNeedsPreOrder.value ? data.pre_order_lead_hours : null,
+    }));
 
     if (editingItemId.value === null) {
         itemForm.post(route('admin.menu.items.store'), options);
@@ -369,8 +395,12 @@ function reload() {
                 </FormField>
 
                 <SwitchField v-model="categoryForm.is_active" :label="t('branches.is_active')" />
-                <SwitchField v-model="categoryForm.is_preorder_only" :label="t('menu.is_preorder_only')" />
-                <p class="text-xs text-muted">{{ t('menu.is_preorder_only_helper') }}</p>
+
+                <div class="space-y-2 border-t border-border pt-3">
+                    <SwitchField v-model="categoryForm.pre_order_required" :label="t('menu.pre_order_required')" />
+                    <p class="text-xs text-muted">{{ t('menu.pre_order_required_category_helper') }}</p>
+                    <NoticeHoursField v-if="categoryForm.pre_order_required" v-model="categoryForm.pre_order_lead_hours" :error="categoryForm.errors.pre_order_lead_hours" />
+                </div>
             </form>
 
             <template #footer>
@@ -442,7 +472,11 @@ function reload() {
                 <div class="flex gap-4">
                     <SwitchField v-model="itemForm.is_available" :label="t('menu.is_available')" />
                     <SwitchField v-model="itemForm.is_vegetarian" :label="t('menu.is_vegetarian')" />
-                    <SwitchField v-model="itemForm.is_preorder_only" :label="t('menu.is_preorder_only')" />
+                </div>
+
+                <div class="space-y-2">
+                    <SwitchField v-model="itemNeedsPreOrder" :label="t('menu.pre_order_required')" />
+                    <NoticeHoursField v-if="itemNeedsPreOrder" v-model="itemForm.pre_order_lead_hours" :error="itemForm.errors.pre_order_lead_hours" />
                 </div>
 
                 <!-- Variants -->

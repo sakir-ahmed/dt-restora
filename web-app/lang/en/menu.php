@@ -3,6 +3,12 @@
 declare(strict_types=1);
 
 return [
+    'pre_order_required' => 'Needs a pre-order',
+    'pre_order_required_category_helper' => 'Every dish in this category must be ordered ahead, unless a dish says otherwise.',
+    'hours_unit' => 'hours',
+    'pre_order_lead_hours' => 'Hours of notice',
+    'pre_order_lead_hours_helper' => 'How many hours ahead it must be ordered. Leave empty for any later time.',
+    'pre_order_badge' => 'Pre-order only',
     'title' => 'Menu',
     'all_items' => 'All items',
     'subtitle' => 'Categories, items, variants and add-ons.',
@@ -10,8 +16,6 @@ return [
     'add_category' => 'Add category',
     'edit_category' => 'Edit category',
     'category_name' => 'Category name',
-    'is_preorder_only' => 'Pre-order only',
-    'is_preorder_only_helper' => 'Dishes here are taken as pre-orders only: they show in the menu book after the Saudi Arabian introduction page, and are hidden from the POS, website and table menu.',
     'category_created' => 'Category created.',
     'category_updated' => 'Category updated.',
     'category_deleted' => 'Category deleted.',

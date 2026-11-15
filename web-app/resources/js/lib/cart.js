@@ -46,6 +46,9 @@ export function addToCart(item, variant = null, addOns = []) {
             unitPrice: Number(variant?.price ?? item.base_price),
             addOns: addOns.map((addOn) => ({ id: addOn.id, name: addOn.name, price: Number(addOn.price) })),
             quantity: 1,
+            // Dishes that must be ordered ahead; the checkout asks for a date and time when one is in the cart.
+            preOrder: Boolean(item.requires_pre_order),
+            preOrderLead: Number(item.pre_order_lead ?? 0),
         });
     }
 }

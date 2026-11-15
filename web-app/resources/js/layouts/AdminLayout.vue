@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
 import BrandMark from '@/components/ui-kit/BrandMark.vue';
 import BrandName from '@/components/ui-kit/BrandName.vue';
+import ClockPill from '@/components/ui-kit/ClockPill.vue';
 import CommandPalette from '@/components/ui-kit/CommandPalette.vue';
 import LanguageSwitch from '@/components/ui-kit/LanguageSwitch.vue';
 import NotificationBell from '@/components/ui-kit/NotificationBell.vue';
@@ -90,6 +91,7 @@ const nav = computed(() => {
                 { label: t('nav.sms'), href: '/admin/sms', icon: 'paper-plane', permission: 'sms.manage' },
                 { label: t('coupons.title'), href: '/admin/coupons', icon: 'ticket', permission: 'coupons.manage' },
                 { label: t('nav.staff'), href: '/admin/staff', icon: 'user-shield', permission: 'staff.view' },
+                { label: t('nav.roles'), href: '/admin/roles', icon: 'shield-halved', permission: 'roles.manage' },
                 { label: t('nav.attendance'), href: '/admin/attendance', icon: 'clock', permission: 'attendance.manage' },
                 { label: t('nav.letters'), href: '/admin/letters', icon: 'envelope', permission: 'letters.manage' },
                 { label: t('nav.careers'), href: '/admin/careers', icon: 'briefcase', permission: 'careers.manage' },
@@ -277,6 +279,7 @@ function openCommandPalette() {
                 </button>
 
                 <div class="ml-auto flex items-center gap-1 md:ml-0">
+                    <ClockPill />
                     <SyncStatusPill />
                     <NotificationBell :notifications="page.props.notifications ?? []" />
                     <LanguageSwitch />

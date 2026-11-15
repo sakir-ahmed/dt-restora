@@ -3,6 +3,7 @@ import { router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
 import MenuBook from '@/components/preorder/MenuBook.vue';
+import PageHeader from '@/components/ui-kit/PageHeader.vue';
 import StatusBadge from '@/components/ui-kit/StatusBadge.vue';
 import { useConfirm } from '@/components/ui-kit/useConfirm.js';
 import { formatDateTime, formatMoney } from '@/lib/format';
@@ -21,7 +22,8 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
-const tab = ref('book');
+// The list comes first, like reservations; adding a pre-order opens the menu book. A pre-order just placed stays on the book to show its slip.
+const tab = ref(props.placed ? 'book' : 'list');
 const pendingCount = computed(() => props.preorders.filter((entry) => entry.status === 'pending').length);
 
 function lineName(line) {
@@ -59,37 +61,29 @@ export default { layout: AdminLayout };
 
 <template>
     <div>
-        <header class="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div class="min-w-0">
-                <h1 class="text-lg font-semibold text-foreground">{{ t('preorders.title') }}</h1>
-                <p class="mt-0.5 text-[13px] text-muted">{{ t('preorders.subtitle') }}</p>
-            </div>
-            <div class="inline-flex h-8 items-center rounded-md border border-border bg-surface p-0.5" role="tablist">
+        <PageHeader :title="t('preorders.title')" :description="tab === 'book' ? t('preorders.subtitle') : t('preorders.list_subtitle')">
+            <template v-if="canManage" #actions>
                 <button
+                    v-if="tab === 'list'"
                     type="button"
-                    role="tab"
-                    :aria-selected="tab === 'book'"
-                    class="inline-flex h-7 items-center gap-1.5 rounded px-3 text-[13px] font-medium transition-colors"
-                    :class="tab === 'book' ? 'bg-primary text-primary-foreground' : 'text-muted hover:text-foreground'"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground hover:opacity-90"
                     @click="tab = 'book'"
                 >
-                    <AppIcon name="book-open" size="12" />
-                    {{ t('preorders.tab_book') }}
+                    <AppIcon name="plus" size="12" />
+                    {{ t('preorders.add') }}
                 </button>
                 <button
+                    v-else
                     type="button"
-                    role="tab"
-                    :aria-selected="tab === 'list'"
-                    class="inline-flex h-7 items-center gap-1.5 rounded px-3 text-[13px] font-medium transition-colors"
-                    :class="tab === 'list' ? 'bg-primary text-primary-foreground' : 'text-muted hover:text-foreground'"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] text-foreground hover:bg-background"
                     @click="tab = 'list'"
                 >
                     <AppIcon name="clipboard-list" size="12" />
-                    {{ t('preorders.tab_list') }}
-                    <span v-if="pendingCount > 0" class="rounded-full bg-warning/20 px-1.5 text-[11px] tabular-nums" :class="tab === 'list' ? 'text-primary-foreground' : 'text-warning'">{{ pendingCount }}</span>
+                    {{ t('preorders.back_to_list') }}
+                    <span v-if="pendingCount > 0" class="rounded-full bg-warning/20 px-1.5 text-[11px] tabular-nums text-warning">{{ pendingCount }}</span>
                 </button>
-            </div>
-        </header>
+            </template>
+        </PageHeader>
 
         <MenuBook
             v-show="tab === 'book'"

@@ -368,13 +368,23 @@ class SettingsApiController extends Controller
         $validated = $request->validate([
             'layout' => ['required', Rule::in(PosSettings::LAYOUTS)],
             'paper' => ['required', Rule::in(PosSettings::PAPERS)],
+            'show_logo' => ['sometimes', 'boolean'],
+            'show_footer' => ['sometimes', 'boolean'],
+            'footer' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $branchModel->update(['pos_settings' => [
-            ...(is_array($branchModel->pos_settings) ? $branchModel->pos_settings : []),
-            'invoice_layout' => $validated['layout'],
-            'invoice_paper' => $validated['paper'],
-        ]]);
+        $current = PosSettings::for($branchModel);
+
+        $branchModel->update([
+            'pos_settings' => [
+                ...(is_array($branchModel->pos_settings) ? $branchModel->pos_settings : []),
+                'invoice_layout' => $validated['layout'],
+                'invoice_paper' => $validated['paper'],
+                'invoice_logo' => (bool) ($validated['show_logo'] ?? $current['invoice_logo']),
+                'invoice_footer' => (bool) ($validated['show_footer'] ?? $current['invoice_footer']),
+            ],
+            'receipt_footer' => array_key_exists('footer', $validated) ? ($validated['footer'] ?: null) : $branchModel->receipt_footer,
+        ]);
 
         activity()->causedBy($user)->performedOn($branchModel)->log('branch.invoice_print_updated');
 
@@ -486,6 +496,8 @@ class SettingsApiController extends Controller
             'online_delivery_enabled' => (bool) ($branch->online_delivery_enabled ?? true),
             'invoice_layout' => PosSettings::for($branch)['invoice_layout'],
             'invoice_paper' => PosSettings::for($branch)['invoice_paper'],
+            'invoice_logo' => PosSettings::for($branch)['invoice_logo'],
+            'invoice_footer' => PosSettings::for($branch)['invoice_footer'],
             'delivery_zones' => DeliveryZone::query()
                 ->where('branch_id', $branch->id)
                 ->orderBy('sort_order')
