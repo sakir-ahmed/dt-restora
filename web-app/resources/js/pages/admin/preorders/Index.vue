@@ -5,10 +5,14 @@ import AppIcon from '@/components/AppIcon.vue';
 import MenuBook from '@/components/preorder/MenuBook.vue';
 import PageHeader from '@/components/ui-kit/PageHeader.vue';
 import StatusBadge from '@/components/ui-kit/StatusBadge.vue';
+import DataTable from '@/components/ui-kit/DataTable.vue';
+import DateText from '@/components/ui-kit/DateText.vue';
+import MoneyText from '@/components/ui-kit/MoneyText.vue';
+import PreorderDetailModal from '@/components/admin/PreorderDetailModal.vue';
 import { useConfirm } from '@/components/ui-kit/useConfirm.js';
-import { formatDateTime, formatMoney } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { t } from '@/lib/i18n';
-import { localized } from '@/lib/site';
+import { useSafeDelete } from '@/lib/safeDelete';
 
 const props = defineProps({
     branch: { type: Object, required: true },
@@ -25,12 +29,70 @@ const confirm = useConfirm();
 const tab = ref(props.placed ? 'book' : 'list');
 const pendingCount = computed(() => props.preorders.filter((entry) => entry.status === 'pending').length);
 
-function lineName(line) {
-    return localized(line, 'name');
+// The status pills above the list work on the shown status, so a deleted row only appears under All.
+const statusFilter = ref('all');
+
+const statusFilters = [
+    { value: 'all', label: t('preorders.filter_all') },
+    { value: 'pending', label: t('status.pending') },
+    { value: 'completed', label: t('status.completed') },
+    { value: 'cancelled', label: t('status.cancelled') },
+];
+
+const columns = computed(() => [
+    { key: 'created_at', label: t('ui_kit.created'), align: 'left', minWidth: '112px' },
+    { key: 'order_no', label: t('preorders.order_no'), align: 'left', sortable: true },
+    { key: 'customer', label: t('preorders.customer'), align: 'left' },
+    { key: 'status', label: t('common.status'), minWidth: '104px' },
+    { key: 'item_count', label: t('inventory.items_label'), type: 'number', minWidth: '64px' },
+    { key: 'expected_at', label: t('preorders.visit_time'), align: 'left', minWidth: '112px' },
+    { key: 'table', label: t('receipt.table'), align: 'left' },
+    { key: 'source', label: t('preorders.source'), align: 'left' },
+    { key: 'total', label: t('inventory.total'), type: 'money', sortable: true, minWidth: '96px' },
+    { key: 'actions', label: '', align: 'right', type: 'component', minWidth: '220px' },
+]);
+
+const shownStatus = (entry) => (entry.deleted_at ? 'deleted' : entry.status);
+
+const rows = computed(() => props.preorders
+    .filter((entry) => statusFilter.value === 'all' || (! entry.deleted_at && entry.status === statusFilter.value))
+    .map((entry) => ({
+        id: entry.id,
+        created_at: entry.created_at,
+        order_no: entry.order_no,
+        customer: entry.customer_name || t('preorders.walk_in'),
+        customer_mobile: entry.customer_mobile,
+        status: shownStatus(entry),
+        item_count: entry.item_count,
+        expected_at: entry.expected_at,
+        table: entry.table,
+        source: entry.source,
+        total: entry.total,
+        deleted: Boolean(entry.deleted_at),
+        raw: entry,
+    })));
+
+const selectedId = ref(null);
+
+const selected = computed(() => props.preorders.find((entry) => entry.id === selectedId.value) ?? null);
+
+const safeDelete = useSafeDelete();
+
+function remove(entry) {
+    safeDelete({
+        url: route('admin.preorders.destroy', entry.id),
+        title: t('preorders.delete_title', { number: entry.order_no }),
+        message: t('preorders.delete_message'),
+        facts: [
+            { label: t('preorders.customer'), value: entry.customer_name || t('preorders.walk_in') },
+            { label: t('inventory.total'), value: formatMoney(entry.total, { decimals: 0 }) },
+        ],
+        success: t('preorders.deleted_done'),
+    });
 }
 
-function summary(entry) {
-    return entry.items.map((line) => `${line.quantity} x ${lineName(line)}`).join(', ');
+function printEntry(entry) {
+    window.open(entry.print_url, '_blank', 'noopener');
 }
 
 function act(entry, action) {
@@ -98,48 +160,96 @@ export default { layout: AdminLayout };
         />
 
         <section v-show="tab === 'list'">
-            <p v-if="preorders.length === 0" class="rounded-lg border border-dashed border-border p-8 text-center text-[13px] text-muted">{{ t('preorders.list_empty') }}</p>
+            <div v-if="preorders.length === 0" class="rounded-lg border border-dashed border-border p-8 text-center text-[13px] text-muted">{{ t('preorders.list_empty') }}</div>
 
-            <ul v-else class="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                <li v-for="entry in preorders" :key="entry.id" class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
-                    <div class="flex items-start justify-between gap-2">
-                        <div class="min-w-0">
-                            <p class="font-mono text-[13px] font-semibold tabular-nums text-foreground">{{ entry.order_no }}</p>
-                            <p class="truncate text-[13px] text-foreground">{{ entry.customer_name || t('preorders.walk_in') }}<span v-if="entry.customer_mobile" class="text-muted"> - {{ entry.customer_mobile }}</span></p>
-                        </div>
-                        <StatusBadge :status="entry.status" />
-                    </div>
+            <template v-else>
+                <div class="thin-scrollbar mb-3 flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5" role="group" :aria-label="t('common.status')">
+                    <button
+                        v-for="filter in statusFilters"
+                        :key="filter.value"
+                        type="button"
+                        class="h-6 shrink-0 rounded-full border px-2 text-[11px] font-medium"
+                        :class="statusFilter === filter.value ? 'border-accent bg-accent/15 text-primary' : 'border-border bg-surface text-muted hover:text-foreground'"
+                        @click="statusFilter = filter.value"
+                    >
+                        {{ filter.label }}
+                    </button>
+                </div>
 
-                    <p class="text-[13px] leading-snug text-foreground">{{ summary(entry) }}</p>
-
-                    <p v-if="entry.address" class="flex items-start gap-1.5 text-xs text-muted"><AppIcon name="location-dot" size="11" class="mt-0.5 shrink-0" />{{ entry.address }}</p>
-                    <p v-if="entry.note" class="text-xs text-muted">{{ entry.note }}</p>
-
-                    <dl class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-                        <div class="flex gap-1"><dt>{{ t('preorders.visit_time') }}:</dt><dd class="text-foreground">{{ entry.expected_at ? formatDateTime(entry.expected_at) : t('preorders.any_time') }}</dd></div>
-                        <div v-if="entry.table" class="flex gap-1"><dt>{{ t('preorders.table_label') }}:</dt><dd class="text-foreground">{{ entry.table }}</dd></div>
-                        <div v-if="entry.party_size" class="flex gap-1"><dd class="text-foreground">{{ t('preorders.guests', { count: entry.party_size }) }}</dd></div>
-                        <div class="flex gap-1"><dd>{{ entry.source === 'public' ? t('preorders.source_public') : t('preorders.source_staff') }}</dd></div>
-                        <div v-if="entry.sms_sent" class="flex items-center gap-1"><AppIcon name="mobile-screen" size="11" /><dd>{{ t('preorders.sms_was_sent') }}</dd></div>
-                    </dl>
-
-                    <div class="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2">
-                        <span class="leading-tight">
-                            <span class="block text-sm font-semibold tabular-nums text-foreground">{{ formatMoney(entry.total, { decimals: 0 }) }}</span>
-                            <span v-if="Number(entry.advance_amount) > 0" class="block text-[11px] text-muted">{{ t('preorders.advance_received') }} {{ formatMoney(entry.advance_amount, { decimals: 0 }) }} - {{ t('preorders.balance_due') }} {{ formatMoney(entry.balance_due, { decimals: 0 }) }}</span>
-                        </span>
-                        <div class="flex flex-wrap items-center gap-1.5">
-                            <a :href="entry.print_url" target="_blank" rel="noopener" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] text-foreground hover:bg-background">
-                                <AppIcon name="print" size="12" /> {{ t('preorders.print') }}
+                <DataTable :columns="columns" :rows="rows" :empty-title="t('preorders.list_empty')" clickable @row-click="(row) => selectedId = row.id">
+                    <template #cell(created_at)="{ value }">
+                        <DateText :value="value" relative />
+                    </template>
+                    <template #cell(order_no)="{ value }">
+                        <span class="font-mono text-[12px] tabular-nums text-foreground">{{ value }}</span>
+                    </template>
+                    <template #cell(customer)="{ row }">
+                        <span class="text-foreground">{{ row.customer }}</span>
+                        <span v-if="row.customer_mobile" class="block text-xs tabular-nums text-muted">{{ row.customer_mobile }}</span>
+                    </template>
+                    <template #cell(status)="{ row }">
+                        <StatusBadge :status="row.status" />
+                    </template>
+                    <template #cell(expected_at)="{ value }">
+                        <DateText v-if="value" :value="value" />
+                        <span v-else class="text-muted">{{ t('preorders.any_time') }}</span>
+                    </template>
+                    <template #cell(source)="{ value }">
+                        <span class="text-muted">{{ value === 'public' ? t('preorders.source_public') : t('preorders.source_staff') }}</span>
+                    </template>
+                    <template #cell(total)="{ row }">
+                        <MoneyText :value="row.total" />
+                        <span v-if="Number(row.raw.advance_amount) > 0" class="block text-[11px] text-muted">{{ t('preorders.advance_received') }} {{ formatMoney(row.raw.advance_amount, { decimals: 0 }) }}</span>
+                    </template>
+                    <template #cell(actions)="{ row }">
+                        <div class="flex items-center justify-end gap-1">
+                            <a
+                                :href="row.raw.print_url"
+                                target="_blank"
+                                rel="noopener"
+                                class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-background hover:text-foreground"
+                                :aria-label="t('preorders.print')"
+                                :title="t('preorders.print')"
+                                @click.stop
+                            >
+                                <AppIcon name="print" size="12" />
                             </a>
-                            <template v-if="canManage && entry.status === 'pending'">
-                                <button type="button" class="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-[13px] text-primary-foreground" @click="act(entry, 'complete')">{{ t('preorders.mark_served') }}</button>
-                                <button type="button" class="inline-flex h-7 items-center rounded-md border border-border bg-surface px-2.5 text-[13px] text-danger hover:bg-danger/10" @click="cancel(entry)">{{ t('preorders.cancel') }}</button>
+                            <template v-if="canManage && ! row.deleted">
+                                <button
+                                    v-if="row.raw.status === 'pending'"
+                                    type="button"
+                                    class="flex h-6 items-center gap-1 rounded border border-accent/60 px-1.5 text-[11px] font-medium text-primary hover:bg-accent/10"
+                                    @click.stop="act(row.raw, 'complete')"
+                                >
+                                    <AppIcon name="circle-check" size="10" />
+                                    {{ t('preorders.mark_served') }}
+                                </button>
+                                <button
+                                    v-if="row.raw.status === 'pending'"
+                                    type="button"
+                                    class="flex h-6 w-6 items-center justify-center rounded text-danger hover:bg-danger/10"
+                                    :aria-label="t('preorders.cancel')"
+                                    :title="t('preorders.cancel')"
+                                    @click.stop="cancel(row.raw)"
+                                >
+                                    <AppIcon name="ban" size="12" />
+                                </button>
+                                <button
+                                    type="button"
+                                    class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-danger/10 hover:text-danger"
+                                    :aria-label="t('common.delete')"
+                                    :title="t('common.delete')"
+                                    @click.stop="remove(row.raw)"
+                                >
+                                    <AppIcon name="trash" size="12" />
+                                </button>
                             </template>
                         </div>
-                    </div>
-                </li>
-            </ul>
+                    </template>
+                </DataTable>
+            </template>
         </section>
+
+        <PreorderDetailModal :preorder="selected" @close="selectedId = null" @print="printEntry" />
     </div>
 </template>

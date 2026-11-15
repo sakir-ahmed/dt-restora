@@ -3,6 +3,7 @@ import { router, useForm } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
 import FormField from '@/components/ui-kit/FormField.vue';
+import ReservationDetailModal from '@/components/admin/ReservationDetailModal.vue';
 import PageHeader from '@/components/ui-kit/PageHeader.vue';
 import SlideOver from '@/components/ui-kit/SlideOver.vue';
 import { useConfirm } from '@/components/ui-kit/useConfirm.js';
@@ -26,6 +27,7 @@ const props = defineProps({
 
 const confirm = useConfirm();
 const open = ref(false);
+const detail = ref(null);
 const editing = ref(null);
 const advanceFor = ref(null);
 const menuSearch = ref('');
@@ -454,7 +456,7 @@ function saveAdvance() {
         </div>
 
         <ul v-else class="space-y-2">
-            <li v-for="reservation in reservations" :key="reservation.id" class="rounded-lg border border-border bg-surface p-3" :class="holdingNow(reservation) ? 'border-accent ring-1 ring-accent/40' : ''">
+            <li v-for="reservation in reservations" :key="reservation.id" class="cursor-pointer rounded-lg border border-border bg-surface p-3 transition-colors hover:bg-background/40" :class="holdingNow(reservation) ? 'border-accent ring-1 ring-accent/40' : ''" @click="detail = reservation">
                 <div class="flex flex-wrap items-center gap-3">
                     <div class="w-28 shrink-0">
                         <p class="text-sm font-semibold tabular-nums text-foreground">{{ clock(reservation.starts_at) }}</p>
@@ -488,37 +490,37 @@ function saveAdvance() {
                 </div>
 
                 <div class="mt-2 flex flex-wrap items-center gap-1 border-t border-border pt-2">
-                    <button type="button" class="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-medium text-foreground hover:bg-background" @click="printConfirmation(reservation)">
+                    <button type="button" class="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-medium text-foreground hover:bg-background" @click.stop="printConfirmation(reservation)">
                         <AppIcon name="print" size="11" />
                         {{ t('reservations.print_confirmation') }}
                     </button>
 
                     <template v-if="canManage && ! reservation.deleted">
-                        <button v-if="reservation.status === 'booked'" type="button" class="inline-flex h-7 items-center gap-1 rounded-md bg-success px-2 text-xs font-medium text-white hover:opacity-90" @click="act(reservation, 'seat')">
+                        <button v-if="reservation.status === 'booked'" type="button" class="inline-flex h-7 items-center gap-1 rounded-md bg-success px-2 text-xs font-medium text-white hover:opacity-90" @click.stop="act(reservation, 'seat')">
                             <AppIcon name="circle-check" size="11" />
                             {{ reservation.preorder.length ? t('reservations.action_seat_preorder') : t('reservations.action_seat') }}
                         </button>
-                        <button v-if="reservation.status === 'seated'" type="button" class="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-medium text-foreground hover:bg-background" @click="act(reservation, 'complete')">
+                        <button v-if="reservation.status === 'seated'" type="button" class="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-medium text-foreground hover:bg-background" @click.stop="act(reservation, 'complete')">
                             {{ t('reservations.action_complete') }}
                         </button>
 
-                        <button v-if="reservation.deposit.status === 'none' && holding(reservation)" type="button" class="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs text-foreground hover:bg-background" @click="openAdvance(reservation)">
+                        <button v-if="reservation.deposit.status === 'none' && holding(reservation)" type="button" class="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-medium text-foreground hover:bg-background" @click.stop="openAdvance(reservation)">
                             <AppIcon name="money-bill-wave" size="11" />
                             {{ t('reservations.deposit_collect') }}
                         </button>
                         <template v-if="reservation.deposit.status === 'held' && Number(reservation.deposit.balance) > 0">
                             <span class="px-1 text-xs text-muted">{{ t('reservations.deposit_balance', { amount: formatMoney(reservation.deposit.balance) }) }}</span>
-                            <button type="button" class="h-7 rounded-md border border-border px-2 text-xs text-foreground hover:bg-background" @click="closeAdvance(reservation, 'refund')">{{ t('reservations.deposit_refund') }}</button>
-                            <button type="button" class="h-7 rounded-md border border-border px-2 text-xs text-muted hover:text-warning" @click="closeAdvance(reservation, 'forfeit')">{{ t('reservations.deposit_forfeit') }}</button>
+                            <button type="button" class="h-7 rounded-md border border-border px-2 text-xs text-foreground hover:bg-background" @click.stop="closeAdvance(reservation, 'refund')">{{ t('reservations.deposit_refund') }}</button>
+                            <button type="button" class="h-7 rounded-md border border-border px-2 text-xs text-muted hover:text-warning" @click.stop="closeAdvance(reservation, 'forfeit')">{{ t('reservations.deposit_forfeit') }}</button>
                         </template>
 
                         <span class="ml-auto flex items-center gap-1">
-                            <button v-if="holding(reservation)" type="button" class="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted hover:text-foreground" :aria-label="t('reservations.edit')" @click="openEdit(reservation)">
+                            <button v-if="holding(reservation)" type="button" class="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted hover:text-foreground" :aria-label="t('reservations.edit')" @click.stop="openEdit(reservation)">
                                 <AppIcon name="pen-to-square" size="12" />
                             </button>
-                            <button v-if="reservation.status === 'booked'" type="button" class="h-7 rounded-md border border-border px-2 text-xs text-muted hover:text-warning" @click="act(reservation, 'no-show')">{{ t('reservations.action_no_show') }}</button>
-                            <button v-if="reservation.status === 'booked'" type="button" class="h-7 rounded-md border border-border px-2 text-xs text-muted hover:text-danger" @click="act(reservation, 'cancel')">{{ t('common.cancel') }}</button>
-                            <button v-if="reservation.status !== 'seated' && reservation.status !== 'completed'" type="button" class="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted hover:text-danger" :aria-label="t('common.delete')" :title="t('common.delete')" @click="removeReservation(reservation)">
+                            <button v-if="reservation.status === 'booked'" type="button" class="h-7 rounded-md border border-border px-2 text-xs text-muted hover:text-warning" @click.stop="act(reservation, 'no-show')">{{ t('reservations.action_no_show') }}</button>
+                            <button v-if="reservation.status === 'booked'" type="button" class="h-7 rounded-md border border-border px-2 text-xs text-muted hover:text-danger" @click.stop="act(reservation, 'cancel')">{{ t('common.cancel') }}</button>
+                            <button v-if="reservation.status !== 'seated' && reservation.status !== 'completed'" type="button" class="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted hover:text-danger" :aria-label="t('common.delete')" :title="t('common.delete')" @click.stop="removeReservation(reservation)">
                                 <AppIcon name="trash" size="12" />
                             </button>
                         </span>
@@ -526,6 +528,8 @@ function saveAdvance() {
                 </div>
             </li>
         </ul>
+
+        <ReservationDetailModal :reservation="detail" @close="detail = null" @print="printConfirmation" />
 
         <!-- Make or change a booking -->
         <SlideOver :open="open" wide :title="editing ? t('reservations.edit') : t('reservations.add')" :subtitle="editing ? editing.booking_no : ''" @close="open = false">

@@ -82,6 +82,7 @@ return [
     'deposit_refund' => 'Refund',
     'deposit_forfeit' => 'Keep it',
     'deposit_balance' => 'Held: :amount',
+    'deposit_balance_label' => 'Still held',
     'deposit_collected' => 'Advance recorded.',
     'deposit_refund_done' => 'Advance marked as refunded.',
     'deposit_forfeit_done' => 'Advance kept.',

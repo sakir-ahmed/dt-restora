@@ -82,6 +82,7 @@ return [
     'deposit_refund' => 'ফেরত দিন',
     'deposit_forfeit' => 'রেখে দিন',
     'deposit_balance' => 'জমা: :amount',
+    'deposit_balance_label' => 'এখনো জমা আছে',
     'deposit_collected' => 'অগ্রিম নথিভুক্ত হয়েছে।',
     'deposit_refund_done' => 'অগ্রিম ফেরত হিসেবে চিহ্নিত হয়েছে।',
     'deposit_forfeit_done' => 'অগ্রিম রেখে দেওয়া হয়েছে।',

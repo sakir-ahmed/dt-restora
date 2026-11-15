@@ -9,6 +9,7 @@ use App\Models\MenuItem;
 use App\Models\Preorder;
 use App\Models\Reservation;
 use App\Models\RestaurantTable;
+use App\Models\Setting;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Support\Facades\Queue;
@@ -256,4 +257,33 @@ it('gives the menu page the public menu link and texts it to a guest', function 
     $this->actingAs($this->manager, 'staff')
         ->post(route('admin.menu.qr-sms'), ['mobile' => '12345'])
         ->assertSessionHasErrors('mobile');
+});
+
+it('deletes a pre-order with a reason and follows the show-deleted setting', function (): void {
+    $preorder = Preorder::query()->create([
+        'branch_id' => $this->branch->id,
+        'items' => [['menu_item_id' => $this->item->id, 'quantity' => 2]],
+        'total' => 400,
+        'customer_name' => 'Guest',
+    ]);
+
+    $this->actingAs($this->manager, 'staff')
+        ->delete(route('admin.preorders.destroy', $preorder), ['reason_code' => 'entry_mistake', 'note' => 'wrong take'])
+        ->assertRedirect();
+
+    expect($preorder->fresh()->deleted_at)->not->toBeNull()
+        ->and($preorder->fresh()->deleted_by)->toBe($this->manager->id)
+        ->and($preorder->fresh()->delete_reason)->toBe('entry_mistake');
+
+    // With the setting on, the deleted record stays in the list, marked deleted.
+    $response = $this->actingAs($this->manager, 'staff')->get(route('admin.preorders.index'));
+    $shown = collect($response->viewData('page')['props']['preorders']);
+
+    expect($shown)->toHaveCount(1)
+        ->and($shown->first()['deleted_at'])->not->toBeNull();
+
+    Setting::current()->update(['show_deleted_items' => false]);
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.preorders.index'))
+        ->assertInertia(fn ($page) => $page->has('preorders', 0));
 });

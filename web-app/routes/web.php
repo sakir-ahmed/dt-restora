@@ -243,6 +243,7 @@ Route::prefix('admin')
         Route::post('preorders', [PreorderController::class, 'store'])->name('preorders.store')->middleware('permission:preorders.manage');
         Route::get('preorders/{preorder}/print', [PreorderController::class, 'print'])->name('preorders.print')->middleware('permission:preorders.view');
         Route::post('preorders/{preorder}/{action}', [PreorderController::class, 'transition'])->where('action', 'complete|cancel')->name('preorders.transition')->middleware('permission:preorders.manage');
+        Route::delete('preorders/{preorder}', [PreorderController::class, 'destroy'])->name('preorders.destroy')->middleware('permission:preorders.manage');
         Route::get('reservations', [ReservationController::class, 'index'])->name('reservations.index')->middleware('permission:reservations.view');
         Route::post('reservations', [ReservationController::class, 'store'])->name('reservations.store')->middleware('permission:reservations.manage');
         Route::put('reservations/{reservation}', [ReservationController::class, 'update'])->name('reservations.update')->middleware('permission:reservations.manage');

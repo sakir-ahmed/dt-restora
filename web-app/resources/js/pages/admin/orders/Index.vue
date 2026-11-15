@@ -13,6 +13,7 @@ import { t } from '@/lib/i18n';
 import { formatMoney } from '@/lib/format';
 import ChannelBadge from '@/components/ChannelBadge.vue';
 import { notify } from '@/lib/notify';
+import { shortInvoice } from '@/lib/invoice';
 import { openInvoiceImage } from '@/lib/invoiceImage';
 import { printUrl } from '@/lib/print';
 
@@ -33,6 +34,28 @@ const props = defineProps({
 const selectedId = ref(null);
 
 const confirm = useConfirm();
+
+// The invoice cell shows only the short form; a click copies the full number.
+const copiedInvoiceId = ref(null);
+let copiedInvoiceTimer = null;
+
+async function copyInvoice(order) {
+    try {
+        await navigator.clipboard.writeText(order.invoice_no);
+    } catch {
+        const area = document.createElement('textarea');
+        area.value = order.invoice_no;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+    }
+
+    copiedInvoiceId.value = order.id;
+    clearTimeout(copiedInvoiceTimer);
+    copiedInvoiceTimer = setTimeout(() => (copiedInvoiceId.value = null), 1500);
+    notify.success(t('orders.invoice_copied'));
+}
 
 const columns = computed(() => [
     { key: 'created_at', label: t('ui_kit.created'), align: 'left', minWidth: '112px' },
@@ -459,6 +482,18 @@ async function putOnDue(order) {
         <DataTable :columns="columns" :rows="rows" :empty-title="t('orders.no_orders')" clickable @row-click="(row) => selectedId = row.id">
             <template #cell(created_at)="{ value }">
                 <DateText :value="value" relative />
+            </template>
+            <template #cell(invoice_no)="{ row }">
+                <button
+                    type="button"
+                    class="group inline-flex items-center gap-1 rounded font-mono text-[12px] text-foreground hover:text-primary"
+                    :title="row.invoice_no"
+                    :aria-label="t('orders.invoice_copy', { invoice: row.invoice_no })"
+                    @click.stop="copyInvoice(row)"
+                >
+                    {{ shortInvoice(row.invoice_no) }}
+                    <AppIcon :name="copiedInvoiceId === row.id ? 'check' : 'copy'" size="10" :class="copiedInvoiceId === row.id ? 'text-success' : 'text-muted group-hover:text-primary'" />
+                </button>
             </template>
             <template #cell(order_type)="{ row }">
                 <span>{{ row.order_type }}</span>

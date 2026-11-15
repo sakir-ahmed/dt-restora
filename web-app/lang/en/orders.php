@@ -119,6 +119,8 @@ return [
     'image_copied' => 'Invoice image copied. Paste it into your message.',
     'image_copy_unsupported' => 'This browser cannot copy pictures. Use Share or Save.',
     'image_copy_failed' => 'The picture could not be copied.',
+    'invoice_copy' => 'Copy the invoice number :invoice',
+    'invoice_copied' => 'Invoice number copied.',
     'image_share_failed' => 'The picture could not be shared.',
     'image_saved_instead' => 'This device cannot share files here, so the picture was saved instead.',
     'whatsapp_send' => 'WhatsApp',
