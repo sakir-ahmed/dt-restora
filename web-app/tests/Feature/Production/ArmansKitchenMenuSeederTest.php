@@ -104,17 +104,17 @@ it('replaces the existing menu and keeps users', function (): void {
         ->and($user->fresh())->not->toBeNull();
 });
 
-it('prices every item and costs its recipe close to the owner figures', function (): void {
+it('prices every item from the owner figures and costs nothing until a purchase arrives', function (): void {
     $this->seed(ResetSeeder::class);
 
     $branch = Branch::query()->firstOrFail();
 
-    foreach (statedCosts() as $name => [$price, $stated]) {
+    foreach (statedCosts() as $name => [$price]) {
         $item = MenuItem::query()->withoutGlobalScopes()->with('variants')->where('name', $name)->firstOrFail();
         $costing = app(CostingService::class)->recipeCost($item, $branch->id);
 
-        expect((float) $item->base_price)->toBe((float) $price, $name);
-        expect(abs((float) $costing['cost'] - $stated))->toBeLessThanOrEqual(0.75, "{$name}: {$costing['cost']} vs {$stated}");
+        expect((float) $item->base_price)->toBe((float) $price, $name)
+            ->and((float) $costing['cost'])->toBe(0.0, $name);
     }
 });
 

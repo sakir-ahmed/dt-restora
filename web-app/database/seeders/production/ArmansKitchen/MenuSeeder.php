@@ -25,9 +25,10 @@ use RuntimeException;
  * that point at them, and leaves users, roles, settings, orders and accounts
  * alone. It refuses to run if any order line references a menu item.
  *
- * Ingredient prices go straight into the branch stock as the average cost with
- * no quantity in hand, so the recipe cost shows at once and the first purchase
- * averages on top of it. Needs the bootstrap seed (units) to have run first.
+ * Stock costs start at zero: cost is real money from purchases, so recipes cost
+ * nothing until the first purchase is received. The owner's price figures in
+ * MenuCatalog are reference data only. Needs the bootstrap seed (units) to have
+ * run first.
  *
  *   php artisan db:seed --class='Database\\Seeders\\Production\\ArmansKitchen\\MenuSeeder'
  */
@@ -118,12 +119,12 @@ class MenuSeeder extends Seeder
                 'is_active' => true,
             ]);
 
-            // Prices are per gram, millilitre or piece; stock cost is per base unit (litre for liquids).
-            $costPerBaseUnit = $row['unit'] === 'l' ? $row['price'] * 1000 : $row['price'];
-
+            // The stock row exists so the stock book lists the ingredient from day one, but its cost
+            // stays zero: cost is real money from purchases, and nothing has been bought yet. The
+            // owner's price figures in MenuCatalog are reference data only.
             IngredientStock::query()->updateOrCreate(
                 ['branch_id' => $branch->id, 'ingredient_id' => $ingredient->id],
-                ['stock_qty' => 0, 'avg_cost' => $costPerBaseUnit, 'last_cost' => $costPerBaseUnit],
+                ['stock_qty' => 0, 'avg_cost' => 0, 'last_cost' => 0],
             );
 
             $ingredients[$key] = ['model' => $ingredient, 'unit' => $unit];

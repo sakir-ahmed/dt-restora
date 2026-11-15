@@ -125,6 +125,10 @@ class StockService
         $beforeQty = $remainingQty + $removedBaseQty;
 
         if ($remainingQty <= 0) {
+            // Nothing left in stock, so no purchase stands behind the cost (deleting a purchase is
+            // refused once any of it was consumed). Cost only ever comes from real purchases.
+            $locked->forceFill(['avg_cost' => 0, 'last_cost' => 0])->save();
+
             return;
         }
 

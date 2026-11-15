@@ -7,8 +7,9 @@ namespace Database\Seeders\Production\ArmansKitchen;
 /**
  * The 36 menu items with their selling price and costed recipe, as supplied by
  * the owner. Quantities are per single serving, in grams, millilitres or pieces.
- * Ingredient prices are per gram, per millilitre or per piece, and are the same
- * everywhere an ingredient appears, so every recipe is costed from one price list.
+ * The ingredient price figures are the owner's reference list of what things
+ * should cost; they are never written into stock costs, which come only from
+ * real purchases.
  *
  * Dishes that the owner built from another dish ("chal base", "Chicken Fry",
  * "Chotpoti base" and so on) are expanded into raw ingredients here, because
