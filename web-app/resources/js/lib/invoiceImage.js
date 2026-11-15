@@ -161,14 +161,69 @@ export const invoiceImage = reactive({
     blob: null,
     src: '',
     invoiceNo: '',
+    // For sending it to the customer: the order, their number, and whether it is already on the order's customer.
+    orderId: null,
+    total: null,
+    mobile: '',
+    customerName: '',
+    hasCustomer: false,
 });
 
-export async function openInvoiceImage({ url = null, html = null, invoiceNo = '' }) {
+/**
+ * A stored number (8801712345678) in the form the number box holds (01712345678).
+ */
+export function toLocalMobile(value) {
+    const digits = String(value ?? '').replace(/\D/g, '');
+
+    return digits.startsWith('88') && digits.length > 11 ? digits.slice(2) : digits;
+}
+
+export function isValidMobile(value) {
+    return /^01[3-9]\d{8}$/.test(String(value ?? ''));
+}
+
+function xsrfToken() {
+    const cookie = document.cookie.split('; ').find((entry) => entry.startsWith('XSRF-TOKEN='));
+
+    return cookie ? decodeURIComponent(cookie.split('=')[1]) : '';
+}
+
+/**
+ * Keep the number sent an invoice to in the customer list, on the order that has no customer yet.
+ */
+export async function saveInvoiceCustomer(orderId, mobile, name = '') {
+    const response = await fetch(route('admin.orders.customer', orderId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-XSRF-TOKEN': xsrfToken() },
+        credentials: 'same-origin',
+        body: JSON.stringify({ customer_mobile: mobile, customer_name: name || null }),
+    });
+
+    if (! response.ok) {
+        throw new Error(String((await response.json().catch(() => ({}))).message ?? response.status));
+    }
+
+    return response.json();
+}
+
+export async function openInvoiceImage({ url = null, html = null, invoiceNo = '', orderId = null, total = null, mobile = '', customerName = '', hasCustomer = false }) {
     if (invoiceImage.src) {
         URL.revokeObjectURL(invoiceImage.src);
     }
 
-    Object.assign(invoiceImage, { open: true, loading: true, error: '', blob: null, src: '', invoiceNo });
+    Object.assign(invoiceImage, {
+        open: true,
+        loading: true,
+        error: '',
+        blob: null,
+        src: '',
+        invoiceNo,
+        orderId,
+        total,
+        mobile: toLocalMobile(mobile),
+        customerName,
+        hasCustomer,
+    });
 
     try {
         const blob = await renderInvoiceImage({ url, html });

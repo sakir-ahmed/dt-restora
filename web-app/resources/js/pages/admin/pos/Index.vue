@@ -1819,7 +1819,7 @@ function shareCustomerImage() {
     const orderId = lastPayment.value?.order_id ?? order?.id;
 
     if (! orderId && order?.invoice_no) {
-        openInvoiceImage({ html: localInvoiceHtml(order), invoiceNo: order.invoice_no });
+        openInvoiceImage({ html: localInvoiceHtml(order), invoiceNo: order.invoice_no, total: order.total ?? total.value, mobile: customerMobile.value, customerName: customerName.value });
 
         return;
     }
@@ -1830,7 +1830,16 @@ function shareCustomerImage() {
         return;
     }
 
-    openInvoiceImage({ url: route('admin.orders.receipt', orderId), invoiceNo: order?.invoice_no ?? lastPayment.value?.invoice_no ?? '' });
+    // An order sent with a customer mobile already has that customer; otherwise the number typed in the window is kept.
+    openInvoiceImage({
+        url: route('admin.orders.receipt', orderId),
+        invoiceNo: order?.invoice_no ?? lastPayment.value?.invoice_no ?? '',
+        orderId,
+        total: order?.total ?? null,
+        mobile: customerMobile.value,
+        customerName: customerName.value,
+        hasCustomer: Boolean(customerMobile.value),
+    });
 }
 
 function printCustomerCopy() {

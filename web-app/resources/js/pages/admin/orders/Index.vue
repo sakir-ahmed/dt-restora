@@ -249,7 +249,15 @@ function approvePayment(payment) {
 }
 
 function shareInvoiceImage(order) {
-    openInvoiceImage({ url: route('admin.orders.receipt', order.id), invoiceNo: order.invoice_no });
+    openInvoiceImage({
+        url: route('admin.orders.receipt', order.id),
+        invoiceNo: order.invoice_no,
+        orderId: order.id,
+        total: order.total,
+        mobile: order.customer?.mobile ?? '',
+        customerName: order.customer?.name ?? '',
+        hasCustomer: Boolean(order.customer),
+    });
 }
 
 function printReceipt(order) {

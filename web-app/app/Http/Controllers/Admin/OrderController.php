@@ -276,6 +276,49 @@ class OrderController extends Controller
         ]);
     }
 
+    /**
+     * Put the customer's mobile number on an order that has no customer yet, so the number sent an invoice
+     * to is kept in the customer list. An order that already has a customer keeps them.
+     */
+    public function attachCustomer(Request $request, Order $order): JsonResponse
+    {
+        $this->authorize('orders.create');
+
+        $user = $request->user('staff');
+        abort_unless($user->canAccessBranch($order->branch_id), 404);
+
+        $validated = $request->validate([
+            'customer_mobile' => ['required', 'string', 'max:20'],
+            'customer_name' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $mobile = normalize_bd_mobile($validated['customer_mobile']);
+
+        if (! is_bd_mobile($mobile)) {
+            throw ValidationException::withMessages(['customer_mobile' => __('web.err_mobile')]);
+        }
+
+        $linked = false;
+        $customer = $order->customer;
+
+        if ($customer === null) {
+            $customer = Customer::query()->firstOrCreate(
+                ['mobile' => $mobile],
+                ['name' => trim((string) ($validated['customer_name'] ?? '')) ?: __('orders.walk_in_customer')],
+            );
+
+            $order->update(['customer_id' => $customer->id]);
+            $linked = true;
+
+            activity()->performedOn($order)->causedBy($user)->log('order.customer_attached');
+        }
+
+        return response()->json([
+            'linked' => $linked,
+            'customer' => ['id' => $customer->id, 'name' => $customer->name, 'mobile' => $customer->mobile],
+        ]);
+    }
+
     public function pay(Request $request, Order $order, PayOrderAction $action): RedirectResponse
     {
         $this->authorize('orders.create');

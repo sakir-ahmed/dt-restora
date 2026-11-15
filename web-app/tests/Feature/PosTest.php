@@ -870,3 +870,52 @@ it('keeps the delivery fee and address of a delivery order when its items are ed
     expect((float) $order->delivery_fee)->toBe(60.0)
         ->and($order->delivery_address)->toBe('Road 3, House 10, Dhaka');
 });
+
+it('keeps the mobile number an invoice is sent to as the order\'s customer', function (): void {
+    $order = createPosOrder($this);
+    $url = route('admin.orders.customer', $order);
+
+    expect($order->customer_id)->toBeNull();
+
+    // An invalid number is refused and nothing is made.
+    $this->actingAs($this->cashier, 'staff')->postJson($url, ['customer_mobile' => '12345'])->assertUnprocessable()->assertJsonValidationErrors('customer_mobile');
+    expect(Customer::query()->count())->toBe(0);
+
+    // A new number becomes a customer and goes on the order.
+    $this->actingAs($this->cashier, 'staff')->postJson($url, ['customer_mobile' => '+880 1712-345678', 'customer_name' => 'Rina'])
+        ->assertOk()
+        ->assertJsonPath('linked', true)
+        ->assertJsonPath('customer.mobile', '8801712345678')
+        ->assertJsonPath('customer.name', 'Rina');
+
+    $customer = Customer::query()->firstOrFail();
+
+    expect($order->fresh()->customer_id)->toBe($customer->id);
+
+    // The same number on another order reuses the customer.
+    $second = createPosOrder($this);
+
+    $this->actingAs($this->cashier, 'staff')->postJson(route('admin.orders.customer', $second), ['customer_mobile' => '01712345678'])->assertOk()->assertJsonPath('linked', true);
+
+    expect(Customer::query()->count())->toBe(1)->and($second->fresh()->customer_id)->toBe($customer->id);
+
+    // An order that already has a customer keeps them, whatever number is typed.
+    $this->actingAs($this->cashier, 'staff')->postJson($url, ['customer_mobile' => '01911223344', 'customer_name' => 'Someone else'])
+        ->assertOk()
+        ->assertJsonPath('linked', false)
+        ->assertJsonPath('customer.id', $customer->id);
+
+    expect(Customer::query()->count())->toBe(1);
+});
+
+it('only lets staff who can take orders, in the order\'s branch, attach a customer number', function (): void {
+    $order = createPosOrder($this);
+    $rider = User::factory()->role('rider', $this->branch->id)->create();
+    $otherBranch = Branch::factory()->create(['code' => 'BR09']);
+    $outsider = User::factory()->role('cashier', $otherBranch->id)->create();
+
+    $this->actingAs($rider, 'staff')->postJson(route('admin.orders.customer', $order), ['customer_mobile' => '01712345678'])->assertForbidden();
+    $this->actingAs($outsider, 'staff')->postJson(route('admin.orders.customer', $order), ['customer_mobile' => '01712345678'])->assertNotFound();
+
+    expect($order->fresh()->customer_id)->toBeNull();
+});

@@ -337,6 +337,7 @@ Route::prefix('admin')
         Route::get('orders/incoming', [OrderController::class, 'incoming'])->name('orders.incoming')->middleware('permission:orders.create');
         Route::post('orders', [OrderController::class, 'store'])->name('orders.store')->middleware('permission:orders.create');
         Route::put('orders/{order}', [OrderController::class, 'update'])->name('orders.update')->middleware('permission:orders.create');
+        Route::post('orders/{order}/customer', [OrderController::class, 'attachCustomer'])->name('orders.customer')->middleware('permission:orders.create');
         Route::post('orders/{order}/pay', [OrderController::class, 'pay'])->name('orders.pay')->middleware('permission:orders.create');
         Route::post('orders/{order}/due', [OrderController::class, 'due'])->name('orders.due')->middleware('permission:orders.create');
         Route::get('dues', [DueController::class, 'index'])->name('dues.index')->middleware('permission:orders.view');
