@@ -5,11 +5,9 @@ declare(strict_types=1);
 return [
     'pre_order_required' => 'Needs a pre-order',
     'pre_order_required_category_helper' => 'Every dish in this category must be ordered ahead, unless a dish says otherwise.',
+    'hours_unit' => 'hours',
     'pre_order_lead_hours' => 'Hours of notice',
     'pre_order_lead_hours_helper' => 'How many hours ahead it must be ordered. Leave empty for any later time.',
-    'pre_order_follow_category' => 'Follow the category',
-    'pre_order_yes' => 'Yes, pre-order only',
-    'pre_order_no' => 'No, can be ordered any time',
     'pre_order_badge' => 'Pre-order only',
     'title' => 'Menu',
     'all_items' => 'All items',

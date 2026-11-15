@@ -25,6 +25,7 @@ use App\Http\Controllers\Admin\LoyaltyController;
 use App\Http\Controllers\Admin\LoyaltyRedemptionController;
 use App\Http\Controllers\Admin\MediaController as AdminMediaController;
 use App\Http\Controllers\Admin\MenuController as AdminMenuController;
+use App\Http\Controllers\Admin\NotificationController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\PaymentController;
 use App\Http\Controllers\Admin\PaymentMethodController;
@@ -193,6 +194,7 @@ Route::prefix('admin')
 
         Route::get('profile', [ProfileController::class, 'show'])->name('profile.show');
         Route::post('profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::post('notifications/read', [NotificationController::class, 'markAllRead'])->name('notifications.read');
         Route::put('profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
 
         Route::post('branch-switch', BranchSwitchController::class)->name('branch-switch');

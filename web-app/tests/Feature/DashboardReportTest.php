@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\Wastage;
 use App\Services\Metrics\MetricsService;
 use Database\Seeders\RoleSeeder;
+use Illuminate\Support\Facades\Cache;
 
 beforeEach(function (): void {
     $this->seed(RoleSeeder::class);
@@ -347,4 +348,28 @@ it('compares the reorder level in the ingredient unit, not the base unit', funct
         ->and($names->firstWhere('name', 'Beef')['reorder_level'])->toBe('10')
         ->and($names->firstWhere('name', 'Salt')['stock_qty'])->toBe('0')
         ->and($noLevel->id)->not->toBeIn($names->pluck('id')->all());
+});
+
+it('marks the bell alerts as read for one person until an alert changes', function (): void {
+    $gram = Unit::query()->create(['name' => 'Gram', 'symbol' => 'g-'.uniqid(), 'type' => 'weight', 'factor' => 1]);
+    $milk = Ingredient::query()->create(['name' => 'Milk', 'unit_id' => $gram->id, 'reorder_level' => 100, 'is_active' => true]);
+    IngredientStock::query()->create(['branch_id' => $this->branch->id, 'ingredient_id' => $milk->id, 'stock_qty' => 40, 'avg_cost' => 1]);
+
+    $manager = User::factory()->role('branch-manager', $this->branch->id)->create();
+    $other = User::factory()->role('branch-manager', $this->branch->id)->create();
+    $alerts = fn (User $user) => collect($this->actingAs($user, 'staff')->get('/admin/orders')->viewData('page')['props']['notifications'])->pluck('id')->all();
+
+    expect($alerts($manager))->toContain('low-stock');
+
+    $this->actingAs($manager, 'staff')->post(route('admin.notifications.read'))->assertRedirect();
+
+    // Read for them, still unread for a colleague, and it comes back when the alert changes.
+    expect($alerts($manager))->not->toContain('low-stock')
+        ->and($alerts($other))->toContain('low-stock');
+
+    $more = Ingredient::query()->create(['name' => 'Sugar', 'unit_id' => $gram->id, 'reorder_level' => 100, 'is_active' => true]);
+    IngredientStock::query()->create(['branch_id' => $this->branch->id, 'ingredient_id' => $more->id, 'stock_qty' => 10, 'avg_cost' => 1]);
+    Cache::flush();
+
+    expect($alerts($manager))->toContain('low-stock');
 });
