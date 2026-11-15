@@ -72,6 +72,7 @@ class PreorderController extends Controller
             'shareUrl' => route('web.preorder', ['branchCode' => strtolower($branch->code)]),
             'placed' => session()->pull('preorder_placed'),
             'canManage' => (bool) $request->user('staff')?->can('preorders.manage'),
+            'canShareImage' => PosSettings::invoiceShareImageEnabled($branch),
         ]);
     }
 

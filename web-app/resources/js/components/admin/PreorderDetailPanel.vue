@@ -9,9 +9,10 @@ import { localized } from '@/lib/site';
 
 const props = defineProps({
     preorder: { type: Object, default: null },
+    canShare: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['close', 'print']);
+const emit = defineEmits(['close', 'print', 'share']);
 
 const status = computed(() => (props.preorder?.deleted_at ? 'deleted' : props.preorder?.status));
 
@@ -106,6 +107,15 @@ function when(preorder) {
                 >
                     <AppIcon name="print" size="12" />
                     {{ t('preorders.print') }}
+                </button>
+                <button
+                    v-if="canShare && preorder && ! preorder.deleted_at"
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background"
+                    @click="emit('share', preorder)"
+                >
+                    <AppIcon name="image" size="12" />
+                    {{ t('orders.share_image') }}
                 </button>
                 <button type="button" class="inline-flex h-7 items-center rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background" @click="emit('close')">
                     {{ t('common.close') }}

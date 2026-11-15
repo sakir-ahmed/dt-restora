@@ -52,11 +52,18 @@ const filtered = computed(() => {
 
     const needle = search.value.trim().toLowerCase();
 
-    return props.rows.filter((row) => props.columns.some((column) => {
-        const value = row[column.key];
+    return props.rows.filter((row) => {
+        // A row may carry its own haystack in `search` for fields that are not columns.
+        if (typeof row.search === 'string' && row.search.toLowerCase().includes(needle)) {
+            return true;
+        }
 
-        return value !== null && value !== undefined && String(value).toLowerCase().includes(needle);
-    }));
+        return props.columns.some((column) => {
+            const value = row[column.key];
+
+            return value !== null && value !== undefined && String(value).toLowerCase().includes(needle);
+        });
+    });
 });
 
 const sorted = computed(() => {

@@ -25,6 +25,7 @@ return [
     'list_empty' => 'No pre-orders yet. Press Add pre-order to take the first one.',
     'status' => ['pending' => 'Waiting', 'completed' => 'Served', 'cancelled' => 'Cancelled'],
     'filter_all' => 'All',
+    'search_placeholder' => 'Search number, customer, mobile or invoice',
     'customer' => 'Customer',
     'order_no' => 'Pre-order no.',
     'source' => 'Source',

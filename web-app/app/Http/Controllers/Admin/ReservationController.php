@@ -58,15 +58,32 @@ class ReservationController extends Controller
             $to = $from->copy()->addDay();
         }
 
+        // A search looks past the chosen day: every booking of the last 30 and the next 90 days
+        // that matches the guest, the mobile, the booking number, a note or a table name.
+        $search = trim((string) $request->query('q', ''));
+
+        if ($search !== '') {
+            $from = now()->subDays(30)->startOfDay();
+            $to = now()->addDays(90)->endOfDay();
+        }
+
         $methods = PaymentMethod::query()->active()->orderBy('sort_order')->orderBy('id')->get();
 
         $reservations = Reservation::query()
             ->visible()
             ->where('branch_id', $branch->id)
             ->overlapping($from, $to)
+            ->when($search !== '', fn ($query) => $query->where(function ($inner) use ($search): void {
+                $inner->where('guest_name', 'like', "%{$search}%")
+                    ->orWhere('guest_mobile', 'like', "%{$search}%")
+                    ->orWhere('booking_no', 'like', "%{$search}%")
+                    ->orWhere('note', 'like', "%{$search}%")
+                    ->orWhereHas('tables', fn ($table) => $table->where('name', 'like', "%{$search}%"));
+            }))
             ->with(['tables:id,name,area,seats'])
             ->with(['mealOrder' => fn ($query) => $query->select(['orders.id', 'orders.reservation_id', 'orders.invoice_no'])])
             ->orderBy('starts_at')
+            ->limit(200)
             ->get()
             ->map(fn (Reservation $reservation): array => $this->present($reservation, $methods))
             ->values();
@@ -102,6 +119,7 @@ class ReservationController extends Controller
                 ->get(['id', 'name', 'name_bn']),
             'paymentMethods' => $methods->map(fn (PaymentMethod $method): array => ['code' => $method->code, 'name' => $method->name, 'name_bn' => $method->name_bn, 'type' => $method->type])->values(),
             'range' => ['from' => $from->toIso8601String(), 'to' => $to->toIso8601String()],
+            'search' => $search,
             'branchName' => $branch->name,
             'canManage' => (bool) $request->user('staff')?->can('reservations.manage'),
         ]);

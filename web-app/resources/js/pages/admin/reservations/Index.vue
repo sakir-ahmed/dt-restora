@@ -3,6 +3,7 @@ import { router, useForm } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
 import FormField from '@/components/ui-kit/FormField.vue';
+import DataTable from '@/components/ui-kit/DataTable.vue';
 import ReservationDetailPanel from '@/components/admin/ReservationDetailPanel.vue';
 import PageHeader from '@/components/ui-kit/PageHeader.vue';
 import SlideOver from '@/components/ui-kit/SlideOver.vue';
@@ -21,6 +22,7 @@ const props = defineProps({
     menuCategories: { type: Array, default: () => [] },
     paymentMethods: { type: Array, default: () => [] },
     range: { type: Object, required: true },
+    search: { type: String, default: '' },
     branchName: { type: String, required: true },
     canManage: { type: Boolean, default: false },
 });
@@ -56,8 +58,14 @@ function timeInput(date) {
 
 const day = ref(startOfDay(new Date()));
 
+// A search looks past the chosen day; the day sheet comes back when it is cleared.
+const q = ref(props.search);
+const searching = computed(() => q.value.trim() !== '');
+let searchTimer = null;
+
 function load(target) {
     day.value = startOfDay(target);
+    q.value = '';
 
     const from = day.value;
     const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 1);
@@ -66,7 +74,27 @@ function load(target) {
         preserveState: true,
         preserveScroll: true,
         replace: true,
-        only: ['reservations', 'range'],
+        only: ['reservations', 'range', 'search'],
+    });
+}
+
+function onSearch(value) {
+    q.value = value;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(runSearch, 350);
+}
+
+function runSearch() {
+    if (q.value.trim() === '') {
+        load(day.value);
+
+        return;
+    }
+
+    router.get(route('admin.reservations.index'), { q: q.value.trim() }, {
+        preserveState: true,
+        preserveScroll: true,
+        only: ['reservations', 'range', 'search'],
     });
 }
 
@@ -118,6 +146,17 @@ const DEPOSIT_CLASSES = {
     refunded: 'bg-muted/10 text-muted',
     forfeited: 'bg-warning/15 text-warning',
 };
+
+const columns = computed(() => [
+    { key: 'starts_at', label: t('reservations.start'), align: 'left', minWidth: '128px' },
+    { key: 'tables', label: t('reservations.tables'), align: 'left' },
+    { key: 'guest_name', label: t('reservations.guest_name'), align: 'left' },
+    { key: 'booking_no', label: t('reservations.booking_no'), align: 'left' },
+    { key: 'party_size', label: t('reservations.party_size'), type: 'number', minWidth: '72px' },
+    { key: 'preorder', label: t('reservations.preorder'), align: 'left' },
+    { key: 'status', label: t('common.status'), minWidth: '112px' },
+    { key: 'actions', label: '', align: 'right', type: 'component' },
+]);
 
 function holding(reservation) {
     return ! reservation.deleted && ['booked', 'seated'].includes(reservation.status);
@@ -449,85 +488,142 @@ function saveAdvance() {
             </dl>
         </div>
 
-        <div v-if="reservations.length === 0" class="flex flex-col items-center gap-1 rounded-lg border border-dashed border-border bg-surface py-12 text-center">
+        <div v-if="reservations.length === 0 && ! searching" class="flex flex-col items-center gap-1 rounded-lg border border-dashed border-border bg-surface py-12 text-center">
             <AppIcon name="calendar-days" size="24" class="text-muted" />
             <p class="text-[13px] font-medium text-foreground">{{ t('reservations.empty') }}</p>
             <p class="text-xs text-muted">{{ t('reservations.empty_hint') }}</p>
         </div>
 
-        <ul v-else class="space-y-2">
-            <li v-for="reservation in reservations" :key="reservation.id" class="cursor-pointer rounded-lg border border-border bg-surface p-3 transition-colors hover:bg-background/40" :class="holdingNow(reservation) ? 'border-accent ring-1 ring-accent/40' : ''" @click="detail = reservation">
-                <div class="flex flex-wrap items-center gap-3">
-                    <div class="w-28 shrink-0">
-                        <p class="text-sm font-semibold tabular-nums text-foreground">{{ clock(reservation.starts_at) }}</p>
-                        <p class="text-xs tabular-nums text-muted">{{ t('reservations.time_range', { from: clock(reservation.starts_at), to: clock(reservation.ends_at) }) }}</p>
-                    </div>
+        <template v-else>
+            <p v-if="searching" class="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+                <AppIcon name="magnifying-glass" size="12" />
+                {{ t('reservations.search_window') }}
+                <button type="button" class="rounded border border-border bg-surface px-1.5 py-0.5 font-medium text-foreground hover:bg-background" @click="load(day.value)">
+                    <AppIcon name="xmark" size="10" class="mr-0.5 inline" />
+                    {{ t('common.close') }}
+                </button>
+            </p>
 
-                    <div class="flex shrink-0 flex-wrap items-center gap-1" :title="t('reservations.seats_total', { count: reservation.seats })">
-                        <span v-for="table in reservation.tables" :key="table.id" class="rounded-md border border-border bg-background px-2 py-0.5 text-[13px] font-semibold text-foreground">{{ table.name }}</span>
-                        <span class="text-[10px] text-muted">{{ t('reservations.seats_short_total', { count: reservation.seats }) }}</span>
-                    </div>
-
-                    <div class="min-w-0 flex-1">
-                        <p class="truncate text-[13px] font-medium text-foreground">{{ reservation.guest_name }} <span class="font-normal text-muted">- {{ t('reservations.party_size') }} {{ reservation.party_size }}</span></p>
-                        <p class="truncate text-xs text-muted"><span class="font-mono">{{ reservation.booking_no }}</span><span v-if="reservation.guest_mobile"> - {{ reservation.guest_mobile }}</span><span v-if="reservation.note"> - {{ reservation.note }}</span></p>
-                    </div>
-
-                    <div class="flex flex-wrap items-center gap-1">
-                        <span v-if="holdingNow(reservation)" class="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-primary">{{ t('reservations.holding') }}</span>
-                        <span v-if="reservation.preorder.length" class="rounded-full bg-background px-2 py-0.5 text-[11px] font-medium text-foreground ring-1 ring-border" :title="t('reservations.preorder')">
-                            {{ t('reservations.preorder_items', { count: reservation.preorder.reduce((sum, line) => sum + line.quantity, 0) }) }} - {{ formatMoney(reservation.preorder_total) }}
+            <DataTable
+                :columns="columns"
+                :rows="reservations"
+                :empty-title="searching ? t('reservations.search_empty') : t('reservations.empty')"
+                searchable
+                :initial-search="q"
+                :filter-locally="false"
+                :search-placeholder="t('reservations.search_placeholder')"
+                clickable
+                @search="onSearch"
+                @row-click="(row) => detail = row"
+            >
+                <template #cell(starts_at)="{ row }">
+                    <span class="block text-[13px] font-semibold tabular-nums text-foreground">{{ clock(row.starts_at) }}</span>
+                    <span class="block text-xs tabular-nums text-muted">{{ t('reservations.time_range', { from: clock(row.starts_at), to: clock(row.ends_at) }) }}</span>
+                </template>
+                <template #cell(tables)="{ row }">
+                    <span class="flex flex-wrap items-center gap-1" :title="t('reservations.seats_total', { count: row.seats })">
+                        <span v-for="table in row.tables" :key="table.id" class="rounded-md border border-border bg-background px-2 py-0.5 text-[12px] font-semibold text-foreground">{{ table.name }}</span>
+                        <span class="text-[10px] text-muted">{{ t('reservations.seats_short_total', { count: row.seats }) }}</span>
+                    </span>
+                </template>
+                <template #cell(guest_name)="{ row }">
+                    <span class="text-foreground">{{ row.guest_name }}</span>
+                    <span v-if="row.guest_mobile" class="block text-xs tabular-nums text-muted">{{ row.guest_mobile }}</span>
+                </template>
+                <template #cell(booking_no)="{ value }">
+                    <span class="font-mono text-[12px] tabular-nums text-foreground">{{ value }}</span>
+                </template>
+                <template #cell(party_size)="{ value }">
+                    <span class="tabular-nums text-foreground">{{ value }}</span>
+                </template>
+                <template #cell(preorder)="{ row }">
+                    <span v-if="row.preorder.length" class="rounded-full bg-background px-2 py-0.5 text-[11px] font-medium text-foreground ring-1 ring-border" :title="row.preorder.map((line) => `${line.quantity} x ${localized(line, 'name')}`).join(', ')">
+                        {{ t('reservations.preorder_items', { count: row.preorder.reduce((sum, line) => sum + line.quantity, 0) }) }} - {{ formatMoney(row.preorder_total) }}
+                    </span>
+                    <span v-else class="text-muted">-</span>
+                </template>
+                <template #cell(status)="{ row }">
+                    <span class="flex flex-col items-start gap-0.5">
+                        <span v-if="holdingNow(row)" class="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-primary">{{ t('reservations.holding') }}</span>
+                        <span class="rounded-full px-2 py-0.5 text-[11px] font-medium" :class="STATUS_CLASSES[row.deleted ? 'deleted' : row.status]">{{ t(`reservations.status_${row.deleted ? 'deleted' : row.status}`) }}</span>
+                        <span v-if="row.deposit.status !== 'none'" class="rounded-full px-2 py-0.5 text-[11px] font-medium" :class="DEPOSIT_CLASSES[row.deposit.status]">
+                            {{ formatMoney(row.deposit.amount) }} {{ t(`reservations.deposit_${row.deposit.status}`) }}
                         </span>
-                        <span v-if="reservation.deposit.status !== 'none'" class="rounded-full px-2 py-0.5 text-[11px] font-medium" :class="DEPOSIT_CLASSES[reservation.deposit.status]" :title="t('reservations.deposit')">
-                            {{ formatMoney(reservation.deposit.amount) }} {{ t(`reservations.deposit_${reservation.deposit.status}`) }}
-                        </span>
-                        <span class="rounded-full px-2 py-0.5 text-[11px] font-medium" :class="STATUS_CLASSES[reservation.deleted ? 'deleted' : reservation.status]">{{ t(`reservations.status_${reservation.deleted ? 'deleted' : reservation.status}`) }}</span>
-                    </div>
-                </div>
-
-                <div v-if="reservation.preorder.length" class="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 border-t border-border pt-2 text-xs text-muted">
-                    <span v-for="(line, index) in reservation.preorder" :key="index">{{ line.quantity }} x {{ localized(line, 'name') }}<span v-if="line.variant_name"> ({{ localized({ name: line.variant_name, name_bn: line.variant_name_bn }, 'name') }})</span></span>
-                </div>
-
-                <div class="mt-2 flex flex-wrap items-center gap-1 border-t border-border pt-2">
-                    <button type="button" class="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-medium text-foreground hover:bg-background" @click.stop="printConfirmation(reservation)">
-                        <AppIcon name="print" size="11" />
-                        {{ t('reservations.print_confirmation') }}
-                    </button>
-
-                    <template v-if="canManage && ! reservation.deleted">
-                        <button v-if="reservation.status === 'booked'" type="button" class="inline-flex h-7 items-center gap-1 rounded-md bg-success px-2 text-xs font-medium text-white hover:opacity-90" @click.stop="act(reservation, 'seat')">
-                            <AppIcon name="circle-check" size="11" />
-                            {{ reservation.preorder.length ? t('reservations.action_seat_preorder') : t('reservations.action_seat') }}
-                        </button>
-                        <button v-if="reservation.status === 'seated'" type="button" class="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-medium text-foreground hover:bg-background" @click.stop="act(reservation, 'complete')">
-                            {{ t('reservations.action_complete') }}
+                    </span>
+                </template>
+                <template #cell(actions)="{ row }">
+                    <div class="flex items-center justify-end gap-1">
+                        <button
+                            type="button"
+                            class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-background hover:text-foreground"
+                            :aria-label="t('reservations.print_confirmation')"
+                            :title="t('reservations.print_confirmation')"
+                            @click.stop="printConfirmation(row)"
+                        >
+                            <AppIcon name="print" size="12" />
                         </button>
 
-                        <button v-if="reservation.deposit.status === 'none' && holding(reservation)" type="button" class="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-medium text-foreground hover:bg-background" @click.stop="openAdvance(reservation)">
-                            <AppIcon name="money-bill-wave" size="11" />
-                            {{ t('reservations.deposit_collect') }}
-                        </button>
-                        <template v-if="reservation.deposit.status === 'held' && Number(reservation.deposit.balance) > 0">
-                            <span class="px-1 text-xs text-muted">{{ t('reservations.deposit_balance', { amount: formatMoney(reservation.deposit.balance) }) }}</span>
-                            <button type="button" class="h-7 rounded-md border border-border px-2 text-xs text-foreground hover:bg-background" @click.stop="closeAdvance(reservation, 'refund')">{{ t('reservations.deposit_refund') }}</button>
-                            <button type="button" class="h-7 rounded-md border border-border px-2 text-xs text-muted hover:text-warning" @click.stop="closeAdvance(reservation, 'forfeit')">{{ t('reservations.deposit_forfeit') }}</button>
-                        </template>
+                        <template v-if="canManage && ! row.deleted">
+                            <button
+                                v-if="row.status === 'booked'"
+                                type="button"
+                                class="flex h-6 items-center gap-1 rounded border border-success/60 px-1.5 text-[11px] font-medium text-success hover:bg-success/10"
+                                @click.stop="act(row, 'seat')"
+                            >
+                                <AppIcon name="circle-check" size="10" />
+                                {{ row.preorder.length ? t('reservations.action_seat_preorder') : t('reservations.action_seat') }}
+                            </button>
+                            <button
+                                v-if="row.status === 'seated'"
+                                type="button"
+                                class="flex h-6 items-center gap-1 rounded border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-background"
+                                @click.stop="act(row, 'complete')"
+                            >
+                                {{ t('reservations.action_complete') }}
+                            </button>
 
-                        <span class="ml-auto flex items-center gap-1">
-                            <button v-if="holding(reservation)" type="button" class="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted hover:text-foreground" :aria-label="t('reservations.edit')" @click.stop="openEdit(reservation)">
+                            <button
+                                v-if="row.deposit.status === 'none' && holding(row)"
+                                type="button"
+                                class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-background hover:text-foreground"
+                                :aria-label="t('reservations.deposit_collect')"
+                                :title="t('reservations.deposit_collect')"
+                                @click.stop="openAdvance(row)"
+                            >
+                                <AppIcon name="money-bill-wave" size="12" />
+                            </button>
+                            <template v-if="row.deposit.status === 'held' && Number(row.deposit.balance) > 0">
+                                <button type="button" class="flex h-6 items-center rounded border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-background" @click.stop="closeAdvance(row, 'refund')">{{ t('reservations.deposit_refund') }}</button>
+                                <button type="button" class="flex h-6 items-center rounded border border-border px-1.5 text-[11px] font-medium text-muted hover:text-warning" @click.stop="closeAdvance(row, 'forfeit')">{{ t('reservations.deposit_forfeit') }}</button>
+                            </template>
+
+                            <button
+                                v-if="holding(row)"
+                                type="button"
+                                class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-background hover:text-foreground"
+                                :aria-label="t('reservations.edit')"
+                                :title="t('reservations.edit')"
+                                @click.stop="openEdit(row)"
+                            >
                                 <AppIcon name="pen-to-square" size="12" />
                             </button>
-                            <button v-if="reservation.status === 'booked'" type="button" class="h-7 rounded-md border border-border px-2 text-xs text-muted hover:text-warning" @click.stop="act(reservation, 'no-show')">{{ t('reservations.action_no_show') }}</button>
-                            <button v-if="reservation.status === 'booked'" type="button" class="h-7 rounded-md border border-border px-2 text-xs text-muted hover:text-danger" @click.stop="act(reservation, 'cancel')">{{ t('common.cancel') }}</button>
-                            <button v-if="reservation.status !== 'seated' && reservation.status !== 'completed'" type="button" class="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted hover:text-danger" :aria-label="t('common.delete')" :title="t('common.delete')" @click.stop="removeReservation(reservation)">
+                            <button v-if="row.status === 'booked'" type="button" class="flex h-6 items-center rounded border border-border px-1.5 text-[11px] font-medium text-muted hover:text-warning" @click.stop="act(row, 'no-show')">{{ t('reservations.action_no_show') }}</button>
+                            <button v-if="row.status === 'booked'" type="button" class="flex h-6 items-center rounded border border-border px-1.5 text-[11px] font-medium text-muted hover:text-danger" @click.stop="act(row, 'cancel')">{{ t('common.cancel') }}</button>
+                            <button
+                                v-if="row.status !== 'seated' && row.status !== 'completed'"
+                                type="button"
+                                class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-danger/10 hover:text-danger"
+                                :aria-label="t('common.delete')"
+                                :title="t('common.delete')"
+                                @click.stop="removeReservation(row)"
+                            >
                                 <AppIcon name="trash" size="12" />
                             </button>
-                        </span>
-                    </template>
-                </div>
-            </li>
-        </ul>
+                        </template>
+                    </div>
+                </template>
+            </DataTable>
+        </template>
 
         <ReservationDetailPanel :reservation="detail" @close="detail = null" @print="printConfirmation" />
 

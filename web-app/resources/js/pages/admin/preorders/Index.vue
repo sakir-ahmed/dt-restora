@@ -12,6 +12,8 @@ import PreorderDetailPanel from '@/components/admin/PreorderDetailPanel.vue';
 import { useConfirm } from '@/components/ui-kit/useConfirm.js';
 import { formatMoney } from '@/lib/format';
 import { t } from '@/lib/i18n';
+import { openInvoiceImage } from '@/lib/invoiceImage';
+import { printUrl } from '@/lib/print';
 import { useSafeDelete } from '@/lib/safeDelete';
 
 const props = defineProps({
@@ -22,6 +24,7 @@ const props = defineProps({
     shareUrl: { type: String, required: true },
     placed: { type: Object, default: null },
     canManage: { type: Boolean, default: false },
+    canShareImage: { type: Boolean, default: false },
 });
 
 const confirm = useConfirm();
@@ -31,12 +34,19 @@ const pendingCount = computed(() => props.preorders.filter((entry) => entry.stat
 
 // The status pills above the list work on the shown status, so a deleted row only appears under All.
 const statusFilter = ref('all');
+const sourceFilter = ref('all');
 
 const statusFilters = [
     { value: 'all', label: t('preorders.filter_all') },
     { value: 'pending', label: t('status.pending') },
     { value: 'completed', label: t('status.completed') },
     { value: 'cancelled', label: t('status.cancelled') },
+];
+
+const sourceFilters = [
+    { value: 'all', label: t('preorders.filter_all') },
+    { value: 'staff', label: t('preorders.source_staff') },
+    { value: 'public', label: t('preorders.source_public') },
 ];
 
 const columns = computed(() => [
@@ -56,6 +66,7 @@ const shownStatus = (entry) => (entry.deleted_at ? 'deleted' : entry.status);
 
 const rows = computed(() => props.preorders
     .filter((entry) => statusFilter.value === 'all' || (! entry.deleted_at && entry.status === statusFilter.value))
+    .filter((entry) => sourceFilter.value === 'all' || entry.source === sourceFilter.value)
     .map((entry) => ({
         id: entry.id,
         created_at: entry.created_at,
@@ -69,6 +80,9 @@ const rows = computed(() => props.preorders
         source: entry.source,
         total: entry.total,
         deleted: Boolean(entry.deleted_at),
+        // The table search box matches this haystack, so the mobile, address and linked invoice count too.
+        search: [entry.order_no, entry.customer_name, entry.customer_mobile, entry.address, entry.note, entry.order_invoice_no]
+            .filter((part) => part).join(' ').toLowerCase(),
         raw: entry,
     })));
 
@@ -92,7 +106,18 @@ function remove(entry) {
 }
 
 function printEntry(entry) {
-    window.open(entry.print_url, '_blank', 'noopener');
+    printUrl(entry.print_url);
+}
+
+// The slip as a picture, like the POS share-as-image button.
+function shareImage(entry) {
+    openInvoiceImage({
+        url: entry.print_url,
+        invoiceNo: entry.order_no,
+        total: entry.total,
+        mobile: entry.customer_mobile,
+        customerName: entry.customer_name,
+    });
 }
 
 function act(entry, action) {
@@ -179,9 +204,28 @@ export default { layout: AdminLayout };
                     >
                         {{ filter.label }}
                     </button>
+                    <span class="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
+                    <button
+                        v-for="filter in sourceFilters"
+                        :key="filter.value"
+                        type="button"
+                        class="h-6 shrink-0 rounded-full border px-2 text-[11px] font-medium"
+                        :class="sourceFilter === filter.value ? 'border-accent bg-accent/15 text-primary' : 'border-border bg-surface text-muted hover:text-foreground'"
+                        @click="sourceFilter = filter.value"
+                    >
+                        {{ filter.label }}
+                    </button>
                 </div>
 
-                <DataTable :columns="columns" :rows="rows" :empty-title="t('preorders.list_empty')" clickable @row-click="(row) => selectedId = row.id">
+                <DataTable
+                    :columns="columns"
+                    :rows="rows"
+                    :empty-title="t('preorders.list_empty')"
+                    searchable
+                    :search-placeholder="t('preorders.search_placeholder')"
+                    clickable
+                    @row-click="(row) => selectedId = row.id"
+                >
                     <template #cell(created_at)="{ value }">
                         <DateText :value="value" relative />
                     </template>
@@ -209,17 +253,25 @@ export default { layout: AdminLayout };
                     </template>
                     <template #cell(actions)="{ row }">
                         <div class="flex items-center justify-end gap-1">
-                            <a
-                                :href="row.raw.print_url"
-                                target="_blank"
-                                rel="noopener"
+                            <button
+                                type="button"
                                 class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-background hover:text-foreground"
                                 :aria-label="t('preorders.print')"
                                 :title="t('preorders.print')"
-                                @click.stop
+                                @click.stop="printEntry(row.raw)"
                             >
                                 <AppIcon name="print" size="12" />
-                            </a>
+                            </button>
+                            <button
+                                v-if="canShareImage && ! row.deleted"
+                                type="button"
+                                class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-background hover:text-foreground"
+                                :aria-label="t('orders.share_image')"
+                                :title="t('orders.share_image')"
+                                @click.stop="shareImage(row.raw)"
+                            >
+                                <AppIcon name="image" size="12" />
+                            </button>
                             <template v-if="canManage && ! row.deleted">
                                 <button
                                     v-if="row.raw.status === 'pending' && ! row.raw.order_invoice_no"
@@ -266,6 +318,6 @@ export default { layout: AdminLayout };
             </template>
         </section>
 
-        <PreorderDetailPanel :preorder="selected" @close="selectedId = null" @print="printEntry" />
+        <PreorderDetailPanel :preorder="selected" :can-share="canShareImage" @close="selectedId = null" @print="printEntry" @share="shareImage" />
     </div>
 </template>
