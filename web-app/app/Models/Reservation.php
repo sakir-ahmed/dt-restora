@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
@@ -115,6 +116,16 @@ class Reservation extends Model
     public function depositOrder(): BelongsTo
     {
         return $this->belongsTo(Order::class, 'deposit_order_id');
+    }
+
+    /**
+     * The meal order made from this booking's pre-ordered food, when the guests were seated.
+     *
+     * @return HasOne<Order, $this>
+     */
+    public function mealOrder(): HasOne
+    {
+        return $this->hasOne(Order::class)->latestOfMany();
     }
 
     /**

@@ -8,7 +8,7 @@ import StatusBadge from '@/components/ui-kit/StatusBadge.vue';
 import DataTable from '@/components/ui-kit/DataTable.vue';
 import DateText from '@/components/ui-kit/DateText.vue';
 import MoneyText from '@/components/ui-kit/MoneyText.vue';
-import PreorderDetailModal from '@/components/admin/PreorderDetailModal.vue';
+import PreorderDetailPanel from '@/components/admin/PreorderDetailPanel.vue';
 import { useConfirm } from '@/components/ui-kit/useConfirm.js';
 import { formatMoney } from '@/lib/format';
 import { t } from '@/lib/i18n';
@@ -99,6 +99,11 @@ function act(entry, action) {
     router.post(route('admin.preorders.transition', { preorder: entry.id, action }), {}, { preserveScroll: true });
 }
 
+// The pre-order becomes the real order the kitchen and the till work from.
+function sendToOrder(entry) {
+    router.post(route('admin.preorders.send', entry.id), {}, { preserveScroll: true });
+}
+
 async function cancel(entry) {
     const result = await confirm({
         variant: 'danger',
@@ -180,8 +185,9 @@ export default { layout: AdminLayout };
                     <template #cell(created_at)="{ value }">
                         <DateText :value="value" relative />
                     </template>
-                    <template #cell(order_no)="{ value }">
-                        <span class="font-mono text-[12px] tabular-nums text-foreground">{{ value }}</span>
+                    <template #cell(order_no)="{ row }">
+                        <span class="font-mono text-[12px] tabular-nums text-foreground">{{ row.order_no }}</span>
+                        <span v-if="row.raw.order_invoice_no" class="block font-mono text-[10px] text-muted" :title="row.raw.order_invoice_no">{{ row.raw.order_invoice_no }}</span>
                     </template>
                     <template #cell(customer)="{ row }">
                         <span class="text-foreground">{{ row.customer }}</span>
@@ -216,9 +222,19 @@ export default { layout: AdminLayout };
                             </a>
                             <template v-if="canManage && ! row.deleted">
                                 <button
-                                    v-if="row.raw.status === 'pending'"
+                                    v-if="row.raw.status === 'pending' && ! row.raw.order_invoice_no"
                                     type="button"
                                     class="flex h-6 items-center gap-1 rounded border border-accent/60 px-1.5 text-[11px] font-medium text-primary hover:bg-accent/10"
+                                    :title="t('preorders.send_to_order_hint')"
+                                    @click.stop="sendToOrder(row.raw)"
+                                >
+                                    <AppIcon name="utensils" size="10" />
+                                    {{ t('preorders.send_to_order') }}
+                                </button>
+                                <button
+                                    v-if="row.raw.status === 'pending'"
+                                    type="button"
+                                    class="flex h-6 items-center gap-1 rounded border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-background"
                                     @click.stop="act(row.raw, 'complete')"
                                 >
                                     <AppIcon name="circle-check" size="10" />
@@ -232,7 +248,7 @@ export default { layout: AdminLayout };
                                     :title="t('preorders.cancel')"
                                     @click.stop="cancel(row.raw)"
                                 >
-                                    <AppIcon name="ban" size="12" />
+                                    <AppIcon name="xmark" size="12" />
                                 </button>
                                 <button
                                     type="button"
@@ -250,6 +266,6 @@ export default { layout: AdminLayout };
             </template>
         </section>
 
-        <PreorderDetailModal :preorder="selected" @close="selectedId = null" @print="printEntry" />
+        <PreorderDetailPanel :preorder="selected" @close="selectedId = null" @print="printEntry" />
     </div>
 </template>

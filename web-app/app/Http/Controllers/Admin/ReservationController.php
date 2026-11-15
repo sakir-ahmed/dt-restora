@@ -65,6 +65,7 @@ class ReservationController extends Controller
             ->where('branch_id', $branch->id)
             ->overlapping($from, $to)
             ->with(['tables:id,name,area,seats'])
+            ->with(['mealOrder' => fn ($query) => $query->select(['orders.id', 'orders.reservation_id', 'orders.invoice_no'])])
             ->orderBy('starts_at')
             ->get()
             ->map(fn (Reservation $reservation): array => $this->present($reservation, $methods))
@@ -353,6 +354,7 @@ class ReservationController extends Controller
             'seats' => $reservation->tables->sum('seats'),
             'starts_at' => $reservation->starts_at->toIso8601String(),
             'ends_at' => $reservation->ends_at->toIso8601String(),
+            'order_invoice_no' => $reservation->mealOrder?->invoice_no,
             'status' => $reservation->status,
             'note' => $reservation->note,
             'preorder' => $reservation->preorder ?? [],

@@ -73,6 +73,7 @@ class CreateOrderAction
         bool $revisingSettled = false,
         OrderKind $kind = OrderKind::Regular,
         ?int $reservationId = null,
+        ?int $preorderId = null,
         bool $overridePreorder = false,
     ): Order {
         if ($clientId !== null && $revising === null) {
@@ -85,7 +86,7 @@ class CreateOrderAction
 
         $lines = collect($lines);
 
-        return DB::transaction(function () use ($branch, $type, $lines, $cashier, $waiter, $tableId, $customer, $discount, $note, $channel, $clientId, $shift, $terminalCode, $deliveryFee, $deliveryZoneId, $deliveryAddress, $scheduledFor, $couponCode, $invoiceNo, $revising, $revisingSettled, $kind, $reservationId, $overridePreorder): Order {
+        return DB::transaction(function () use ($branch, $type, $lines, $cashier, $waiter, $tableId, $customer, $discount, $note, $channel, $clientId, $shift, $terminalCode, $deliveryFee, $deliveryZoneId, $deliveryAddress, $scheduledFor, $couponCode, $invoiceNo, $revising, $revisingSettled, $kind, $reservationId, $preorderId, $overridePreorder): Order {
             $branch = Branch::query()->whereKey($branch->id)->lockForUpdate()->firstOrFail();
 
             $keptCoupon = false;
@@ -227,6 +228,7 @@ class CreateOrderAction
                     'channel' => $channel->value,
                     'kind' => $kind->value,
                     'reservation_id' => $reservationId,
+                    'preorder_id' => $preorderId,
                     'waiter_id' => $waiter?->id,
                     'cashier_id' => $cashier?->id,
                     'shift_id' => $shift?->id,

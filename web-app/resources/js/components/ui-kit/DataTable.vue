@@ -210,11 +210,13 @@ function cellDisplay(row, column) {
                         :class="clickable ? 'cursor-pointer' : ''"
                         @click="clickable && emit('row-click', row)"
                     >
+                        <!-- max-w-0 only on truncating columns: clamping every cell would cap each
+                             column at its header width and pile the leftover table width on the right. -->
                         <td
                             v-for="column in columns"
                             :key="column.key"
-                            class="max-w-0 px-3 py-1.5 align-middle text-foreground"
-                            :class="[alignClass(column), column.type === 'component' ? 'p-0' : '']"
+                            class="px-3 py-1.5 align-middle text-foreground"
+                            :class="[alignClass(column), column.type === 'component' ? 'p-0' : '', column.truncate ? 'max-w-0' : '']"
                         >
                             <slot
                                 :name="`cell(${column.key})`"

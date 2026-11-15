@@ -94,6 +94,7 @@ return [
     'deposit_forfeit_title' => 'Keep the advance?',
     'deposit_forfeit_message' => 'The restaurant keeps :amount (for example a no show or a late cancel). This closes the advance.',
     'print_confirmation' => 'Print confirmation',
+    'order_label' => 'Order',
     'sms_confirmed' => 'Booking :booking confirmed at :branch: table :tables, :when. Please arrive on time.',
     'slip_title' => 'Booking confirmation',
     'slip_when' => 'Your table is held for',

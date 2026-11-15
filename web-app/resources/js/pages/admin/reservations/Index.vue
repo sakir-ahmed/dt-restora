@@ -3,7 +3,7 @@ import { router, useForm } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
 import FormField from '@/components/ui-kit/FormField.vue';
-import ReservationDetailModal from '@/components/admin/ReservationDetailModal.vue';
+import ReservationDetailPanel from '@/components/admin/ReservationDetailPanel.vue';
 import PageHeader from '@/components/ui-kit/PageHeader.vue';
 import SlideOver from '@/components/ui-kit/SlideOver.vue';
 import { useConfirm } from '@/components/ui-kit/useConfirm.js';
@@ -529,7 +529,7 @@ function saveAdvance() {
             </li>
         </ul>
 
-        <ReservationDetailModal :reservation="detail" @close="detail = null" @print="printConfirmation" />
+        <ReservationDetailPanel :reservation="detail" @close="detail = null" @print="printConfirmation" />
 
         <!-- Make or change a booking -->
         <SlideOver :open="open" wide :title="editing ? t('reservations.edit') : t('reservations.add')" :subtitle="editing ? editing.booking_no : ''" @close="open = false">

@@ -52,6 +52,7 @@ class PreorderController extends Controller
         $preorders = Preorder::query()
             ->where('branch_id', $branch->id)
             ->with('table:id,name')
+            ->with(['order' => fn ($query) => $query->select(['orders.id', 'orders.preorder_id', 'orders.invoice_no'])])
             ->visible()
             ->latest('id')
             ->limit(200)
@@ -110,6 +111,26 @@ class PreorderController extends Controller
         activity()->performedOn($preorder)->causedBy($request->user('staff'))->log('preorders.'.$status);
 
         return back()->with('success', __('preorders.status_'.$status.'_done'));
+    }
+
+    /**
+     * Turn a waiting pre-order into the real order the kitchen and the till work from. The
+     * pre-order ends as completed; the order keeps the link through preorder_id.
+     */
+    public function send(Request $request, Preorder $preorder): RedirectResponse
+    {
+        $this->authorize('preorders.manage');
+
+        $user = $request->user('staff');
+        abort_unless($user->canAccessBranch($preorder->branch_id), 404);
+
+        if ($preorder->status !== Preorder::PENDING || $preorder->order()->exists()) {
+            return back()->with('error', __('preorders.already_sent'));
+        }
+
+        $order = $this->service->sendToOrder($preorder, $user);
+
+        return back()->with('success', __('preorders.sent_done', ['invoice' => $order->invoice_no]));
     }
 
     /**
@@ -209,6 +230,8 @@ class PreorderController extends Controller
             'sms_sent' => $preorder->sms_sent_at !== null,
             'created_at' => $preorder->created_at->toIso8601String(),
             'deleted_at' => $preorder->deleted_at?->toIso8601String(),
+            'order_id' => $preorder->order?->id,
+            'order_invoice_no' => $preorder->order?->invoice_no,
             'print_url' => route('admin.preorders.print', ['preorder' => $preorder->id]),
         ];
     }
