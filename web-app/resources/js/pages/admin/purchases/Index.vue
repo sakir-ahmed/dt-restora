@@ -98,6 +98,51 @@ function addLine() {
     });
 }
 
+// Every ingredient that is not on a line yet, quantity and cost left empty to fill in for what was bought.
+// Lines still empty when the purchase is saved are left out of it.
+function addAllIngredients() {
+    // A blank starting line (no ingredient chosen) makes way for the list.
+    form.items = form.items.filter((line) => line.ingredient_id);
+
+    const present = new Set(form.items.map((line) => Number(line.ingredient_id)));
+    const missing = allIngredients.value.filter((ingredient) => ! present.has(ingredient.id));
+
+    if (missing.length === 0) {
+        notify.info(t('inventory.all_ingredients_already'));
+
+        return;
+    }
+
+    for (const ingredient of missing) {
+        const line = {
+            category_id: ingredient.ingredient_category_id ?? 'none',
+            ingredient_id: ingredient.id,
+            supplier_id: '',
+            invoice_no: '',
+            unit_id: ingredient.unit_id ?? '',
+            qty: '',
+            unit_cost: '',
+        };
+
+        const options = suppliersFor(line);
+        line.supplier_id = options.length === 1 ? options[0].id : '';
+        form.items.push(line);
+    }
+
+    notify.info(t('inventory.all_ingredients_added', { count: missing.length }));
+}
+
+// A line counts as bought only when it names an ingredient and has a quantity and a cost above zero.
+function isFilled(line) {
+    return Boolean(line.ingredient_id) && Number(line.qty) > 0 && Number(line.unit_cost) > 0;
+}
+
+function lineName(line) {
+    const ingredient = allIngredients.value.find((entry) => entry.id === Number(line.ingredient_id));
+
+    return ingredient ? ingredient.name : t('inventory.empty_line');
+}
+
 const total = computed(() => form.items.reduce((sum, line) => sum + Number(line.qty || 0) * Number(line.unit_cost || 0), 0));
 
 // A line's category narrows its ingredient list: '' shows all, 'none' the uncategorised ones.
@@ -304,15 +349,45 @@ function unitsFor(line) {
     return sameType.length ? sameType : props.units;
 }
 
-function save() {
-    // Every line needs an answer: a supplier, or "without supplier".
-    const missing = form.items.findIndex((line) => line.supplier_id === '');
+async function save() {
+    const skipped = form.items.filter((line) => ! isFilled(line));
+
+    if (skipped.length === form.items.length) {
+        notify.error(t('inventory.purchase_nothing_filled'));
+
+        return;
+    }
+
+    // Every line that is bought needs an answer: a supplier, or "without supplier".
+    const missing = form.items.findIndex((line) => isFilled(line) && line.supplier_id === '');
 
     if (missing !== -1) {
         form.clearErrors();
         form.setError(`items.${missing}.supplier_id`, t('inventory.line_supplier_required'));
 
         return;
+    }
+
+    // Lines left empty or at zero are not part of the purchase; say so before they are dropped.
+    if (skipped.length > 0) {
+        const names = skipped.map(lineName);
+        const shown = names.slice(0, 8).join(', ');
+        const list = names.length > 8 ? `${shown} ${t('inventory.more_count', { count: names.length - 8 })}` : shown;
+
+        const result = await confirm({
+            variant: 'warning',
+            level: 'simple',
+            title: t('inventory.skip_lines_title', { count: skipped.length }),
+            message: t('inventory.skip_lines_message', { list }),
+            confirmText: t('inventory.skip_lines_confirm'),
+        });
+
+        if (! result.confirmed) {
+            return;
+        }
+
+        // Dropped now, so any error the server reports points at the line shown.
+        form.items = form.items.filter(isFilled);
     }
 
     form.transform((data) => ({
@@ -488,10 +563,16 @@ async function saveEdit() {
                 <div class="border-t border-border pt-3">
                     <div class="mb-2 flex items-center justify-between">
                         <h3 class="text-xs font-semibold uppercase tracking-wider text-muted" :class="$page.props.locale === 'bn' ? 'normal-case tracking-normal' : ''">{{ t('inventory.items_label') }}</h3>
-                        <button type="button" class="inline-flex h-6 items-center gap-1 rounded border border-border px-1.5 text-[11px] text-foreground hover:bg-background" @click="addLine">
-                            <AppIcon name="plus" size="10" />
-                            {{ t('inventory.add_line') }}
-                        </button>
+                        <div class="flex items-center gap-1.5">
+                            <button type="button" class="inline-flex h-6 items-center gap-1 rounded border border-border px-1.5 text-[11px] text-foreground hover:bg-background" @click="addAllIngredients">
+                                <AppIcon name="clipboard-list" size="10" />
+                                {{ t('inventory.add_all_ingredients') }}
+                            </button>
+                            <button type="button" class="inline-flex h-6 items-center gap-1 rounded border border-border px-1.5 text-[11px] text-foreground hover:bg-background" @click="addLine">
+                                <AppIcon name="plus" size="10" />
+                                {{ t('inventory.add_line') }}
+                            </button>
+                        </div>
                     </div>
 
                     <div class="mb-2 overflow-x-auto rounded-md border border-border">
