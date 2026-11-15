@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
 import BrandMark from '@/components/ui-kit/BrandMark.vue';
 import BrandName from '@/components/ui-kit/BrandName.vue';
+import ClockPill from '@/components/ui-kit/ClockPill.vue';
 import CommandPalette from '@/components/ui-kit/CommandPalette.vue';
 import LanguageSwitch from '@/components/ui-kit/LanguageSwitch.vue';
 import NotificationBell from '@/components/ui-kit/NotificationBell.vue';
@@ -277,6 +278,7 @@ function openCommandPalette() {
                 </button>
 
                 <div class="ml-auto flex items-center gap-1 md:ml-0">
+                    <ClockPill />
                     <SyncStatusPill />
                     <NotificationBell :notifications="page.props.notifications ?? []" />
                     <LanguageSwitch />
