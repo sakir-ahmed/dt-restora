@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
 import DataTable from '@/components/ui-kit/DataTable.vue';
 import DateText from '@/components/ui-kit/DateText.vue';
+import InfoButton from '@/components/ui-kit/InfoButton.vue';
 import PageHeader from '@/components/ui-kit/PageHeader.vue';
 import StatusBadge from '@/components/ui-kit/StatusBadge.vue';
 import { useConfirm } from '@/components/ui-kit/useConfirm.js';
@@ -18,6 +19,18 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+// What this page is for, in one notice: the small info button beside the title.
+function showHelp() {
+    confirm({
+        variant: 'info',
+        level: 'simple',
+        title: t('inventory.count_help_title'),
+        message: t('inventory.count_help'),
+        confirmText: t('common.close'),
+        hideCancel: true,
+    });
+}
 
 const counted = ref({});
 const saving = ref(false);
@@ -100,6 +113,9 @@ function varianceOf(item) {
     <div>
         <PageHeader :title="t('inventory.counts')" :description="t('inventory.counts_subtitle')">
             <template #actions>
+                <span class="mr-1 inline-flex items-center">
+                    <InfoButton :label="t('inventory.count_help_title')" @click="showHelp" />
+                </span>
                 <button
                     v-if="canManage && ! openCount"
                     type="button"

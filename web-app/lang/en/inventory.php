@@ -83,6 +83,8 @@ return [
     'no_wastage' => 'No wastage recorded yet',
     'counts' => 'Stock counts',
     'start_count' => 'Start count',
+    'count_help_title' => 'What a stock count does',
+    'count_help' => 'A stock count matches the system\'s book stock with what is really on the shelf. Start a count and it freezes every ingredient\'s current quantity as the baseline; only one count can be open at a time. Staff count physically and type the real quantity of each item (leave it empty to skip), with the difference shown live in red or green. Save keeps the entries so counting can continue later. Close and apply (which asks for a reason) moves each difference into stock and records a count movement for it, so every adjustment stays in the audit trail. Deleting an open count changes nothing; deleting a closed one puts its differences back, and is refused when stock has since fallen too low.',
     'count_started' => 'Stock count started.',
     'count_already_open' => 'A count is already open. Finish it first.',
     'count_saved' => 'Counted quantities saved.',
