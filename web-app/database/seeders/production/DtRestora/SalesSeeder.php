@@ -316,6 +316,8 @@ class SalesSeeder extends Seeder
             'cashier_id' => $cashier?->id,
             'customer_id' => $customerId,
             'status' => $status->value,
+            // Finished sales are served; only the live ones are still at the kitchen, so the board stays small.
+            'kitchen_status' => in_array($status, [OrderStatus::Paid, OrderStatus::Void], true) ? OrderStatus::Served->value : $status->value,
             'subtotal' => $this->money($subtotal),
             'discount_type' => $discount > 0 ? $coupon?->type : null,
             'discount_value' => $this->money($discount > 0 ? (float) $coupon->value : 0),
