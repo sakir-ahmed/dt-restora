@@ -49,7 +49,7 @@ const columns = computed(() => [
     { key: 'table', label: t('receipt.table'), align: 'left' },
     { key: 'source', label: t('preorders.source'), align: 'left' },
     { key: 'total', label: t('inventory.total'), type: 'money', sortable: true, minWidth: '96px' },
-    { key: 'actions', label: '', align: 'right', type: 'component', minWidth: '220px' },
+    { key: 'actions', label: '', align: 'right', type: 'component' },
 ]);
 
 const shownStatus = (entry) => (entry.deleted_at ? 'deleted' : entry.status);
