@@ -46,6 +46,8 @@ php artisan db:seed --class="Database\Seeders\Production\ArmansKitchen\CompanySe
 
 ## Updating the server later
 
+On the server itself, `./deploy.sh` (in `web-app/`) walks through these steps with a maintenance window around them: fetch, pull, `composer install`, `npm ci && npm run build`, `migrate --force`, storage link, caches, worker restarts. Or by hand:
+
 ```bash
 git pull origin production/armanskitchen
 cd web-app
@@ -55,6 +57,17 @@ php artisan migrate --force
 php artisan config:cache && php artisan route:cache && php artisan view:cache
 php artisan queue:restart
 ```
+
+### One-time follow-up when the deploy crosses the settings-driven brand
+
+A server first installed from a customer branch (before the brand moved from the code into the settings table) needs one extra run after the first such deploy. `./company-sync.sh` (in `web-app/`) does it, and is safe to repeat:
+
+```bash
+./company-sync.sh                 # default company: ArmansKitchen
+./company-sync.sh -c HillsTable   # another database/seeders/production folder
+```
+
+It adds the missing `.env` keys (`APP_TIMEZONE`, `SEED_PROFILE`; a copy of `.env` is saved first), installs the company brand (settings table plus the logo set in the git-ignored `public/images/customer` folder), re-syncs the outlet and menu from the catalog (names, prices and photos of the seeded dishes are overwritten; menu edits made in the admin panel are reset), then refreshes the caches and restarts the workers. `php artisan brand:status` shows what the install still takes from the DT Restora default. The pre-order columns are ordinary migrations, so `migrate --force` above already adds `pre_order_required` and drops the old `is_preorder_only` columns where they exist.
 
 7. Cache the configuration:
 
