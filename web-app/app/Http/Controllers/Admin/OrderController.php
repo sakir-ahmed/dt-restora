@@ -20,14 +20,17 @@ use App\Http\Requests\Admin\CreateOrderRequest;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Order;
+use App\Models\RestaurantTable;
 use App\Models\Setting;
 use App\Models\Shift;
+use App\Models\User;
 use App\Models\VoidRequest;
 use App\Services\Aggregators\PlatformAdapters;
 use App\Services\PosSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -47,6 +50,20 @@ class OrderController extends Controller
             ->with(['table:id,name', 'waiter:id,name', 'cashier:id,name', 'customer:id,name,mobile', 'items:id,order_id,name,name_bn,quantity,unit_price,add_ons,add_ons_total,line_total', 'voidRequest', 'payments', 'aggregatorChannel:id,key,name'])
             ->with('preparer:id,name')
             ->when($request->string('kind')->toString(), fn ($query, $kind) => $query->where('kind', $kind))
+            ->when($request->integer('cashier'), fn ($query, $id) => $query->where('cashier_id', $id))
+            ->when($request->integer('cook'), fn ($query, $id) => $query->where('prepared_by', $id))
+            ->when($request->integer('waiter'), fn ($query, $id) => $query->where('waiter_id', $id))
+            ->when($request->integer('table'), fn ($query, $id) => $query->where('restaurant_table_id', $id))
+            ->when($request->string('channel')->toString(), fn ($query, $channel) => $query->where('channel', $channel))
+            ->when($request->string('type')->toString(), fn ($query, $type) => $query->where('order_type', $type))
+            ->when($request->string('payment')->toString(), fn ($query, $payment) => match ($payment) {
+                'paid' => $query->where('status', OrderStatus::Paid->value)->where('is_due', false),
+                'due' => $query->where('is_due', true),
+                'unpaid' => $query->whereNotIn('status', [OrderStatus::Paid->value, OrderStatus::Void->value])->where('is_due', false),
+                default => $query,
+            })
+            ->when($request->string('from')->toString(), fn ($query, $from) => $query->where('created_at', '>=', Carbon::parse($from)->startOfDay()))
+            ->when($request->string('to')->toString(), fn ($query, $to) => $query->where('created_at', '<=', Carbon::parse($to)->endOfDay()))
             ->when($request->string('status')->toString(), fn ($query, $status) => $status === 'awaiting'
                 ? $query->where('approval_status', Order::APPROVAL_AWAITING)->where('status', '!=', OrderStatus::Void->value)
                 : $query->where('status', $status))
@@ -62,7 +79,13 @@ class OrderController extends Controller
 
         return Inertia::render('admin/orders/Index', [
             'orders' => $orders,
-            'filters' => $request->only(['status', 'search', 'kind']),
+            'filters' => $request->only(['status', 'search', 'kind', 'cashier', 'cook', 'waiter', 'table', 'channel', 'type', 'payment', 'from', 'to']),
+            // People and tables to filter by: the branch's staff (and head office), and its tables.
+            'staffOptions' => User::query()
+                ->where(fn ($query) => $query->where('branch_id', $branch->id)->orWhereNull('branch_id'))
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'tableOptions' => RestaurantTable::query()->where('branch_id', $branch->id)->orderBy('name')->get(['id', 'name']),
             'canApproveOrders' => (bool) $request->user('staff')?->can('orders.approve'),
             'canVoid' => PosSettings::orderDeleteEnabled($branch) && $request->user('staff')?->can('orders.void'),
             'canApproveVoid' => PosSettings::orderDeleteEnabled($branch) && $request->user('staff')?->can('orders.void'),

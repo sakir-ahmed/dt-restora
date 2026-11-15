@@ -106,7 +106,8 @@ class CheckoutController extends Controller
         }
 
         $validated = $request->validate([
-            'order_type' => ['required', 'in:delivery,pickup'],
+            'order_type' => ['required', 'in:delivery,pickup,dine_in'],
+            'party_size' => ['nullable', 'integer', 'min:1', 'max:100'],
             'delivery_zone_id' => ['required_if:order_type,delivery', 'nullable', 'integer', 'exists:delivery_zones,id'],
             'delivery_address' => ['required_if:order_type,delivery', 'nullable', 'string', 'max:500'],
             'customer_name' => ['nullable', 'string', 'max:150'],
@@ -131,6 +132,11 @@ class CheckoutController extends Controller
             'guest_otp.digits' => __('web.err_otp_length'),
             'scheduled_for.after' => __('web.err_scheduled'),
         ]);
+
+        // Eating at the restaurant is only offered as a pre-order: a date and time, then a staff member seats the party.
+        if ($validated['order_type'] === 'dine_in' && ! isset($validated['scheduled_for'])) {
+            throw ValidationException::withMessages(['order_type' => __('web.err_dinein_preorder')]);
+        }
 
         // Guest checkout rate limit: 5 orders per hour per IP.
         $key = 'guest-checkout:'.sha1((string) $request->ip());
@@ -179,7 +185,11 @@ class CheckoutController extends Controller
         }
 
         // The website calls takeaway "pickup"; the order type enum calls it takeaway.
-        $type = $validated['order_type'] === 'pickup' ? OrderType::Takeaway : OrderType::Delivery;
+        $type = match ($validated['order_type']) {
+            'pickup' => OrderType::Takeaway,
+            'dine_in' => OrderType::DineIn,
+            default => OrderType::Delivery,
+        };
 
         $zone = null;
         $deliveryFee = null;
@@ -208,6 +218,7 @@ class CheckoutController extends Controller
             deliveryAddress: $deliveryAddress,
             scheduledFor: isset($validated['scheduled_for']) ? new \DateTimeImmutable((string) $validated['scheduled_for']) : null,
             couponCode: $validated['coupon_code'] ?? null,
+            note: $type === OrderType::DineIn && isset($validated['party_size']) ? __('web.party_note', ['count' => $validated['party_size']]) : null,
             // A guest who picks a later time is placing a pre-order: it waits for approval and for its time.
             kind: isset($validated['scheduled_for']) ? OrderKind::Preorder : OrderKind::Regular,
         );

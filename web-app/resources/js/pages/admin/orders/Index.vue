@@ -18,6 +18,8 @@ import { printUrl } from '@/lib/print';
 const props = defineProps({
     orders: { type: Array, required: true },
     filters: { type: Object, default: () => ({}) },
+    staffOptions: { type: Array, default: () => [] },
+    tableOptions: { type: Array, default: () => [] },
     canApproveOrders: { type: Boolean, default: false },
     canVoid: { type: Boolean, default: false },
     canApproveVoid: { type: Boolean, default: false },
@@ -116,7 +118,7 @@ const selected = computed(() => {
 });
 
 const kindFilters = [
-    { value: '', label: t('orders.kind_all') },
+    { value: 'regular', label: t('orders.kind.regular') },
     { value: 'preorder', label: t('orders.kind.preorder') },
     { value: 'reservation', label: t('orders.kind.reservation') },
 ];
@@ -131,6 +133,36 @@ const statusFilters = [
     { value: 'paid', label: t('status.paid') },
     { value: 'void', label: t('status.void') },
 ];
+
+// The second filter line: who took, cooked and served the order, where, how and when.
+const personFilters = computed(() => [
+    { key: 'cashier', label: t('orders.filter_cashier'), options: props.staffOptions.map((user) => ({ value: user.id, label: user.name })) },
+    { key: 'cook', label: t('orders.filter_cook'), options: props.staffOptions.map((user) => ({ value: user.id, label: user.name })) },
+    { key: 'waiter', label: t('orders.filter_waiter'), options: props.staffOptions.map((user) => ({ value: user.id, label: user.name })) },
+    { key: 'table', label: t('receipt.table'), options: props.tableOptions.map((table) => ({ value: table.id, label: table.name })) },
+    { key: 'channel', label: t('orders.channel_label'), options: [
+        { value: 'pos', label: t('orders.channel_pos') },
+        { value: 'website', label: t('orders.channel_website') },
+        { value: 'qr', label: t('orders.channel_qr') },
+        { value: 'aggregator', label: t('orders.channel_aggregator') },
+    ] },
+    { key: 'type', label: t('orders.type_label'), options: ['dine_in', 'takeaway', 'delivery'].map((type) => ({ value: type, label: t('orders.type.' + type) })) },
+    { key: 'payment', label: t('orders.payment_status'), options: ['paid', 'unpaid', 'due'].map((value) => ({ value, label: t('status.' + value) })) },
+]);
+
+const FILTER_KEYS = ['status', 'kind', 'cashier', 'cook', 'waiter', 'table', 'channel', 'type', 'payment', 'from', 'to', 'search'];
+const activeFilterCount = computed(() => FILTER_KEYS.filter((key) => String(props.filters[key] ?? '') !== '').length);
+
+function clearFilters() {
+    router.get(route('admin.orders.index'), {}, { preserveState: true });
+}
+
+let searchTimer = null;
+
+function onSearch(value) {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => setFilter('search', value), 350);
+}
 
 function setFilter(key, value) {
     router.get(route('admin.orders.index'), { ...props.filters, [key]: value }, { preserveState: true });
@@ -336,29 +368,77 @@ async function putOnDue(order) {
             </template>
         </PageHeader>
 
-        <div class="mb-3 flex flex-wrap items-center gap-1.5">
+        <div class="thin-scrollbar mb-3 flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5" role="group" :aria-label="t('common.status')">
             <button
                 v-for="filter in statusFilters"
                 :key="filter.value"
                 type="button"
-                class="h-7 rounded-full border px-2.5 text-xs font-medium"
+                class="h-6 shrink-0 rounded-full border px-2 text-[11px] font-medium"
                 :class="(filters.status ?? '') === filter.value ? 'border-accent bg-accent/15 text-primary' : 'border-border bg-surface text-muted hover:text-foreground'"
                 @click="setFilter('status', filter.value)"
             >
                 {{ filter.label }}
             </button>
-        </div>
-
-        <div class="mb-3 flex flex-wrap items-center gap-1.5">
+            <span class="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
             <button
                 v-for="filter in kindFilters"
                 :key="filter.value"
                 type="button"
-                class="h-7 rounded-full border px-2.5 text-xs font-medium"
+                class="h-6 shrink-0 rounded-full border px-2 text-[11px] font-medium"
                 :class="(filters.kind ?? '') === filter.value ? 'border-accent bg-accent/15 text-primary' : 'border-border bg-surface text-muted hover:text-foreground'"
-                @click="setFilter('kind', filter.value)"
+                @click="setFilter('kind', (filters.kind ?? '') === filter.value ? '' : filter.value)"
             >
                 {{ filter.label }}
+            </button>
+        </div>
+
+        <div class="thin-scrollbar mb-3 flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5" role="group" :aria-label="t('orders.more_filters')">
+            <input
+                type="search"
+                :value="filters.search ?? ''"
+                :placeholder="t('inventory.invoice_no')"
+                :aria-label="t('common.search')"
+                class="h-6 w-32 shrink-0 rounded-md border border-border bg-surface px-2 text-[11px] text-foreground outline-none focus:border-accent"
+                @input="onSearch($event.target.value)"
+            >
+            <select
+                v-for="filter in personFilters"
+                :key="filter.key"
+                :value="filters[filter.key] ?? ''"
+                :aria-label="filter.label"
+                class="h-6 max-w-[8.5rem] shrink-0 rounded-md border bg-surface px-1 text-[11px] outline-none focus:border-accent"
+                :class="String(filters[filter.key] ?? '') !== '' ? 'border-accent text-primary' : 'border-border text-muted'"
+                @change="setFilter(filter.key, $event.target.value)"
+            >
+                <option value="">{{ filter.label }}</option>
+                <option v-for="option in filter.options" :key="option.value" :value="option.value">{{ option.label }}</option>
+            </select>
+            <input
+                type="date"
+                :value="filters.from ?? ''"
+                :aria-label="t('common.date_from')"
+                :title="t('common.date_from')"
+                class="h-6 w-[7.2rem] shrink-0 rounded-md border bg-surface px-1 text-[11px] outline-none focus:border-accent"
+                :class="filters.from ? 'border-accent text-primary' : 'border-border text-muted'"
+                @change="setFilter('from', $event.target.value)"
+            >
+            <input
+                type="date"
+                :value="filters.to ?? ''"
+                :aria-label="t('common.date_to')"
+                :title="t('common.date_to')"
+                class="h-6 w-[7.2rem] shrink-0 rounded-md border bg-surface px-1 text-[11px] outline-none focus:border-accent"
+                :class="filters.to ? 'border-accent text-primary' : 'border-border text-muted'"
+                @change="setFilter('to', $event.target.value)"
+            >
+            <button
+                v-if="activeFilterCount > 0"
+                type="button"
+                class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-danger hover:bg-danger/10"
+                @click="clearFilters"
+            >
+                <AppIcon name="xmark" size="10" />
+                {{ t('orders.clear_filters', { count: activeFilterCount }) }}
             </button>
         </div>
 

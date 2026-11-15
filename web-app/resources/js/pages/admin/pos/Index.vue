@@ -3370,8 +3370,8 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
 
         <!-- Table picker: free tables to select, busy tables to reopen their order -->
         <Teleport to="body">
-            <div v-if="tablePickerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="tablePickerOpen = false" @keydown.esc="tablePickerOpen = false">
-                <div class="flex max-h-[88vh] w-full max-w-xl flex-col rounded-xl border border-border bg-surface" role="dialog" aria-modal="true" :aria-label="t('orders.select_table')">
+            <div v-if="tablePickerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4" @click.self="tablePickerOpen = false" @keydown.esc="tablePickerOpen = false">
+                <div class="flex h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl" role="dialog" aria-modal="true" :aria-label="t('orders.select_table')">
                     <div class="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
                         <div class="min-w-0">
                             <h2 class="text-base font-semibold text-foreground">{{ t('orders.select_table') }}</h2>
@@ -3388,7 +3388,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-accent" />{{ t('orders.table_selected') }}</span>
                     </div>
 
-                    <div class="thin-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+                    <div class="thin-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto p-4 sm:p-5">
                         <button
                             type="button"
                             :disabled="orderType !== 'dine_in'"
@@ -3401,8 +3401,8 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         </button>
 
                         <section v-for="group in tablesByArea" :key="group.area || 'tables'">
-                            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">{{ group.area || t('orders.table_short') }}</h3>
-                            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                            <h3 class="mb-3 border-b border-border pb-1 text-sm font-semibold uppercase tracking-wide text-muted">{{ group.area || t('orders.table_short') }}</h3>
+                            <div class="grid grid-cols-2 gap-x-4 gap-y-7 pb-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                                 <PosTableTile v-for="table in group.tables" :key="table.id" :seats="table.seats" :tone="table.id === tableId ? 'selected' : openOrderByTable.get(table.id) ? 'busy' : table.status === 'occupied' ? 'blocked' : 'free'">
                                     <button
                                         type="button"

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Sales\CreateOrderAction;
+use App\Actions\Sales\PayOrderAction;
 use App\Enums\OrderChannel;
 use App\Enums\OrderKind;
 use App\Enums\OrderType;
@@ -433,4 +434,43 @@ it('takes a website pre-order for a required dish only far enough ahead, and kee
 it('gives the approve permission to managers and not to cashiers', function (): void {
     expect($this->manager->can('orders.approve'))->toBeTrue()
         ->and($this->cashier->can('orders.approve'))->toBeFalse();
+});
+
+it('filters the orders list by kind, including regular orders', function (): void {
+    $regular = app(CreateOrderAction::class)->execute($this->branch, OrderType::Takeaway, [['menu_item_id' => $this->item->id, 'quantity' => 1]]);
+    $preorder = app(CreateOrderAction::class)->execute($this->branch, OrderType::Takeaway, [['menu_item_id' => $this->item->id, 'quantity' => 1]], scheduledFor: new DateTimeImmutable('+2 days'), kind: OrderKind::Preorder);
+
+    $ids = fn (string $kind) => collect($this->actingAs($this->manager, 'staff')->get(route('admin.orders.index', ['kind' => $kind]))->viewData('page')['props']['orders'])->pluck('id')->all();
+
+    expect($ids('regular'))->toBe([$regular->id])
+        ->and($ids('preorder'))->toBe([$preorder->id]);
+});
+
+it('filters the orders list by cashier, cook, waiter, table, channel, type, payment and date', function (): void {
+    $make = fn (array $args = []) => app(CreateOrderAction::class)->execute($this->branch, $args['type'] ?? OrderType::Takeaway, [['menu_item_id' => $this->item->id, 'quantity' => 1]], ...($args['with'] ?? []));
+    $cook = User::factory()->role('kitchen-manager', $this->branch->id)->create();
+
+    $a = $make(['type' => OrderType::DineIn, 'with' => ['cashier' => $this->cashier, 'waiter' => $this->manager, 'tableId' => $this->table->id]]);
+    $a->update(['prepared_by' => $cook->id]);
+    $b = $make();
+    app(PayOrderAction::class)->executeCash($b, 5000, $this->cashier);
+    $c = $make(['with' => ['channel' => OrderChannel::Website]]);
+    $c->forceFill(['created_at' => now()->subDays(10)])->save();
+
+    $ids = fn (array $query) => collect($this->actingAs($this->manager, 'staff')->get(route('admin.orders.index', $query))->viewData('page')['props']['orders'])->pluck('id')->sort()->values()->all();
+
+    expect($ids(['cashier' => $this->cashier->id]))->toBe(collect([$a->id, $b->id])->sort()->values()->all())
+        ->and($ids(['cook' => $cook->id]))->toBe([$a->id])
+        ->and($ids(['waiter' => $this->manager->id]))->toBe([$a->id])
+        ->and($ids(['table' => $this->table->id]))->toBe([$a->id])
+        ->and($ids(['channel' => 'website']))->toBe([$c->id])
+        ->and($ids(['type' => 'dine_in']))->toBe([$a->id])
+        ->and($ids(['payment' => 'paid']))->toBe([$b->id])
+        ->and($ids(['payment' => 'unpaid']))->toBe(collect([$a->id, $c->id])->sort()->values()->all())
+        ->and($ids(['from' => now()->subDay()->toDateString()]))->toBe(collect([$a->id, $b->id])->sort()->values()->all())
+        ->and($ids(['to' => now()->subDays(5)->toDateString()]))->toBe([$c->id]);
+
+    $props = $this->actingAs($this->manager, 'staff')->get(route('admin.orders.index'))->viewData('page')['props'];
+    expect(collect($props['staffOptions'])->pluck('id')->all())->toContain($this->cashier->id, $cook->id)
+        ->and(collect($props['tableOptions'])->pluck('id')->all())->toContain($this->table->id);
 });

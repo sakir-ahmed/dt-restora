@@ -1,6 +1,6 @@
 <script setup>
 import { Head, router, usePage } from '@inertiajs/vue3';
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
 import FormField from '@/components/ui-kit/FormField.vue';
 import MobileInput from '@/components/ui-kit/MobileInput.vue';
@@ -32,6 +32,7 @@ const otpSent = ref(false);
 const paymentMethod = ref('cod');
 const scheduledFor = ref('');
 const orderLater = ref(false);
+const partySize = ref('');
 
 // Dishes marked pre-order only force a date and time; any other order may also choose a later time.
 const needsPreOrder = computed(() => cart.lines.some((line) => line.preOrder));
@@ -44,6 +45,12 @@ function localInput(date) {
 
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
+
+watch(asksForTime, (asks) => {
+    if (! asks && ! props.table && orderType.value === 'dine_in') {
+        orderType.value = props.delivery.enabled ? 'delivery' : 'pickup';
+    }
+});
 
 const earliestTime = computed(() => localInput(new Date(Date.now() + (Math.max(leadHours.value, 0) * 3600 + 900) * 1000)));
 const couponCode = ref('');
@@ -247,6 +254,7 @@ function submit() {
         guest_otp: props.customer ? undefined : guestOtp.value,
         scheduled_for: asksForTime.value ? (scheduledFor.value || null) : null,
         table_id: orderType.value === 'dine_in' ? props.table?.id : null,
+        party_size: orderType.value === 'dine_in' && ! props.table ? (partySize.value || null) : null,
         payment_method: paymentMethod.value,
         coupon_code: couponCode.value || null,
         turnstile_token: window.turnstileToken ?? null,
@@ -285,22 +293,6 @@ function submit() {
                 </ul>
             </div>
 
-            <!-- Order type -->
-            <section class="rounded-xl border border-border bg-surface p-4">
-                <h2 class="text-sm font-semibold">{{ t('web.how_to_get_order') }}</h2>
-
-                <div class="mt-2">
-                    <RadioCards
-                        v-model="orderType"
-                        :options="[
-                            ...(delivery.enabled ? [{ value: 'delivery', label: t('orders.type.delivery'), hint: deliveryEta ? deliveryEta + ' min' : null }] : []),
-                            { value: 'pickup', label: t('orders.type.takeaway') },
-                            ...(table ? [{ value: 'dine_in', label: t('web.at_table', { table: table.name }) }] : []),
-                        ]"
-                    />
-                </div>
-            </section>
-
             <!-- When: a later time for a pre-order -->
             <section class="space-y-3 rounded-xl border border-border bg-surface p-4">
                 <h2 class="text-sm font-semibold">{{ t('web.when_title') }}</h2>
@@ -316,6 +308,33 @@ function submit() {
                 <FormField v-if="asksForTime" :label="t('web.wanted_at')" required for="field-scheduled_for" :error="errors.scheduled_for">
                     <template #default>
                         <input id="field-scheduled_for" v-model="scheduledFor" type="datetime-local" :min="earliestTime" :aria-invalid="!! errors.scheduled_for" class="h-9 w-full rounded-md border bg-surface px-2 text-sm" :class="errors.scheduled_for ? 'border-danger' : 'border-border'">
+                    </template>
+                </FormField>
+            </section>
+
+            <!-- Order type -->
+            <section class="rounded-xl border border-border bg-surface p-4">
+                <h2 class="text-sm font-semibold">{{ t('web.how_to_get_order') }}</h2>
+
+                <div class="mt-2">
+                    <RadioCards
+                        v-model="orderType"
+                        :options="[
+                            ...(delivery.enabled ? [{ value: 'delivery', label: t('orders.type.delivery'), hint: deliveryEta ? deliveryEta + ' min' : null }] : []),
+                            { value: 'pickup', label: t('orders.type.takeaway') },
+                            ...(table ? [{ value: 'dine_in', label: t('web.at_table', { table: table.name }) }] : (asksForTime ? [{ value: 'dine_in', label: t('web.at_restaurant') }] : [])),
+                        ]"
+                    />
+                </div>
+            </section>
+
+            <!-- Dine-in pre-order details -->
+            <section v-if="orderType === 'dine_in' && ! table" class="space-y-3 rounded-xl border border-border bg-surface p-4">
+                <h2 class="text-sm font-semibold">{{ t('web.dine_in_details') }}</h2>
+                <p class="text-xs text-muted">{{ t('web.dine_in_hint') }}</p>
+                <FormField :label="t('web.party_size')" for="field-party_size" :error="errors.party_size">
+                    <template #default>
+                        <input id="field-party_size" v-model="partySize" type="number" min="1" max="100" inputmode="numeric" class="h-9 w-full rounded-md border border-border bg-surface px-2 text-sm">
                     </template>
                 </FormField>
             </section>
