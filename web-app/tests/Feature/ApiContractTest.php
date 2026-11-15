@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Actions\Sales\CreateOrderAction;
+use App\Enums\OrderChannel;
+use App\Enums\OrderKind;
+use App\Enums\OrderType;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\DeliveryZone;
@@ -202,4 +206,47 @@ it('keeps the size and add-ons a customer picked on the order', function (): voi
     ])->assertCreated();
 
     expect((float) $order->json('data.total'))->toBe(230.0);
+});
+
+it('lets the staff API approve a guest order and release a pre-order, for managers only', function (): void {
+    $manager = User::factory()->role('branch-manager', $this->branch->id)->create();
+    $managerToken = $manager->createToken('staff', ['staff'])->plainTextToken;
+    $cashierToken = $this->cashier->createToken('staff', ['staff'])->plainTextToken;
+    $base = '/api/v1/branches/'.$this->branch->id.'/orders/';
+    // Switching tokens inside one test needs the cached guest user forgotten.
+    $as = function (string $token) {
+        $this->app['auth']->forgetGuards();
+
+        return $this->withToken($token);
+    };
+
+    $guest = app(CreateOrderAction::class)->execute(
+        $this->branch,
+        OrderType::Takeaway,
+        [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+        channel: OrderChannel::Website,
+        scheduledFor: new DateTimeImmutable('+2 days'),
+        kind: OrderKind::Preorder,
+    );
+
+    expect($guest->approval_status)->toBe('awaiting');
+
+    // The kitchen steps are locked while it waits, over the API too.
+    $as($cashierToken)->patchJson($base.$guest->id.'/status', ['status' => 'preparing'])->assertUnprocessable();
+    $as($cashierToken)->postJson($base.$guest->id.'/approve')->assertForbidden();
+
+    $as($managerToken)->postJson($base.$guest->id.'/approve')
+        ->assertOk()
+        ->assertJsonPath('data.approval_status', 'approved')
+        ->assertJsonPath('data.kind', 'preorder');
+
+    // Approved, but not due for two days: still held back until released.
+    $as($cashierToken)->patchJson($base.$guest->id.'/status', ['status' => 'preparing'])->assertUnprocessable();
+
+    $as($managerToken)->postJson($base.$guest->id.'/release')->assertOk();
+    $as($managerToken)->postJson($base.$guest->id.'/release')->assertUnprocessable();
+
+    $as($cashierToken)->patchJson($base.$guest->id.'/status', ['status' => 'preparing'])->assertOk();
+
+    expect($guest->fresh()->prepared_by)->toBe($this->cashier->id);
 });

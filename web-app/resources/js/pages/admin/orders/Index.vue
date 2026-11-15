@@ -35,6 +35,7 @@ const columns = computed(() => [
     { key: 'invoice_no', label: t('inventory.invoice_no'), align: 'left', sortable: true },
     { key: 'channel', label: t('orders.channel_label'), align: 'left', minWidth: '96px' },
     { key: 'order_type', label: t('orders.type_label'), align: 'left' },
+    { key: 'scheduled_for', label: t('orders.scheduled_for'), align: 'left', minWidth: '112px' },
     { key: 'table_name', label: t('receipt.table'), align: 'left' },
     { key: 'items_count', label: t('inventory.items_label'), type: 'number', minWidth: '64px' },
     { key: 'total_display', label: t('inventory.total'), type: 'money', sortable: true, minWidth: '96px' },
@@ -114,6 +115,12 @@ const selected = computed(() => {
     };
 });
 
+const kindFilters = [
+    { value: '', label: t('orders.kind_all') },
+    { value: 'preorder', label: t('orders.kind.preorder') },
+    { value: 'reservation', label: t('orders.kind.reservation') },
+];
+
 const statusFilters = [
     { value: '', label: t('common.status') },
     { value: 'awaiting', label: t('status.awaiting') },
@@ -127,6 +134,29 @@ const statusFilters = [
 
 function setFilter(key, value) {
     router.get(route('admin.orders.index'), { ...props.filters, [key]: value }, { preserveState: true });
+}
+
+// An approved pre-order or reservation meal that has not reached the kitchen yet.
+function canSendNow(order) {
+    return order.kind !== 'regular' && ! order.released_at && order.approval_status !== 'awaiting'
+        && order.status !== 'void' && order.status !== 'paid' && (order.kitchen_status ?? 'pending') === 'pending';
+}
+
+function sendNow(order) {
+    router.post(route('admin.orders.release', order.id), {}, {
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: (page) => {
+            if (page.props.flash?.error) {
+                notify.error(String(page.props.flash.error));
+
+                return;
+            }
+
+            notify.success(t('orders.sent_to_kitchen', { invoice: order.invoice_no }));
+        },
+        onError: (errors) => notify.error(String(Object.values(errors)[0] ?? t('common.error_occurred'))),
+    });
 }
 
 async function deleteOrder(order) {
@@ -319,9 +349,30 @@ async function putOnDue(order) {
             </button>
         </div>
 
+        <div class="mb-3 flex flex-wrap items-center gap-1.5">
+            <button
+                v-for="filter in kindFilters"
+                :key="filter.value"
+                type="button"
+                class="h-7 rounded-full border px-2.5 text-xs font-medium"
+                :class="(filters.kind ?? '') === filter.value ? 'border-accent bg-accent/15 text-primary' : 'border-border bg-surface text-muted hover:text-foreground'"
+                @click="setFilter('kind', filter.value)"
+            >
+                {{ filter.label }}
+            </button>
+        </div>
+
         <DataTable :columns="columns" :rows="rows" :empty-title="t('orders.no_orders')" clickable @row-click="(row) => selectedId = row.id">
             <template #cell(created_at)="{ value }">
                 <DateText :value="value" relative />
+            </template>
+            <template #cell(order_type)="{ row }">
+                <span>{{ row.order_type }}</span>
+                <span v-if="row.kind !== 'regular'" class="ml-1 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{{ t('orders.kind.' + row.kind) }}</span>
+            </template>
+            <template #cell(scheduled_for)="{ row }">
+                <DateText v-if="row.scheduled_for" :value="row.scheduled_for" />
+                <span v-else class="text-muted">-</span>
             </template>
             <template #cell(channel)="{ row }">
                 <ChannelBadge v-if="row.channel !== 'pos' || row.aggregator_channel" :channel="row.channel" :aggregator="row.aggregator_channel" />
@@ -350,7 +401,16 @@ async function putOnDue(order) {
                         @click.stop="sendToKitchen(row)"
                     >
                         <AppIcon name="utensils" size="10" />
-                        {{ t('orders.send_to_kitchen') }}
+                        {{ row.kind !== 'regular' ? t('orders.approve') : t('orders.send_to_kitchen') }}
+                    </button>
+                    <button
+                        v-if="canApproveOrders && canSendNow(row)"
+                        type="button"
+                        class="flex h-6 items-center gap-1 rounded border border-accent/60 px-1.5 text-[11px] font-medium text-primary hover:bg-accent/10"
+                        @click.stop="sendNow(row)"
+                    >
+                        <AppIcon name="utensils" size="10" />
+                        {{ t('orders.send_now') }}
                     </button>
                     <button
                         v-if="row.raw_status !== 'paid' && row.raw_status !== 'void'"

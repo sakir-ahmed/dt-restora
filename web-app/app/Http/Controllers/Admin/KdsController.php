@@ -8,6 +8,7 @@ use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Order;
+use App\Services\PosSettings;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -23,8 +24,8 @@ class KdsController extends Controller
         $orders = Order::query()
             ->where('branch_id', $branch->id)
             ->where('status', '!=', OrderStatus::Void->value)
-            // Guest orders wait for a manager's go-ahead before they reach the kitchen.
-            ->where(fn ($query) => $query->whereNull('approval_status')->orWhere('approval_status', '!=', Order::APPROVAL_AWAITING))
+            // Guest orders wait for a manager's go-ahead, and pre-orders for their time, before they reach the kitchen.
+            ->visibleToKitchen(PosSettings::preorderReleaseMinutes($branch))
             ->whereIn('kitchen_status', [OrderStatus::Pending->value, OrderStatus::Preparing->value, OrderStatus::Ready->value])
             ->with(['items:id,order_id,name,name_bn,quantity,add_ons', 'table:id,name', 'waiter:id,name', 'preparer:id,name', 'aggregatorChannel:id,key,name'])
             ->oldest()

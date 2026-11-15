@@ -23,6 +23,8 @@ class MenuCategoryRequest extends FormRequest
             'name_bn' => ['nullable', 'string', 'max:150'],
             'sort_order' => ['integer', 'min:0'],
             'is_active' => ['boolean'],
+            'pre_order_required' => ['boolean'],
+            'pre_order_lead_hours' => ['nullable', 'integer', 'min:0', 'max:720'],
         ];
     }
 }

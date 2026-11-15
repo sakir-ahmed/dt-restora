@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Web;
 use App\Actions\Sales\CreateOrderAction;
 use App\Enums\DemoEventType;
 use App\Enums\OrderChannel;
+use App\Enums\OrderKind;
 use App\Enums\OrderType;
 use App\Events\OrderCreated;
 use App\Http\Controllers\Controller;
@@ -207,6 +208,8 @@ class CheckoutController extends Controller
             deliveryAddress: $deliveryAddress,
             scheduledFor: isset($validated['scheduled_for']) ? new \DateTimeImmutable((string) $validated['scheduled_for']) : null,
             couponCode: $validated['coupon_code'] ?? null,
+            // A guest who picks a later time is placing a pre-order: it waits for approval and for its time.
+            kind: isset($validated['scheduled_for']) ? OrderKind::Preorder : OrderKind::Regular,
         );
 
         // Minimum order check against the real server-side subtotal.

@@ -36,6 +36,7 @@ class RoleSeeder extends Seeder
         'orders.view',
         'orders.create',
         'orders.void',
+        'orders.approve',
         'discounts.override',
         'inventory.view',
         'inventory.manage',
@@ -77,7 +78,7 @@ class RoleSeeder extends Seeder
         'owner' => '*',
         'branch-manager' => [
             'admin.access', 'branches.view', 'menu.view', 'menu.manage', 'tables.view', 'tables.manage', 'reservations.view', 'reservations.manage', 'preorders.view', 'preorders.manage', 'media.view', 'media.manage', 'staff.view',
-            'orders.view', 'orders.create', 'orders.void', 'discounts.override',
+            'orders.view', 'orders.create', 'orders.void', 'orders.approve', 'discounts.override',
             'inventory.view', 'inventory.manage', 'stock.adjust', 'purchases.manage',
             'recipes.manage', 'wastage.log', 'wastage.approve', 'transfers.manage',
             'employees.manage', 'attendance.manage', 'letters.manage', 'shifts.manage', 'payments.manage', 'expenses.manage',

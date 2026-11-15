@@ -206,6 +206,7 @@ class SyncService
             clientId: $clientId,
             terminalCode: (string) ($payload['terminal'] ?? 'T01'),
             invoiceNo: isset($payload['invoice_no']) ? (string) $payload['invoice_no'] : null,
+            overridePreorder: (bool) $user->can('orders.approve'),
         );
 
         if (! empty($payload['tendered'])) {

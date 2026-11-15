@@ -2659,6 +2659,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                     </span>
                     <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span class="line-clamp-2 text-sm font-medium text-foreground">{{ localized(item, 'name') }}</span>
+                        <span v-if="item.requires_pre_order" class="w-fit rounded bg-warning/15 px-1 text-[10px] font-semibold uppercase tracking-wide text-warning">{{ t('menu.pre_order_badge') }}</span>
                         <span class="flex items-center justify-between gap-1">
                             <span class="inline-flex items-baseline gap-1 text-sm font-semibold tabular-nums text-foreground">
                                 <span v-if="itemHasVariants(item)" class="text-[11px] font-medium uppercase tracking-wide text-muted">{{ t('orders.from_price') }}</span>

@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Actions\Sales\CreateOrderAction;
 use App\Enums\OrderChannel;
+use App\Enums\OrderKind;
 use App\Enums\OrderType;
 use App\Events\OrderCreated;
 use App\Models\Branch;
@@ -122,7 +123,13 @@ class ReservationService
             channel: OrderChannel::Pos,
             shift: $shift,
             terminalCode: 'RSV',
+            scheduledFor: $reservation->starts_at,
+            kind: OrderKind::Reservation,
+            reservationId: $reservation->id,
         );
+
+        // The guests are seated, so the kitchen has it now.
+        $order->update(['released_at' => now()]);
 
         broadcast(new OrderCreated($branch->id, [
             'order_id' => $order->id,

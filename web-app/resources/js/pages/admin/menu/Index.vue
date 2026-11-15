@@ -52,7 +52,7 @@ const filteredCategories = computed(() => {
 // Category dialog
 const categoryOpen = ref(false);
 const editingCategoryId = ref(null);
-const categoryForm = useForm({ name: '', name_bn: '', sort_order: 0, is_active: true });
+const categoryForm = useForm({ name: '', name_bn: '', sort_order: 0, is_active: true, pre_order_required: false, pre_order_lead_hours: '' });
 
 function openCategory(category = null) {
     editingCategoryId.value = category?.id ?? null;
@@ -61,6 +61,8 @@ function openCategory(category = null) {
         name_bn: category?.name_bn ?? '',
         sort_order: category?.sort_order ?? 0,
         is_active: category?.is_active ?? true,
+        pre_order_required: category?.pre_order_required ?? false,
+        pre_order_lead_hours: category?.pre_order_lead_hours ?? '',
     }).reset();
     categoryOpen.value = true;
 }
@@ -111,6 +113,7 @@ const emptyItem = () => ({
     name: '', name_bn: '', description: '', description_bn: '',
     barcode: '', base_price: '0.00', is_available: true, is_vegetarian: false,
     sort_order: 0,
+    pre_order_required: '', pre_order_lead_hours: '',
     variants: [],
     addons: [],
 });
@@ -145,6 +148,8 @@ function openItem(item = null, categoryId = null) {
             is_available: item.is_available,
             is_vegetarian: item.is_vegetarian,
             sort_order: item.sort_order,
+            pre_order_required: item.pre_order_required === null || item.pre_order_required === undefined ? '' : (item.pre_order_required ? '1' : '0'),
+            pre_order_lead_hours: item.pre_order_lead_hours ?? '',
             variants: (item.variants ?? []).map((variant) => ({ ...variant })),
             addons: (item.add_ons ?? []).map((addOn) => ({ ...addOn })),
         }
@@ -367,6 +372,16 @@ function reload() {
                 </FormField>
 
                 <SwitchField v-model="categoryForm.is_active" :label="t('branches.is_active')" />
+
+                <div class="space-y-2 border-t border-border pt-3">
+                    <SwitchField v-model="categoryForm.pre_order_required" :label="t('menu.pre_order_required')" />
+                    <p class="text-xs text-muted">{{ t('menu.pre_order_required_category_helper') }}</p>
+                    <FormField v-if="categoryForm.pre_order_required" :label="t('menu.pre_order_lead_hours')" :helper="t('menu.pre_order_lead_hours_helper')" :error="categoryForm.errors.pre_order_lead_hours">
+                        <template #default="{ id }">
+                            <input :id="id" v-model="categoryForm.pre_order_lead_hours" type="text" inputmode="numeric" v-numeric min="0" class="h-7 w-full rounded-md border border-border bg-surface px-2 text-right text-[13px] tabular-nums text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/40">
+                        </template>
+                    </FormField>
+                </div>
             </form>
 
             <template #footer>
@@ -438,6 +453,23 @@ function reload() {
                 <div class="flex gap-4">
                     <SwitchField v-model="itemForm.is_available" :label="t('menu.is_available')" />
                     <SwitchField v-model="itemForm.is_vegetarian" :label="t('menu.is_vegetarian')" />
+                </div>
+
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <FormField :label="t('menu.pre_order_required')" :error="itemForm.errors.pre_order_required">
+                        <template #default="{ id }">
+                            <select :id="id" v-model="itemForm.pre_order_required" class="h-7 w-full rounded-md border border-border bg-surface px-2 text-[13px] text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/40">
+                                <option value="">{{ t('menu.pre_order_follow_category') }}</option>
+                                <option value="1">{{ t('menu.pre_order_yes') }}</option>
+                                <option value="0">{{ t('menu.pre_order_no') }}</option>
+                            </select>
+                        </template>
+                    </FormField>
+                    <FormField :label="t('menu.pre_order_lead_hours')" :helper="t('menu.pre_order_lead_hours_helper')" :error="itemForm.errors.pre_order_lead_hours">
+                        <template #default="{ id }">
+                            <input :id="id" v-model="itemForm.pre_order_lead_hours" type="text" inputmode="numeric" v-numeric min="0" class="h-7 w-full rounded-md border border-border bg-surface px-2 text-right text-[13px] tabular-nums text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/40">
+                        </template>
+                    </FormField>
                 </div>
 
                 <!-- Variants -->

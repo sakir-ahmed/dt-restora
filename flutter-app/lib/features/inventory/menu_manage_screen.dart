@@ -63,6 +63,9 @@ class _MenuItemFormScreenState extends State<MenuItemFormScreen> {
       : (widget.item!['menu_category_id'] as num?)?.toInt();
   late bool _available = widget.item?['is_available'] as bool? ?? true;
   late bool _vegetarian = widget.item?['is_vegetarian'] as bool? ?? false;
+  // Pre-order only: '' follows the category, '1' insists, '0' opts out.
+  late String _preOrder = switch (widget.item?['pre_order_required']) { true => '1', false => '0', _ => '' };
+  late final _preOrderLead = TextEditingController(text: '${widget.item?['pre_order_lead_hours'] ?? ''}');
   final List<_VariantRow> _variants = [];
   final List<_AddOnRow> _addOns = [];
   bool _busy = false;
@@ -93,6 +96,7 @@ class _MenuItemFormScreenState extends State<MenuItemFormScreen> {
     _nameBn.dispose();
     _description.dispose();
     _price.dispose();
+    _preOrderLead.dispose();
     for (final v in _variants) {
       v.dispose();
     }
@@ -119,6 +123,8 @@ class _MenuItemFormScreenState extends State<MenuItemFormScreen> {
       'base_price': price,
       'is_available': _available,
       'is_vegetarian': _vegetarian,
+      'pre_order_required': _preOrder == '' ? null : _preOrder == '1',
+      'pre_order_lead_hours': int.tryParse(_preOrderLead.text.trim()),
       'variants': [
         for (final v in _variants)
           if (v.name.text.trim().isNotEmpty)
@@ -218,6 +224,19 @@ class _MenuItemFormScreenState extends State<MenuItemFormScreen> {
             value: _vegetarian,
             onChanged: (v) => setState(() => _vegetarian = v),
           ),
+          DropdownButtonFormField<String>(
+            initialValue: _preOrder,
+            isExpanded: true,
+            decoration: InputDecoration(labelText: tr('Needs a pre-order')),
+            items: [
+              DropdownMenuItem(value: '', child: Text(tr('Follow the category'))),
+              DropdownMenuItem(value: '1', child: Text(tr('Yes, pre-order only'))),
+              DropdownMenuItem(value: '0', child: Text(tr('No, can be ordered any time'))),
+            ],
+            onChanged: (v) => setState(() => _preOrder = v ?? ''),
+          ),
+          const SizedBox(height: 12),
+          field(_preOrderLead, 'Hours of notice (optional)', type: TextInputType.number),
           if (editing) ...[
             OutlinedButton.icon(
               onPressed: () => Navigator.push(

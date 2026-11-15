@@ -49,7 +49,7 @@ let addedTimer = null;
 
 function add() {
     addToCart(
-        { id: props.item.id, name: props.item.name, base_price: props.item.base_price },
+        { id: props.item.id, name: props.item.name, base_price: props.item.base_price, requires_pre_order: props.item.requires_pre_order, pre_order_lead: props.item.pre_order_lead },
         selectedVariant.value,
         selectedAddOns.value,
     );

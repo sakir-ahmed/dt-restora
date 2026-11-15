@@ -31,6 +31,21 @@ const guestOtp = ref('');
 const otpSent = ref(false);
 const paymentMethod = ref('cod');
 const scheduledFor = ref('');
+const orderLater = ref(false);
+
+// Dishes marked pre-order only force a date and time; any other order may also choose a later time.
+const needsPreOrder = computed(() => cart.lines.some((line) => line.preOrder));
+const leadHours = computed(() => Math.max(0, ...cart.lines.filter((line) => line.preOrder).map((line) => line.preOrderLead ?? 0)));
+const asksForTime = computed(() => needsPreOrder.value || orderLater.value);
+
+// datetime-local wants the local time as YYYY-MM-DDTHH:mm.
+function localInput(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+const earliestTime = computed(() => localInput(new Date(Date.now() + (Math.max(leadHours.value, 0) * 3600 + 900) * 1000)));
 const couponCode = ref('');
 const couponDiscount = ref(0);
 const couponChecking = ref(false);
@@ -133,6 +148,14 @@ function validate() {
         found.items = t('web.cart_empty');
     }
 
+    if (needsPreOrder.value && ! scheduledFor.value) {
+        found.scheduled_for = t('orders.preorder_needs_time');
+    } else if (asksForTime.value && scheduledFor.value && scheduledFor.value < earliestTime.value) {
+        found.scheduled_for = leadHours.value > 0
+            ? t('orders.preorder_lead', { hours: leadHours.value, items: cart.lines.filter((line) => line.preOrder).map((line) => line.name).join(', ') })
+            : t('web.err_scheduled');
+    }
+
     if (orderType.value === 'delivery') {
         if (! zoneId.value) {
             found.delivery_zone_id = t('web.err_zone');
@@ -222,7 +245,7 @@ function submit() {
         customer_name: name.value || null,
         customer_mobile: props.customer ? undefined : mobile.value,
         guest_otp: props.customer ? undefined : guestOtp.value,
-        scheduled_for: scheduledFor.value || null,
+        scheduled_for: asksForTime.value ? (scheduledFor.value || null) : null,
         table_id: orderType.value === 'dine_in' ? props.table?.id : null,
         payment_method: paymentMethod.value,
         coupon_code: couponCode.value || null,
@@ -276,6 +299,25 @@ function submit() {
                         ]"
                     />
                 </div>
+            </section>
+
+            <!-- When: a later time for a pre-order -->
+            <section class="space-y-3 rounded-xl border border-border bg-surface p-4">
+                <h2 class="text-sm font-semibold">{{ t('web.when_title') }}</h2>
+
+                <p v-if="needsPreOrder" class="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
+                    {{ leadHours > 0 ? t('web.preorder_cart_note_lead', { hours: leadHours }) : t('web.preorder_cart_note') }}
+                </p>
+                <label v-else class="flex items-center gap-2 text-sm">
+                    <input v-model="orderLater" type="checkbox" class="accent-[var(--color-primary)]">
+                    {{ t('web.order_for_later') }}
+                </label>
+
+                <FormField v-if="asksForTime" :label="t('web.wanted_at')" required for="field-scheduled_for" :error="errors.scheduled_for">
+                    <template #default>
+                        <input id="field-scheduled_for" v-model="scheduledFor" type="datetime-local" :min="earliestTime" :aria-invalid="!! errors.scheduled_for" class="h-9 w-full rounded-md border bg-surface px-2 text-sm" :class="errors.scheduled_for ? 'border-danger' : 'border-border'">
+                    </template>
+                </FormField>
             </section>
 
             <!-- Delivery details -->

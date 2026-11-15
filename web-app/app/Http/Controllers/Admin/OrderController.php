@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Actions\Sales\ApproveOrderVoidAction;
 use App\Actions\Sales\CreateOrderAction;
+use App\Actions\Sales\HandOrderToKitchenAction;
 use App\Actions\Sales\PayOrderAction;
 use App\Actions\Sales\RequestOrderVoidAction;
 use App\Actions\Sales\ReviseSettledSaleAction;
@@ -45,6 +46,7 @@ class OrderController extends Controller
             ->where('branch_id', $branch->id)
             ->with(['table:id,name', 'waiter:id,name', 'cashier:id,name', 'customer:id,name,mobile', 'items:id,order_id,name,name_bn,quantity,unit_price,add_ons,add_ons_total,line_total', 'voidRequest', 'payments', 'aggregatorChannel:id,key,name'])
             ->with('preparer:id,name')
+            ->when($request->string('kind')->toString(), fn ($query, $kind) => $query->where('kind', $kind))
             ->when($request->string('status')->toString(), fn ($query, $status) => $status === 'awaiting'
                 ? $query->where('approval_status', Order::APPROVAL_AWAITING)->where('status', '!=', OrderStatus::Void->value)
                 : $query->where('status', $status))
@@ -60,8 +62,8 @@ class OrderController extends Controller
 
         return Inertia::render('admin/orders/Index', [
             'orders' => $orders,
-            'filters' => $request->only(['status', 'search']),
-            'canApproveOrders' => (bool) $request->user('staff')?->can('orders.void'),
+            'filters' => $request->only(['status', 'search', 'kind']),
+            'canApproveOrders' => (bool) $request->user('staff')?->can('orders.approve'),
             'canVoid' => PosSettings::orderDeleteEnabled($branch) && $request->user('staff')?->can('orders.void'),
             'canApproveVoid' => PosSettings::orderDeleteEnabled($branch) && $request->user('staff')?->can('orders.void'),
             'canApprovePayments' => $request->user('staff')?->can('payments.manage'),
@@ -147,6 +149,7 @@ class OrderController extends Controller
             clientId: $request->validated('client_id'),
             shift: $openShift,
             terminalCode: $request->input('terminal', 'T01'),
+            overridePreorder: (bool) $user->can('orders.approve'),
         );
 
         $this->broadcastSafely(fn () => broadcast(new OrderCreated($branch->id, [
@@ -336,6 +339,10 @@ class OrderController extends Controller
             return back()->with('error', __('orders.awaiting_approval_locked'));
         }
 
+        if ($order->isHeldBack(PosSettings::preorderReleaseMinutes($order->branch))) {
+            return back()->with('error', __('orders.held_back_locked'));
+        }
+
         $next = OrderStatus::from($validated['status']);
         $current = $order->kitchen_status ?? $order->status;
 
@@ -374,26 +381,33 @@ class OrderController extends Controller
      * A manager sends a guest order (table QR, website, online menu) to the kitchen. Until then it
      * is only placed: the kitchen board does not list it. Cancelling it goes through deleteOrder.
      */
-    public function approve(Request $request, Order $order): RedirectResponse
+    public function approve(Request $request, Order $order, HandOrderToKitchenAction $action): RedirectResponse
     {
         $user = $request->user('staff');
         abort_unless($user->canAccessBranch($order->branch_id), 404);
 
-        if (! $order->isAwaitingApproval() || $order->status === OrderStatus::Void) {
-            return back()->with('error', __('orders.not_awaiting_approval'));
+        try {
+            $action->approve($order, $user);
+        } catch (ValidationException $exception) {
+            return back()->with('error', $exception->validator->errors()->first());
         }
 
-        $order->update(['approval_status' => Order::APPROVAL_APPROVED]);
+        return back()->with('success', __('orders.sent_to_kitchen', ['invoice' => $order->invoice_no]));
+    }
 
-        activity()->performedOn($order)->causedBy($user)->log('order.approved');
+    /**
+     * A manager hands an approved pre-order or reservation meal to the kitchen before its time.
+     */
+    public function release(Request $request, Order $order, HandOrderToKitchenAction $action): RedirectResponse
+    {
+        $user = $request->user('staff');
+        abort_unless($user->canAccessBranch($order->branch_id), 404);
 
-        // The kitchen board hears about it now: this is the moment the ticket appears there.
-        $this->broadcastSafely(fn () => broadcast(new OrderStatusChanged($order->branch_id, [
-            'order_id' => $order->id,
-            'invoice_no' => $order->invoice_no,
-            'status' => $order->kitchen_status?->value ?? OrderStatus::Pending->value,
-            'approved' => true,
-        ])));
+        try {
+            $action->release($order, $user);
+        } catch (ValidationException $exception) {
+            return back()->with('error', $exception->validator->errors()->first());
+        }
 
         return back()->with('success', __('orders.sent_to_kitchen', ['invoice' => $order->invoice_no]));
     }
@@ -420,7 +434,7 @@ class OrderController extends Controller
         $current = $order->kitchen_status ?? OrderStatus::Pending;
 
         // A deleted order is out of the kitchen. A paid one is not: paying first is allowed.
-        if ($order->status === OrderStatus::Void || $order->isAwaitingApproval() || ! in_array($next, $steps, true) || $next === $current) {
+        if ($order->status === OrderStatus::Void || $order->isAwaitingApproval() || $order->isHeldBack(PosSettings::preorderReleaseMinutes($order->branch)) || ! in_array($next, $steps, true) || $next === $current) {
             return false;
         }
 

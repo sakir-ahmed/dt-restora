@@ -1,6 +1,15 @@
 /// Bangla for the app's wording, generated from the web panel's language files (same keys, English to Bangla)
 /// plus the app's own labels. Strings with no entry stay in English. Regenerate it when the web wording changes.
 const Map<String, String> bnStrings = {
+  'Waiting for a manager to approve this guest order.': 'ম্যানেজার এই অতিথির অর্ডার অনুমোদনের অপেক্ষায়।',
+  'This order came from a guest and is waiting for your approval. The kitchen does not see it yet.': 'এই অর্ডার অতিথির কাছ থেকে এসেছে এবং আপনার অনুমোদনের অপেক্ষায় আছে। রান্নাঘর এখনো এটি দেখছে না।',
+  'Hours of notice (optional)': 'কত ঘণ্টা আগে (ঐচ্ছিক)',
+  'No, can be ordered any time': 'না, যেকোনো সময় অর্ডার চলবে',
+  'Yes, pre-order only': 'হ্যাঁ, শুধু প্রি-অর্ডার',
+  'Follow the category': 'ক্যাটাগরি অনুযায়ী',
+  'Needs a pre-order': 'প্রি-অর্ডার লাগবে',
+  'Send now': 'এখনই পাঠান',
+  'Awaiting approval': 'অনুমোদনের অপেক্ষায়',
   '"DT Restora" a product by Datatech BD Ltd.': '"DT Restora" Datatech BD Ltd.-এর একটি পণ্য',
   '* required': '* আবশ্যক',
   '+ Add new ingredient': '+ নতুন উপকরণ যোগ করুন',

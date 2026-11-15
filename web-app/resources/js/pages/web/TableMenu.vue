@@ -421,6 +421,7 @@ watch(currentChapter, () => nextTick(() => document.querySelector('[data-chapter
                                         <span class="tm-item-line">
                                             <span class="tm-name">
                                                 {{ localized(item, 'name') }}
+                                                <small v-if="item.requires_pre_order" class="tm-from">{{ t('menu.pre_order_badge') }}</small>
                                             </span>
                                             <span class="tm-leader" aria-hidden="true" />
                                             <span class="tm-price">

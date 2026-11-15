@@ -254,6 +254,8 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::post('/orders', [StaffApiController::class, 'storeOrder'])->name('orders.store');
             Route::get('/orders/{order}', [StaffApiController::class, 'showOrder'])->name('orders.show');
             Route::patch('/orders/{order}/status', [StaffApiController::class, 'updateStatus'])->name('orders.status');
+            Route::post('/orders/{order}/approve', [StaffApiController::class, 'approveOrder'])->name('orders.approve');
+            Route::post('/orders/{order}/release', [StaffApiController::class, 'releaseOrder'])->name('orders.release');
             Route::post('/orders/{order}/payments', [StaffApiController::class, 'pay'])->name('orders.pay');
             Route::post('/orders/{order}/void-requests', [StaffApiController::class, 'requestVoid'])->name('orders.void');
             Route::get('/inventory/stock', [StaffApiController::class, 'stock'])->name('stock');

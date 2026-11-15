@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Sales\CreateOrderAction;
 use App\Enums\OrderChannel;
+use App\Enums\OrderKind;
 use App\Enums\OrderType;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\Branch;
@@ -19,6 +20,7 @@ use Database\Seeders\RoleSeeder;
 use Database\Seeders\UnitSeeder;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Validation\ValidationException;
 
 beforeEach(function (): void {
     $this->seed([ChartOfAccountsSeeder::class, RoleSeeder::class, UnitSeeder::class]);
@@ -367,4 +369,68 @@ it('serves a ready order from the kitchen board and shows who prepared it', func
 
     $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))
         ->assertInertia(fn ($page) => $page->has('orders', 0));
+});
+
+it('blocks a pre-order only dish on a table order and on the POS for a cashier, but lets a manager sell it', function (): void {
+    $this->item->category()->update(['pre_order_required' => true, 'pre_order_lead_hours' => 6]);
+
+    $this->post(route('web.table.order', ['token' => $this->table->qr_token]), [
+        'items' => [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+    ])->assertSessionHasErrors('items');
+
+    expect(Order::query()->count())->toBe(0);
+
+    $payload = ['order_type' => 'takeaway', 'items' => [['menu_item_id' => $this->item->id, 'quantity' => 1]], 'terminal' => 'T01'];
+
+    $this->actingAs($this->cashier, 'staff')->post('/admin/orders', $payload)->assertSessionHasErrors('items');
+    $this->actingAs($this->manager, 'staff')->post('/admin/orders', $payload)->assertSessionHasNoErrors();
+
+    expect(Order::query()->count())->toBe(1);
+});
+
+it('lets a dish opt out of its category pre-order rule', function (): void {
+    $this->item->category()->update(['pre_order_required' => true]);
+    $this->item->update(['pre_order_required' => false]);
+    MenuItem::forgetCategoryRules();
+
+    $this->post(route('web.table.order', ['token' => $this->table->qr_token]), [
+        'items' => [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+    ])->assertSessionHasNoErrors();
+});
+
+it('takes a website pre-order for a required dish only far enough ahead, and keeps it off the kitchen board until released', function (): void {
+    $this->item->update(['pre_order_required' => true, 'pre_order_lead_hours' => 12]);
+    $order = fn (string $when) => app(CreateOrderAction::class)->execute(
+        $this->branch,
+        OrderType::Takeaway,
+        [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+        scheduledFor: new DateTimeImmutable($when),
+        kind: OrderKind::Preorder,
+    );
+
+    expect(fn () => $order('+3 hours'))->toThrow(ValidationException::class);
+
+    $placed = $order('+2 days');
+
+    expect($placed->kind)->toBe(OrderKind::Preorder);
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))->assertInertia(fn ($page) => $page->has('orders', 0));
+
+    // Not yet due, so the kitchen steps are locked; the manager hands it over early.
+    $this->actingAs($this->manager, 'staff')->patch(route('admin.orders.status', $placed), ['status' => 'preparing'])->assertSessionHas('error');
+    $this->actingAs($this->cashier, 'staff')->post(route('admin.orders.release', $placed))->assertForbidden();
+    $this->actingAs($this->manager, 'staff')->post(route('admin.orders.release', $placed))->assertSessionHas('success');
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))->assertInertia(fn ($page) => $page->has('orders', 1));
+
+    // The release is by the clock too: a pre-order due within the lead time shows without a click.
+    $soon = app(CreateOrderAction::class)->execute($this->branch, OrderType::Takeaway, [['menu_item_id' => $this->item->id, 'quantity' => 1]], scheduledFor: new DateTimeImmutable('+30 minutes'), kind: OrderKind::Preorder, overridePreorder: true);
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))->assertInertia(fn ($page) => $page->has('orders', 2));
+    expect($soon->fresh()->released_at)->toBeNull();
+});
+
+it('gives the approve permission to managers and not to cashiers', function (): void {
+    expect($this->manager->can('orders.approve'))->toBeTrue()
+        ->and($this->cashier->can('orders.approve'))->toBeFalse();
 });

@@ -8,6 +8,7 @@ use App\Actions\Sales\ApproveOrderVoidAction;
 use App\Actions\Sales\CreateOrderAction;
 use App\Actions\Sales\StartGatewayPaymentAction;
 use App\Enums\OrderChannel;
+use App\Enums\OrderKind;
 use App\Enums\OrderType;
 use App\Http\Controllers\Api\Concerns\InteractsWithApi;
 use App\Http\Controllers\Api\Controller;
@@ -176,6 +177,7 @@ class CustomerApiController extends Controller
                 'delivery_zone_id' => ['nullable', 'integer'],
                 'delivery_address' => ['nullable', 'string', 'max:500'],
                 'coupon_code' => ['nullable', 'string'],
+                'scheduled_for' => ['nullable', 'date', 'after:now'],
             ]);
 
             $zone = null;
@@ -195,6 +197,8 @@ class CustomerApiController extends Controller
                 deliveryZoneId: $zone?->id,
                 deliveryAddress: $validated['delivery_address'] ?? null,
                 couponCode: $validated['coupon_code'] ?? null,
+                scheduledFor: isset($validated['scheduled_for']) ? new \DateTimeImmutable((string) $validated['scheduled_for']) : null,
+                kind: isset($validated['scheduled_for']) ? OrderKind::Preorder : OrderKind::Regular,
             );
 
             return $this->success($this->orderPayload($order), null, 201);

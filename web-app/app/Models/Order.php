@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\OrderChannel;
+use App\Enums\OrderKind;
 use App\Enums\OrderStatus;
 use App\Enums\OrderType;
 use App\Models\Concerns\BelongsToBranch;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -25,7 +27,7 @@ class Order extends Model
     protected $fillable = [
         'branch_id', 'invoice_no', 'order_type', 'channel',
         'restaurant_table_id', 'waiter_id', 'cashier_id', 'customer_id', 'shift_id',
-        'status', 'kitchen_status', 'approval_status', 'prepared_by', 'is_due', 'subtotal', 'discount_type', 'discount_value', 'discount_amount',
+        'kind', 'reservation_id', 'released_at', 'status', 'kitchen_status', 'approval_status', 'prepared_by', 'is_due', 'subtotal', 'discount_type', 'discount_value', 'discount_amount',
         'service_charge', 'extra_charge', 'vat_amount', 'delivery_fee', 'rounding', 'total',
         'food_cost', 'client_id', 'note', 'paid_at', 'paid_via_payment_id',
         'delivery_zone_id', 'delivery_address', 'scheduled_for', 'tracking_token',
@@ -38,6 +40,8 @@ class Order extends Model
         'is_due' => 'boolean',
         'order_type' => OrderType::class,
         'channel' => OrderChannel::class,
+        'kind' => OrderKind::class,
+        'released_at' => 'datetime',
         'status' => OrderStatus::class,
         'kitchen_status' => OrderStatus::class,
         'subtotal' => 'decimal:2',
@@ -90,6 +94,43 @@ class Order extends Model
     public function preparer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'prepared_by');
+    }
+
+    /** @return BelongsTo<Reservation, $this> */
+    public function reservation(): BelongsTo
+    {
+        return $this->belongsTo(Reservation::class);
+    }
+
+    /**
+     * Orders the kitchen may see: not waiting for approval, and a pre-order or reservation meal only once it
+     * is released by hand, or its time is within the branch's release lead time.
+     *
+     * @param  Builder<Order>  $query
+     */
+    public function scopeVisibleToKitchen(Builder $query, int $releaseMinutes): void
+    {
+        $query
+            ->where(fn (Builder $inner) => $inner->whereNull('approval_status')->orWhere('approval_status', '!=', self::APPROVAL_AWAITING))
+            ->where(fn (Builder $inner) => $inner
+                ->where('kind', OrderKind::Regular->value)
+                ->orWhereNotNull('released_at')
+                ->orWhere('scheduled_for', '<=', now()->addMinutes($releaseMinutes)));
+    }
+
+    /**
+     * A pre-order or reservation meal that is approved but not yet due at the kitchen.
+     */
+    public function isHeldBack(int $releaseMinutes): bool
+    {
+        return $this->isScheduledKind()
+            && $this->released_at === null
+            && ($this->scheduled_for === null || $this->scheduled_for->gt(now()->addMinutes($releaseMinutes)));
+    }
+
+    public function isScheduledKind(): bool
+    {
+        return $this->kind?->isScheduled() ?? false;
     }
 
     /**

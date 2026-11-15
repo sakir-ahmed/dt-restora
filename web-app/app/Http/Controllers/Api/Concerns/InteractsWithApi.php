@@ -115,6 +115,9 @@ trait InteractsWithApi
             'void_status' => $order->voidRequest?->status,
             'is_due' => (bool) $order->is_due,
             'approval_status' => $order->approval_status,
+            'kind' => $order->kind?->value ?? 'regular',
+            'scheduled_for' => $order->scheduled_for?->toIso8601String(),
+            'released_at' => $order->released_at?->toIso8601String(),
             'customer_name' => $order->customer?->name,
             'items' => $order->items->map(fn ($item) => [
                 'menu_item_id' => $item->menu_item_id,

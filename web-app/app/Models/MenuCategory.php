@@ -18,13 +18,20 @@ class MenuCategory extends Model
     use FlushesPublicCache;
 
     protected $fillable = [
-        'branch_id', 'name', 'name_bn', 'sort_order', 'is_active',
+        'branch_id', 'name', 'name_bn', 'sort_order', 'is_active', 'pre_order_required', 'pre_order_lead_hours',
     ];
 
     protected $casts = [
         'sort_order' => 'integer',
         'is_active' => 'boolean',
+        'pre_order_required' => 'boolean',
+        'pre_order_lead_hours' => 'integer',
     ];
+
+    protected static function booted(): void
+    {
+        static::saved(fn () => MenuItem::forgetCategoryRules());
+    }
 
     /** @return BelongsTo<Branch, $this> */
     public function branch(): BelongsTo

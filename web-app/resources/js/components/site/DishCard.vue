@@ -52,6 +52,7 @@ const lowestPrice = computed(() => {
             <h3 class="text-lg font-semibold leading-snug">
                 <Link :href="itemUrl(branchCode, item.id)" class="hover:underline">{{ name }}</Link>
             </h3>
+            <p v-if="item.requires_pre_order" class="mt-1 w-fit rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning">{{ t('menu.pre_order_badge') }}</p>
             <p v-if="description" class="mt-1 line-clamp-2 text-sm leading-relaxed text-muted">{{ description }}</p>
 
             <div class="mt-auto flex items-center justify-between gap-3 pt-4">

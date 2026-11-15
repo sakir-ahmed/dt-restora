@@ -150,6 +150,7 @@ Color statusColor(String status) {
     case 'accepted':
     case 'open':
       return Brand.success;
+    case 'awaiting':
     case 'cancelled':
     case 'voided':
     case 'failed':

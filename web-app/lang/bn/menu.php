@@ -3,6 +3,14 @@
 declare(strict_types=1);
 
 return [
+    'pre_order_required' => 'প্রি-অর্ডার লাগবে',
+    'pre_order_required_category_helper' => 'এই ক্যাটাগরির সব আইটেম আগে থেকে অর্ডার করতে হবে, কোনো আইটেমে অন্যরকম দেওয়া না থাকলে।',
+    'pre_order_lead_hours' => 'কত ঘণ্টা আগে',
+    'pre_order_lead_hours_helper' => 'কত ঘণ্টা আগে অর্ডার করতে হবে। খালি রাখলে পরের যেকোনো সময় চলবে।',
+    'pre_order_follow_category' => 'ক্যাটাগরি অনুযায়ী',
+    'pre_order_yes' => 'হ্যাঁ, শুধু প্রি-অর্ডার',
+    'pre_order_no' => 'না, যেকোনো সময় অর্ডার চলবে',
+    'pre_order_badge' => 'শুধু প্রি-অর্ডার',
     'title' => 'মেনু',
     'all_items' => 'সব আইটেম',
     'subtitle' => 'ক্যাটাগরি, আইটেম, ভ্যারিয়েন্ট ও অ্যাড-অন।',
