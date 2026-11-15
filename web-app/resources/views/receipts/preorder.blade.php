@@ -133,7 +133,7 @@
         @foreach ($preorder->items as $line)
             <tr>
                 <td class="bold">{{ $line['quantity'] }} x {{ $locale === 'bn' && ! empty($line['name_bn']) ? $line['name_bn'] : $line['name'] }}@if (! empty($line['variant_name'])) ({{ $locale === 'bn' && ! empty($line['variant_name_bn']) ? $line['variant_name_bn'] : $line['variant_name'] }})@endif</td>
-                <td class="right">{{ $money($line['line_total']) }}</td>
+                <td class="right">{{ $money($line['line_total'] ?? null) }}</td>
             </tr>
             @foreach ($line['add_ons'] ?? [] as $addOn)
                 <tr>
