@@ -18,10 +18,14 @@ class Order extends Model
 {
     use BelongsToBranch, HasFactory;
 
+    public const APPROVAL_AWAITING = 'awaiting';
+
+    public const APPROVAL_APPROVED = 'approved';
+
     protected $fillable = [
         'branch_id', 'invoice_no', 'order_type', 'channel',
         'restaurant_table_id', 'waiter_id', 'cashier_id', 'customer_id', 'shift_id',
-        'status', 'kitchen_status', 'is_due', 'subtotal', 'discount_type', 'discount_value', 'discount_amount',
+        'status', 'kitchen_status', 'approval_status', 'prepared_by', 'is_due', 'subtotal', 'discount_type', 'discount_value', 'discount_amount',
         'service_charge', 'extra_charge', 'vat_amount', 'delivery_fee', 'rounding', 'total',
         'food_cost', 'client_id', 'note', 'paid_at', 'paid_via_payment_id',
         'delivery_zone_id', 'delivery_address', 'scheduled_for', 'tracking_token',
@@ -80,6 +84,20 @@ class Order extends Model
     public function table(): BelongsTo
     {
         return $this->belongsTo(RestaurantTable::class, 'restaurant_table_id');
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function preparer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'prepared_by');
+    }
+
+    /**
+     * A guest order a manager has not yet sent to the kitchen.
+     */
+    public function isAwaitingApproval(): bool
+    {
+        return $this->approval_status === self::APPROVAL_AWAITING;
     }
 
     /** @return BelongsTo<User, $this> */

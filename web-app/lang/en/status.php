@@ -7,6 +7,7 @@ return [
     'inactive' => 'Inactive',
     'paid' => 'Paid',
     'pending' => 'Pending',
+    'awaiting' => 'Awaiting approval',
     'preparing' => 'Preparing',
     'ready' => 'Ready',
     'served' => 'Served',

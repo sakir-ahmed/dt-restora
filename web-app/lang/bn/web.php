@@ -115,7 +115,7 @@ return [
     'sending' => 'পাঠানো হচ্ছে',
     'otp_first' => 'আগে আপনার মোবাইলে কোড পাঠান।',
     'order_success_title' => 'অর্ডার সম্পন্ন হয়েছে',
-    'order_success_text' => 'ধন্যবাদ। রান্নাঘর আপনার অর্ডার পেয়েছে।',
+    'order_success_text' => 'ধন্যবাদ। আপনার অর্ডার পেয়েছি, শীঘ্রই নিশ্চিত করা হবে।',
     'order_success_invoice' => 'অর্ডার নম্বর',
     'order_success_total' => 'মোট',
     'order_success_payment' => 'মূল্য পরিশোধ',

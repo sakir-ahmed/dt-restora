@@ -222,6 +222,7 @@ class CreateOrderAction
                     'shift_id' => $shift?->id,
                     'status' => OrderStatus::Pending->value,
                     'kitchen_status' => OrderStatus::Pending->value,
+                    'approval_status' => $channel->needsApproval() ? Order::APPROVAL_AWAITING : null,
                     'client_id' => $clientId,
                     'tracking_token' => bin2hex(random_bytes(20)),
                 ]);

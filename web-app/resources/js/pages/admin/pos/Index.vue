@@ -1613,6 +1613,8 @@ function localInvoiceHtml(order) {
         vat: vatAmount.value,
         total: order.total ?? total.value,
         change: changeShown.value,
+        // The cash handed over is the total plus the change, so the slip shows both.
+        received: changeShown.value > 0 ? Number(order.total ?? total.value) + changeShown.value : 0,
     });
 }
 

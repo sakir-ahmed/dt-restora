@@ -64,6 +64,8 @@ final class PosSettings
      *     order_delete_enabled: bool,
      *     invoice_layout: string,
      *     invoice_paper: string,
+     *     invoice_logo: bool,
+     *     invoice_footer: bool,
      *     invoice_pattern: string,
      *     invoice_seq_digits: int,
      *     payment_methods: array<int, array{method: string, enabled: bool, name: string, name_bn: ?string, type: string}>,
@@ -85,6 +87,9 @@ final class PosSettings
             'order_delete_enabled' => true,
             'invoice_layout' => 'classic',
             'invoice_paper' => ReceiptStyle::DEFAULT_PAPER,
+            // The logo at the top is off until a branch asks for it; the footer message prints as it always did.
+            'invoice_logo' => false,
+            'invoice_footer' => true,
             'invoice_pattern' => self::DEFAULT_PATTERN,
             'invoice_seq_digits' => 4,
             'payment_methods' => self::normalizeMethods(null),
@@ -145,6 +150,8 @@ final class PosSettings
      *     order_delete_enabled: bool,
      *     invoice_layout: string,
      *     invoice_paper: string,
+     *     invoice_logo: bool,
+     *     invoice_footer: bool,
      *     invoice_pattern: string,
      *     invoice_seq_digits: int,
      *     payment_methods: array<int, array{method: string, enabled: bool, name: string, name_bn: ?string, type: string}>,
@@ -171,6 +178,8 @@ final class PosSettings
         $settings['review_before_save'] = (bool) $settings['review_before_save'];
         $settings['order_edit_enabled'] = (bool) $settings['order_edit_enabled'];
         $settings['order_delete_enabled'] = (bool) $settings['order_delete_enabled'];
+        $settings['invoice_logo'] = (bool) $settings['invoice_logo'];
+        $settings['invoice_footer'] = (bool) $settings['invoice_footer'];
         $settings['sounds'] = self::soundsFor($branch);
         $settings['cash_suggestions'] = is_array($suggestions)
             ? array_values(array_map('intval', $suggestions))
@@ -312,6 +321,8 @@ final class PosSettings
             'pos.order_delete_enabled' => ['sometimes', 'boolean'],
             'pos.invoice_layout' => ['required_with:pos', Rule::in(self::LAYOUTS)],
             'pos.invoice_paper' => ['sometimes', Rule::in(self::PAPERS)],
+            'pos.invoice_logo' => ['sometimes', 'boolean'],
+            'pos.invoice_footer' => ['sometimes', 'boolean'],
             'pos.invoice_pattern' => ['required_with:pos', 'string', 'max:60', function (string $attribute, mixed $value, Closure $fail): void {
                 if (! is_string($value) || ! self::patternIsValid($value)) {
                     $fail(__('settings.invoice_pattern_invalid'));
@@ -363,6 +374,8 @@ final class PosSettings
             'order_delete_enabled' => (bool) ($pos['order_delete_enabled'] ?? true),
             'invoice_layout' => $pos['invoice_layout'],
             'invoice_paper' => $pos['invoice_paper'] ?? ReceiptStyle::DEFAULT_PAPER,
+            'invoice_logo' => (bool) ($pos['invoice_logo'] ?? false),
+            'invoice_footer' => (bool) ($pos['invoice_footer'] ?? true),
             'invoice_pattern' => $pos['invoice_pattern'],
             'invoice_seq_digits' => (int) $pos['invoice_seq_digits'],
             'payment_methods' => self::normalizeMethods($pos['payment_methods']),

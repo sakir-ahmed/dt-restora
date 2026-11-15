@@ -31,6 +31,7 @@ use App\Models\SyncItem;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\PosSettings;
+use App\Support\Brand;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -585,6 +586,7 @@ class SyncService
             'branch' => [
                 ...$branch->only(['id', 'name', 'name_bn', 'code', 'phone', 'address', 'vat_percent', 'vat_inclusive', 'service_charge_percent', 'receipt_footer']),
                 'pos_settings' => PosSettings::for($branch),
+                'receipt_logo' => Brand::logo(),
                 'tax_registration_no' => Setting::current()->tax_registration_no,
             ],
             'categories' => MenuCategory::query()

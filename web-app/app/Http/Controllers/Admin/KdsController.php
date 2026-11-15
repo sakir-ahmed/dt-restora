@@ -23,8 +23,10 @@ class KdsController extends Controller
         $orders = Order::query()
             ->where('branch_id', $branch->id)
             ->where('status', '!=', OrderStatus::Void->value)
+            // Guest orders wait for a manager's go-ahead before they reach the kitchen.
+            ->where(fn ($query) => $query->whereNull('approval_status')->orWhere('approval_status', '!=', Order::APPROVAL_AWAITING))
             ->whereIn('kitchen_status', [OrderStatus::Pending->value, OrderStatus::Preparing->value, OrderStatus::Ready->value])
-            ->with(['items:id,order_id,name,name_bn,quantity,add_ons', 'table:id,name', 'waiter:id,name', 'aggregatorChannel:id,key,name'])
+            ->with(['items:id,order_id,name,name_bn,quantity,add_ons', 'table:id,name', 'waiter:id,name', 'preparer:id,name', 'aggregatorChannel:id,key,name'])
             ->oldest()
             ->get()
             // The kitchen board goes by the kitchen step, whether or not the bill is paid yet.

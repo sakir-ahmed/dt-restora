@@ -118,7 +118,7 @@ it('renews every code of the branch at once', function (): void {
         ->and($second->fresh()->qr_token)->not->toBe($before[1]);
 });
 
-it('sends a guest order straight to the kitchen with the table already chosen', function (): void {
+it('places a guest order for a manager to approve, with the table already chosen', function (): void {
     Event::fake();
 
     $this->post(route('web.table.order', ['token' => $this->table->qr_token]), [
@@ -133,6 +133,7 @@ it('sends a guest order straight to the kitchen with the table already chosen', 
         ->and($order->order_type)->toBe(OrderType::DineIn)
         ->and($order->restaurant_table_id)->toBe($this->table->id)
         ->and($order->status->value)->toBe('pending')
+        ->and($order->approval_status)->toBe('awaiting')
         ->and($order->invoice_no)->toContain('-QR-')
         ->and($order->note)->toContain('Rafi')->toContain('less spicy')
         ->and($this->table->fresh()->status)->toBe('occupied');
@@ -314,4 +315,56 @@ it('does not take the booking from another table into account', function (): voi
     booking($other, Reservation::BOOKED, -10, 90);
 
     $this->get(qrUrl($this->table))->assertInertia(fn ($page) => $page->where('ordering.allowed', true));
+});
+
+it('keeps a guest order off the kitchen board until a manager sends it', function (): void {
+    $this->post(route('web.table.order', ['token' => $this->table->qr_token]), [
+        'items' => [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+    ])->assertRedirect();
+
+    $order = Order::query()->firstOrFail();
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))
+        ->assertInertia(fn ($page) => $page->has('orders', 0));
+
+    // Nobody can move it along the kitchen steps meanwhile, and a cashier cannot approve it.
+    $this->actingAs($this->cashier, 'staff')->patch(route('admin.orders.status', $order), ['status' => 'preparing'])->assertSessionHas('error');
+    $this->actingAs($this->cashier, 'staff')->post(route('admin.orders.approve', $order))->assertForbidden();
+
+    $this->actingAs($this->manager, 'staff')->post(route('admin.orders.approve', $order))->assertSessionHas('success');
+
+    expect($order->fresh()->approval_status)->toBe('approved');
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))
+        ->assertInertia(fn ($page) => $page->has('orders', 1)->where('orders.0.table.name', 'T3'));
+});
+
+it('lets a manager cancel an awaiting guest order with a reason', function (): void {
+    $this->post(route('web.table.order', ['token' => $this->table->qr_token]), [
+        'items' => [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+    ])->assertRedirect();
+
+    $order = Order::query()->firstOrFail();
+
+    $this->actingAs($this->manager, 'staff')
+        ->post(route('admin.orders.delete', $order), ['reason_code' => 'duplicate_order'])
+        ->assertSessionHas('success');
+
+    expect($order->fresh()->status->value)->toBe('void');
+});
+
+it('serves a ready order from the kitchen board and shows who prepared it', function (): void {
+    $order = app(CreateOrderAction::class)->execute($this->branch, OrderType::DineIn, [['menu_item_id' => $this->item->id, 'quantity' => 1]], tableId: $this->table->id);
+
+    $this->actingAs($this->manager, 'staff')->patch(route('admin.orders.status', $order), ['status' => 'preparing'])->assertSessionHas('success');
+    expect($order->fresh()->prepared_by)->toBe($this->manager->id);
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))
+        ->assertInertia(fn ($page) => $page->where('orders.0.preparer.name', $this->manager->name));
+
+    $this->actingAs($this->manager, 'staff')->patch(route('admin.orders.status', $order), ['status' => 'ready'])->assertSessionHas('success');
+    $this->actingAs($this->manager, 'staff')->patch(route('admin.orders.status', $order), ['status' => 'served'])->assertSessionHas('success');
+
+    $this->actingAs($this->manager, 'staff')->get(route('admin.kds.index'))
+        ->assertInertia(fn ($page) => $page->has('orders', 0));
 });

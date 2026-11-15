@@ -114,6 +114,7 @@ trait InteractsWithApi
             'note' => $order->note,
             'void_status' => $order->voidRequest?->status,
             'is_due' => (bool) $order->is_due,
+            'approval_status' => $order->approval_status,
             'customer_name' => $order->customer?->name,
             'items' => $order->items->map(fn ($item) => [
                 'menu_item_id' => $item->menu_item_id,

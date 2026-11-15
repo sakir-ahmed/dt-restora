@@ -32,6 +32,7 @@ use App\Services\StockService;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Database\Seeders\RoleSeeder;
 use Database\Seeders\UnitSeeder;
+use Illuminate\Support\Number;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function (): void {
@@ -348,7 +349,10 @@ it('drives the whole flow through the controller endpoints', function (): void {
 
     // Receipt renders
     $receipt = $this->actingAs($this->cashier, 'staff')->get("/admin/orders/{$order->id}/receipt");
-    $receipt->assertOk();
+    $receipt->assertOk()
+        ->assertSee(__('receipt.received'))
+        ->assertSee('250.00')
+        ->assertSee(Number::format((float) $order->fresh()->payments()->first()->change_due, 2));
 
     // Cashier cannot approve their own void; manager can.
     $this->actingAs($this->cashier, 'staff')->post("/admin/orders/{$order->id}/void-request", [

@@ -19,6 +19,7 @@ return [
     'vat' => 'VAT',
     'rounding' => 'Rounding',
     'grand_total' => 'Total',
+    'received' => 'Cash received',
     'change' => 'Change',
     'kitchen_token' => 'Kitchen token',
     'thank_you' => 'Thank you. Please come again.',

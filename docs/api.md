@@ -173,7 +173,7 @@ Deletes are `POST .../delete` with `reason_code` (`entry_mistake`, `duplicate_en
 
 The sync `order_edit` item now also revises a paid order in place (payments kept, books fixed), as the web panel does; a new total below what was received is returned as a conflict.
 
-`GET /api/v1/dashboard` also returns `dues` (same shape as the web dashboard: `outstanding`, `open_count`, `top`) and `preorders_waiting`. Order payloads carry `is_due` and `customer_name`.
+`GET /api/v1/dashboard` also returns `dues` (same shape as the web dashboard: `outstanding`, `open_count`, `top`) and `preorders_waiting`. Order payloads carry `is_due`, `customer_name` and `approval_status` (`awaiting` for a guest order from the table QR, website or online menu that a manager has not yet sent to the kitchen; `approved` or null otherwise).
 
 ### Inventory & Recipes
 

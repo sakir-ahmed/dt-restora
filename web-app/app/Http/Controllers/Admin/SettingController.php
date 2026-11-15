@@ -73,6 +73,9 @@ class SettingController extends Controller
             'invoicePrint' => $branch !== null ? [
                 'layout' => PosSettings::for($branch)['invoice_layout'],
                 'paper' => PosSettings::for($branch)['invoice_paper'],
+                'show_logo' => PosSettings::for($branch)['invoice_logo'],
+                'show_footer' => PosSettings::for($branch)['invoice_footer'],
+                'footer' => (string) $branch->receipt_footer,
             ] : null,
             'defaultPattern' => PosSettings::DEFAULT_PATTERN,
             'deliveryEnabled' => (bool) ($branch?->online_delivery_enabled ?? true),
@@ -370,13 +373,23 @@ class SettingController extends Controller
         $validated = $request->validate([
             'layout' => ['required', Rule::in(PosSettings::LAYOUTS)],
             'paper' => ['required', Rule::in(PosSettings::PAPERS)],
+            'show_logo' => ['sometimes', 'boolean'],
+            'show_footer' => ['sometimes', 'boolean'],
+            'footer' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $branch->update(['pos_settings' => [
-            ...(is_array($branch->pos_settings) ? $branch->pos_settings : []),
-            'invoice_layout' => $validated['layout'],
-            'invoice_paper' => $validated['paper'],
-        ]]);
+        $current = PosSettings::for($branch);
+
+        $branch->update([
+            'pos_settings' => [
+                ...(is_array($branch->pos_settings) ? $branch->pos_settings : []),
+                'invoice_layout' => $validated['layout'],
+                'invoice_paper' => $validated['paper'],
+                'invoice_logo' => (bool) ($validated['show_logo'] ?? $current['invoice_logo']),
+                'invoice_footer' => (bool) ($validated['show_footer'] ?? $current['invoice_footer']),
+            ],
+            'receipt_footer' => array_key_exists('footer', $validated) ? ($validated['footer'] ?: null) : $branch->receipt_footer,
+        ]);
 
         activity()->causedBy($request->user('staff'))->performedOn($branch)->log('branch.invoice_print_updated');
 

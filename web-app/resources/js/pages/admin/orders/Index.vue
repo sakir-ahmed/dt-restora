@@ -18,6 +18,7 @@ import { printUrl } from '@/lib/print';
 const props = defineProps({
     orders: { type: Array, required: true },
     filters: { type: Object, default: () => ({}) },
+    canApproveOrders: { type: Boolean, default: false },
     canVoid: { type: Boolean, default: false },
     canApproveVoid: { type: Boolean, default: false },
     canApprovePayments: { type: Boolean, default: false },
@@ -39,7 +40,7 @@ const columns = computed(() => [
     { key: 'total_display', label: t('inventory.total'), type: 'money', sortable: true, minWidth: '96px' },
     { key: 'order_status', label: t('orders.order_status'), minWidth: '104px' },
     { key: 'payment_status', label: t('orders.payment_status'), minWidth: '104px' },
-    { key: 'actions', label: '', align: 'right', type: 'component', width: '80px' },
+    { key: 'actions', label: '', align: 'right', type: 'component', minWidth: '250px' },
 ]);
 
 function receivedAmount(order) {
@@ -52,6 +53,11 @@ function receivedAmount(order) {
 function orderStatusOf(order) {
     if (order.status === 'void') {
         return 'void';
+    }
+
+    // A guest order (table QR, website) a manager has not sent to the kitchen yet.
+    if (order.approval_status === 'awaiting') {
+        return 'awaiting';
     }
 
     return order.kitchen_status ?? (order.status === 'paid' ? 'served' : order.status);
@@ -110,6 +116,7 @@ const selected = computed(() => {
 
 const statusFilters = [
     { value: '', label: t('common.status') },
+    { value: 'awaiting', label: t('status.awaiting') },
     { value: 'pending', label: t('status.pending') },
     { value: 'preparing', label: t('status.preparing') },
     { value: 'ready', label: t('status.ready') },
@@ -148,6 +155,23 @@ async function deleteOrder(order) {
         onSuccess: () => {
             selectedId.value = null;
             notify.success(t('orders.deleted'));
+        },
+        onError: (errors) => notify.error(String(Object.values(errors)[0] ?? t('common.error_occurred'))),
+    });
+}
+
+function sendToKitchen(order) {
+    router.post(route('admin.orders.approve', order.id), {}, {
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: (page) => {
+            if (page.props.flash?.error) {
+                notify.error(String(page.props.flash.error));
+
+                return;
+            }
+
+            notify.success(t('orders.sent_to_kitchen', { invoice: order.invoice_no }));
         },
         onError: (errors) => notify.error(String(Object.values(errors)[0] ?? t('common.error_occurred'))),
     });
@@ -320,6 +344,15 @@ async function putOnDue(order) {
             <template #cell(actions)="{ row }">
                 <div class="flex items-center justify-end gap-1">
                     <button
+                        v-if="canApproveOrders && row.order_status === 'awaiting'"
+                        type="button"
+                        class="flex h-6 items-center gap-1 rounded border border-accent/60 px-1.5 text-[11px] font-medium text-primary hover:bg-accent/10"
+                        @click.stop="sendToKitchen(row)"
+                    >
+                        <AppIcon name="utensils" size="10" />
+                        {{ t('orders.send_to_kitchen') }}
+                    </button>
+                    <button
                         v-if="row.raw_status !== 'paid' && row.raw_status !== 'void'"
                         type="button"
                         class="flex h-6 items-center gap-1 rounded border border-success/50 px-1.5 text-[11px] text-success hover:bg-success/10"
@@ -365,12 +398,14 @@ async function putOnDue(order) {
             :can-edit="canEdit"
             :can-delete="canVoid"
             :can-approve-payments="canApprovePayments"
+            :can-approve-order="canApproveOrders"
             :can-change-status="canPay"
             @close="selectedId = null"
             @pay="pay"
             @edit="editOrder"
             @print="printReceipt"
             @delete="deleteOrder"
+            @approve-order="sendToKitchen"
             @approve="approvePayment"
             @status="changeStatus"
             @due="putOnDue"

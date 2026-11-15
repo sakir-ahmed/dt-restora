@@ -10,4 +10,5 @@ return [
     'start_preparing' => 'Start preparing',
     'mark_ready' => 'Mark ready',
     'mark_served' => 'Mark served',
+    'prepared_by' => 'Preparing: :name',
 ];

@@ -115,7 +115,7 @@ return [
     'sending' => 'Sending',
     'otp_first' => 'Send the code to your mobile first.',
     'order_success_title' => 'Order placed',
-    'order_success_text' => 'Thank you. The kitchen has received your order.',
+    'order_success_text' => 'Thank you. We have received your order and will confirm it shortly.',
     'order_success_invoice' => 'Order number',
     'order_success_total' => 'Total',
     'order_success_payment' => 'Payment',

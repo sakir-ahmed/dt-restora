@@ -74,6 +74,7 @@ class CheckoutController extends Controller
         try {
             $result = $coupons->validate($validated['code'], (float) $validated['subtotal'], [
                 'channel' => 'website',
+                'awaiting' => true,
                 'branch_id' => $branchId > 0 ? $branchId : null,
                 'customer_id' => $request->user('customer')?->id,
             ]);
@@ -217,7 +218,7 @@ class CheckoutController extends Controller
             ]);
         }
 
-        // Online order reaches the kitchen immediately.
+        // The POS hears about it at once; the kitchen only after a manager approves it.
         broadcast(new OrderCreated($branch->id, [
             'order_id' => $order->id,
             'invoice_no' => $order->invoice_no,

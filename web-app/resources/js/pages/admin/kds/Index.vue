@@ -20,8 +20,6 @@ const POLL_SECONDS = 15000;
 let pollTimer = null;
 let echo = null;
 
-const statusFlow = ['pending', 'preparing', 'ready'];
-
 const byStatus = computed(() => ({
     pending: orders.value.filter((order) => order.status === 'pending'),
     preparing: orders.value.filter((order) => order.status === 'preparing'),
@@ -85,15 +83,14 @@ function reload() {
 }
 
 function advance(order) {
-    const index = statusFlow.indexOf(order.status);
-
-    const next = statusFlow[Math.min(index + 1, statusFlow.length - 1)] ?? 'served';
+    // pending -> preparing -> ready -> served. A ready order is served and leaves the board.
+    const next = ({ pending: 'preparing', preparing: 'ready', ready: 'served' })[order.status] ?? 'served';
 
     router.patch(route('admin.orders.status', order.id), { status: next }, {
         preserveState: true,
         preserveScroll: true,
         onSuccess: () => {
-            orders.value = orders.value.filter((entry) => entry.id !== order.id || next === 'preparing');
+            orders.value = orders.value.filter((entry) => entry.id !== order.id || next !== 'served');
             reload();
         },
     });
@@ -110,6 +107,11 @@ onMounted(() => {
     if (echo) {
         echo.private(`branch.${props.branchId}.kitchen`)
             .listen('.OrderCreated', (event) => {
+                // A guest order waiting for a manager is not on this board yet.
+                if (event.awaiting) {
+                    return;
+                }
+
                 notify.info(t('kds.new_order', { invoice: event.invoice_no }), null, { silent: true });
                 reload();
             })
@@ -190,7 +192,11 @@ onBeforeUnmount(() => {
                     >
                         <div class="flex items-start justify-between gap-2">
                             <div>
-                                <p class="text-sm font-bold text-foreground">{{ order.table ? order.table.name : t('orders.type.' + order.order_type) }}</p>
+                                <p class="flex items-center gap-1.5 text-sm font-bold text-foreground">
+                                    <AppIcon v-if="order.table" name="utensils" size="12" class="text-accent" />
+                                    {{ order.table ? `${t('receipt.table')} ${order.table.name}` : t('orders.type.' + order.order_type) }}
+                                    <span v-if="order.table" class="text-xs font-medium text-muted">{{ t('orders.type.' + order.order_type) }}</span>
+                                </p>
                                 <p class="flex items-center gap-1.5 text-xs text-muted">
                                     {{ order.invoice_no }}
                                     <ChannelBadge :channel="order.channel" :aggregator="order.aggregator_channel" />
@@ -201,6 +207,11 @@ onBeforeUnmount(() => {
                                 {{ elapsed(order) }}
                             </span>
                         </div>
+
+                        <p v-if="order.preparer && order.status !== 'pending'" class="mt-2 flex items-center gap-1 text-xs font-medium text-accent">
+                            <AppIcon name="circle-user" size="10" />
+                            {{ t('kds.prepared_by', { name: order.preparer.name }) }}
+                        </p>
 
                         <ul class="mt-2 space-y-1">
                             <li v-for="item in order.items" :key="item.id" class="flex items-baseline justify-between gap-2 text-sm">

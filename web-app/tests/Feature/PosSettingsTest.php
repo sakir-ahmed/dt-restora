@@ -735,3 +735,25 @@ it('previews a sample invoice for every style and paper size and saves the choic
 
     expect($pos['invoice_layout'])->toBe('detailed')->and($pos['invoice_paper'])->toBe('a5');
 });
+
+it('prints the logo and footer on the invoice only when the branch settings say so', function (): void {
+    $order = app(CreateOrderAction::class)->execute($this->branch, OrderType::Takeaway, [['menu_item_id' => $this->item->id, 'quantity' => 1]], cashier: $this->cashier);
+    $this->branch->update(['receipt_footer' => 'Follow us on Facebook']);
+
+    // The footer prints by default; the logo does not, and there is no print button on the page.
+    $this->actingAs($this->owner, 'staff')->get(route('admin.orders.receipt', $order))
+        ->assertOk()
+        ->assertSee('Follow us on Facebook')
+        ->assertDontSee('<img', false)
+        ->assertDontSee('window.print()', false);
+
+    $this->actingAs($this->owner, 'staff')
+        ->put(route('admin.settings.invoice-print'), ['layout' => 'classic', 'paper' => '80mm', 'show_logo' => true, 'show_footer' => false, 'footer' => 'New message'])
+        ->assertSessionHasNoErrors();
+
+    expect($this->branch->fresh()->receipt_footer)->toBe('New message');
+
+    $this->actingAs($this->owner, 'staff')->get(route('admin.orders.receipt', $order))
+        ->assertSee('<img', false)
+        ->assertDontSee('New message');
+});
