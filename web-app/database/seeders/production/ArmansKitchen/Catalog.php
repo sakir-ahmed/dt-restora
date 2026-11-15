@@ -75,7 +75,9 @@ final class Catalog
     ];
 
     /**
-     * @return array<int, array{name: string, name_bn: string, seed_once?: bool, items: array<int, array<string, mixed>>}>
+     * A category that asks for pre-orders carries pre_order_required (the Qasr Al Mandi range).
+     *
+     * @return array<int, array{name: string, name_bn: string, seed_once?: bool, pre_order_required?: bool, items: array<int, array<string, mixed>>}>
      */
     public static function categories(): array
     {

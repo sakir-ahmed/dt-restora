@@ -123,11 +123,10 @@ final class MenuCatalog
     }
 
     /**
-     * Menu categories in display order, each with its items. A category that asks for
-     * pre-orders carries pre_order_required (see the Qasr Al Mandi range).
+     * Menu categories in display order, each with its items.
      *
-     * @return list<array{name: string, name_bn: string, pre_order_required?: bool, items: list<array{0: string, 1: string, 2: int, 3: array<string, float|int>}>}>
-     *                                                                                                                                                              Each item is [name, Bangla name, price, recipe by ingredient key].
+     * @return list<array{name: string, name_bn: string, items: list<array{0: string, 1: string, 2: int, 3: array<string, float|int>}>}>
+     *                                                                                                                                   Each item is [name, Bangla name, price, recipe by ingredient key].
      */
     public static function menu(): array
     {

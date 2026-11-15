@@ -143,12 +143,7 @@ class MenuSeeder extends Seeder
         foreach (MenuCatalog::menu() as $categoryIndex => $categoryData) {
             $category = MenuCategory::query()->withoutGlobalScopes()->updateOrCreate(
                 ['branch_id' => $branch->id, 'name' => $categoryData['name']],
-                [
-                    'name_bn' => $categoryData['name_bn'],
-                    'sort_order' => $categoryIndex + 1,
-                    'is_active' => true,
-                    'pre_order_required' => (bool) ($categoryData['pre_order_required'] ?? false),
-                ],
+                ['name_bn' => $categoryData['name_bn'], 'sort_order' => $categoryIndex + 1, 'is_active' => true],
             );
 
             foreach ($categoryData['items'] as [$name, $nameBn, $price, $recipe]) {

@@ -129,7 +129,12 @@ class CompanySeeder extends BaseCompanySeeder
         foreach (Catalog::categories() as $categoryOrder => $categoryData) {
             $category = MenuCategory::query()->withoutGlobalScopes()->updateOrCreate(
                 ['branch_id' => $branch->id, 'name' => $categoryData['name']],
-                ['name_bn' => $categoryData['name_bn'], 'sort_order' => $categoryOrder + 1, 'is_active' => true],
+                [
+                    'name_bn' => $categoryData['name_bn'],
+                    'sort_order' => $categoryOrder + 1,
+                    'is_active' => true,
+                    'pre_order_required' => (bool) ($categoryData['pre_order_required'] ?? false),
+                ],
             );
             $keptCategories[] = $category->id;
 
