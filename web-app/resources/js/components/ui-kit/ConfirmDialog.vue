@@ -16,6 +16,7 @@ const props = defineProps({
     reasons: { type: Array, default: () => [] }, // reason codes
     typedWord: { type: String, default: 'CONFIRM' },
     busy: { type: Boolean, default: false },
+    hideCancel: { type: Boolean, default: false }, // a notice with a single button
 });
 
 const emit = defineEmits(['cancel', 'confirm']);
@@ -236,6 +237,7 @@ function submit() {
 
                     <div class="mt-4 flex items-center justify-end gap-2">
                         <button
+                            v-if="! hideCancel"
                             type="button"
                             data-cancel
                             :disabled="busy"

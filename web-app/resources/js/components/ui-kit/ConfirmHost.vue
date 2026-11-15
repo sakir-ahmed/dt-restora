@@ -21,6 +21,7 @@ function onConfirm(payload) {
         :reasons="state.options?.reasons ?? []"
         :typed-word="state.options?.typedWord ?? 'CONFIRM'"
         :busy="state.options?.busy ?? false"
+        :hide-cancel="state.options?.hideCancel ?? false"
         @cancel="cancel"
         @confirm="onConfirm"
     />

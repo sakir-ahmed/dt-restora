@@ -12,12 +12,13 @@ import StatusBadge from '@/components/ui-kit/StatusBadge.vue';
 import SwitchField from '@/components/ui-kit/SwitchField.vue';
 import { useConfirm } from '@/components/ui-kit/useConfirm.js';
 import { t } from '@/lib/i18n';
-import { formatMoney } from '@/lib/format';
+import { formatMoney, localDigits } from '@/lib/format';
 import { notify } from '@/lib/notify';
 
 const props = defineProps({
     branches: { type: Array, required: true },
     canManage: { type: Boolean, default: false },
+    limit: { type: Object, default: () => ({ max: 1, used: 0, reached: false, message: '' }) },
 });
 
 const confirm = useConfirm();
@@ -48,7 +49,26 @@ const emptyForm = {
 
 const form = useForm({ ...emptyForm });
 
+// Branches are capped for this installation; asking for one more explains how to get the limit raised.
+function showLimit() {
+    confirm({
+        variant: 'warning',
+        level: 'simple',
+        title: t('branches.limit_title'),
+        message: `${props.limit.message} ${t('branches.limit_how_to')}`,
+        confirmText: t('common.close'),
+        hideCancel: true,
+        facts: [{ label: t('branches.limit_label'), value: t('branches.limit_usage_short', { used: localDigits(props.limit.used), max: localDigits(props.limit.max) }) }],
+    });
+}
+
 function openCreate() {
+    if (props.limit.reached) {
+        showLimit();
+
+        return;
+    }
+
     editingId.value = null;
     form.defaults({ ...emptyForm }).reset();
     form.clearErrors();
@@ -81,6 +101,13 @@ function save() {
             onSuccess: () => {
                 slideOverOpen.value = false;
                 notify.success(t('branches.created'));
+            },
+            // Someone else may have used the last place meanwhile: show the limit message instead of a form error.
+            onError: (errors) => {
+                if (errors.branch) {
+                    slideOverOpen.value = false;
+                    showLimit();
+                }
             },
         });
     } else {
@@ -122,6 +149,9 @@ async function remove(branch) {
     <div>
         <PageHeader :title="t('branches.title')" :description="t('branches.subtitle')">
             <template #actions>
+                <span class="hidden text-xs tabular-nums text-muted sm:inline" :class="limit.reached ? 'font-medium text-warning' : ''">
+                    {{ t('branches.limit_usage', { used: localDigits(limit.used), max: localDigits(limit.max) }) }}
+                </span>
                 <button
                     v-if="canManage"
                     type="button"

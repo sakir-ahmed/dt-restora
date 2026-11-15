@@ -82,6 +82,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Branch Limit
+    |--------------------------------------------------------------------------
+    |
+    | The most branches this installation may have. It is set per customer and
+    | raised only with the permission of Datatech BD Ltd. Branches that already
+    | exist are kept; the limit only stops new ones from being added.
+    |
+    */
+
+    'max_branches' => max(1, (int) env('MAX_BRANCHES', 1)),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |
