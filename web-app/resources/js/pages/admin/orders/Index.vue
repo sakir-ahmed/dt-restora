@@ -13,6 +13,7 @@ import { t } from '@/lib/i18n';
 import { formatMoney } from '@/lib/format';
 import ChannelBadge from '@/components/ChannelBadge.vue';
 import { notify } from '@/lib/notify';
+import { openInvoiceImage } from '@/lib/invoiceImage';
 import { printUrl } from '@/lib/print';
 
 const props = defineProps({
@@ -26,6 +27,7 @@ const props = defineProps({
     canApprovePayments: { type: Boolean, default: false },
     canPay: { type: Boolean, default: false },
     canEdit: { type: Boolean, default: false },
+    shareImage: { type: Boolean, default: false },
 });
 
 const selectedId = ref(null);
@@ -244,6 +246,10 @@ function approvePayment(payment) {
         preserveState: true,
         onSuccess: () => notify.success(t('payments.manual_approved')),
     });
+}
+
+function shareInvoiceImage(order) {
+    openInvoiceImage({ url: route('admin.orders.receipt', order.id), invoiceNo: order.invoice_no });
 }
 
 function printReceipt(order) {
@@ -502,6 +508,16 @@ async function putOnDue(order) {
                         {{ t('orders.pay') }}
                     </button>
                     <button
+                        v-if="shareImage"
+                        type="button"
+                        class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-background hover:text-foreground"
+                        :aria-label="t('orders.share_image')"
+                        :title="t('orders.share_image')"
+                        @click.stop="shareInvoiceImage(row)"
+                    >
+                        <AppIcon name="image" size="12" />
+                    </button>
+                    <button
                         type="button"
                         class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-background hover:text-foreground"
                         :aria-label="t('receipt.print')"
@@ -539,11 +555,13 @@ async function putOnDue(order) {
             :can-delete="canVoid"
             :can-approve-payments="canApprovePayments"
             :can-approve-order="canApproveOrders"
+            :can-share-image="shareImage"
             :can-change-status="canPay"
             @close="selectedId = null"
             @pay="pay"
             @edit="editOrder"
             @print="printReceipt"
+            @share-image="shareInvoiceImage"
             @delete="deleteOrder"
             @approve-order="sendToKitchen"
             @approve="approvePayment"

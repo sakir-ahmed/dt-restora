@@ -12,6 +12,7 @@ import DemoBanner from './components/DemoBanner.vue';
 const DemoExperience = defineAsyncComponent(() => import('./components/demo/DemoExperience.vue'));
 
 import ConfirmHost from './components/ui-kit/ConfirmHost.vue';
+import InvoiceImageHost from './components/ui-kit/InvoiceImageHost.vue';
 import UpdatePrompt from './components/ui-kit/UpdatePrompt.vue';
 import { t } from './lib/i18n';
 import { notify } from './lib/notify';
@@ -60,6 +61,7 @@ createInertiaApp({
                     h(App, props),
                     mounted.value && page.props?.isDemo ? h(DemoExperience) : null,
                     mounted.value ? h(ConfirmHost) : null,
+                    mounted.value ? h(InvoiceImageHost) : null,
                     mounted.value ? h(UpdatePrompt) : null,
                     mounted.value
                         ? h(Toaster, {

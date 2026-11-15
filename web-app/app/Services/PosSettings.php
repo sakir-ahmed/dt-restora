@@ -65,6 +65,7 @@ final class PosSettings
      *     invoice_layout: string,
      *     invoice_paper: string,
      *     invoice_logo: bool,
+     *     invoice_share_image: bool,
      *     invoice_footer: bool,
      *     preorder_release_minutes: int,
      *     invoice_pattern: string,
@@ -90,6 +91,8 @@ final class PosSettings
             'invoice_paper' => ReceiptStyle::DEFAULT_PAPER,
             // The logo at the top is off until a branch asks for it; the footer message prints as it always did.
             'invoice_logo' => false,
+            // Off until a branch wants to send invoices as a picture (copy, share) instead of only printing them.
+            'invoice_share_image' => false,
             'invoice_footer' => true,
             // A pre-order or reservation meal goes to the kitchen board this many minutes before its time.
             'preorder_release_minutes' => 45,
@@ -115,6 +118,14 @@ final class PosSettings
     public static function preorderReleaseMinutes(?Branch $branch): int
     {
         return max(0, (int) ($branch?->pos_settings['preorder_release_minutes'] ?? 45));
+    }
+
+    /**
+     * Whether staff may share an invoice as a picture (copy, share) as well as print it. Off unless the branch turned it on.
+     */
+    public static function invoiceShareImageEnabled(?Branch $branch): bool
+    {
+        return (bool) ($branch?->pos_settings['invoice_share_image'] ?? false);
     }
 
     /**
@@ -162,6 +173,7 @@ final class PosSettings
      *     invoice_layout: string,
      *     invoice_paper: string,
      *     invoice_logo: bool,
+     *     invoice_share_image: bool,
      *     invoice_footer: bool,
      *     preorder_release_minutes: int,
      *     invoice_pattern: string,
@@ -191,6 +203,7 @@ final class PosSettings
         $settings['order_edit_enabled'] = (bool) $settings['order_edit_enabled'];
         $settings['order_delete_enabled'] = (bool) $settings['order_delete_enabled'];
         $settings['invoice_logo'] = (bool) $settings['invoice_logo'];
+        $settings['invoice_share_image'] = (bool) $settings['invoice_share_image'];
         $settings['invoice_footer'] = (bool) $settings['invoice_footer'];
         $settings['preorder_release_minutes'] = max(0, (int) $settings['preorder_release_minutes']);
         $settings['sounds'] = self::soundsFor($branch);
@@ -336,6 +349,7 @@ final class PosSettings
             'pos.invoice_paper' => ['sometimes', Rule::in(self::PAPERS)],
             'pos.preorder_release_minutes' => ['sometimes', 'integer', 'min:0', 'max:1440'],
             'pos.invoice_logo' => ['sometimes', 'boolean'],
+            'pos.invoice_share_image' => ['sometimes', 'boolean'],
             'pos.invoice_footer' => ['sometimes', 'boolean'],
             'pos.invoice_pattern' => ['required_with:pos', 'string', 'max:60', function (string $attribute, mixed $value, Closure $fail): void {
                 if (! is_string($value) || ! self::patternIsValid($value)) {
@@ -389,6 +403,7 @@ final class PosSettings
             'invoice_layout' => $pos['invoice_layout'],
             'invoice_paper' => $pos['invoice_paper'] ?? ReceiptStyle::DEFAULT_PAPER,
             'invoice_logo' => (bool) ($pos['invoice_logo'] ?? false),
+            'invoice_share_image' => (bool) ($pos['invoice_share_image'] ?? false),
             'invoice_footer' => (bool) ($pos['invoice_footer'] ?? true),
             'preorder_release_minutes' => (int) ($pos['preorder_release_minutes'] ?? 45),
             'invoice_pattern' => $pos['invoice_pattern'],

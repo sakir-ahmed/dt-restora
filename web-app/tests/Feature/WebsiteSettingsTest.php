@@ -272,3 +272,29 @@ it('saves POS and billing options for the selected branch from Settings', functi
     $this->actingAs($owner, 'staff')->get(route('admin.settings.index'))
         ->assertInertia(fn ($page) => $page->where('branchId', $this->branch->id)->has('branchPos.actions'));
 });
+
+it('lets a branch turn on sharing the invoice as an image, off by default, and tells the order screens', function (): void {
+    $owner = User::factory()->role('owner')->create(['branch_id' => $this->branch->id]);
+    $save = fn (bool $on) => $this->actingAs($owner, 'staff')->put(route('admin.settings.branch-pos'), [
+        'pos' => [...PosSettings::for($this->branch->fresh()), 'invoice_share_image' => $on],
+        'vat_percent' => '5.00',
+        'service_charge_percent' => '0.00',
+    ])->assertSessionHasNoErrors();
+
+    expect(PosSettings::for($this->branch)['invoice_share_image'])->toBeFalse()
+        ->and(PosSettings::invoiceShareImageEnabled($this->branch))->toBeFalse();
+
+    $this->actingAs($owner, 'staff')->get(route('admin.orders.index'))->assertInertia(fn ($page) => $page->where('shareImage', false));
+
+    $save(true);
+
+    expect(PosSettings::invoiceShareImageEnabled($this->branch->fresh()))->toBeTrue();
+
+    $this->actingAs($owner, 'staff')->get(route('admin.orders.index'))->assertInertia(fn ($page) => $page->where('shareImage', true));
+    $this->actingAs($owner, 'staff')->get(route('admin.dues.index'))->assertInertia(fn ($page) => $page->where('shareImage', true));
+    $this->actingAs($owner, 'staff')->get(route('admin.pos.index'))->assertInertia(fn ($page) => $page->where('branch.pos_settings.invoice_share_image', true));
+
+    $save(false);
+
+    expect(PosSettings::invoiceShareImageEnabled($this->branch->fresh()))->toBeFalse();
+});

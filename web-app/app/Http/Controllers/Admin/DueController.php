@@ -85,6 +85,7 @@ class DueController extends Controller
             'methods' => $methods,
             'canCollect' => (bool) $request->user('staff')?->can('orders.create'),
             'canEdit' => PosSettings::orderEditEnabled($branch) && $request->user('staff')?->can('orders.create'),
+            'shareImage' => PosSettings::invoiceShareImageEnabled($branch),
             'canDelete' => PosSettings::orderDeleteEnabled($branch) && $request->user('staff')?->can('orders.void'),
         ]);
     }

@@ -16,6 +16,7 @@ import { cacheBootstrap, findOutbox, getCachedMenu, getDataVersion, getDeviceId,
 import { useIncomingOrders } from '@/lib/incomingOrders';
 import { notify } from '@/lib/notify';
 import { parseInvoiceSequence } from '@/lib/invoice';
+import { openInvoiceImage } from '@/lib/invoiceImage';
 import { printHtml, printSequence, printUrl } from '@/lib/print';
 import { playSound } from '@/lib/sounds';
 import { localKitchenTokenHtml, localReceiptHtml } from '@/lib/receipt';
@@ -1810,6 +1811,28 @@ async function startShift() {
     });
 }
 
+const shareImageEnabled = computed(() => branch.value.pos_settings?.invoice_share_image === true);
+
+// The invoice as a picture to copy or share, for the order just sent or paid. The same page that would print.
+function shareCustomerImage() {
+    const order = latestOrder.value;
+    const orderId = lastPayment.value?.order_id ?? order?.id;
+
+    if (! orderId && order?.invoice_no) {
+        openInvoiceImage({ html: localInvoiceHtml(order), invoiceNo: order.invoice_no });
+
+        return;
+    }
+
+    if (! orderId) {
+        notify.info(t('orders.send_before_print'));
+
+        return;
+    }
+
+    openInvoiceImage({ url: route('admin.orders.receipt', orderId), invoiceNo: order?.invoice_no ?? lastPayment.value?.invoice_no ?? '' });
+}
+
 function printCustomerCopy() {
     const order = latestOrder.value;
     const orderId = lastPayment.value?.order_id ?? order?.id;
@@ -3038,6 +3061,16 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                     >
                         <AppIcon name="print" size="11" />
                         {{ t('orders.print_short') }}
+                    </button>
+                    <button
+                        v-if="shareImageEnabled"
+                        type="button"
+                        :disabled="! lastPayment && ! latestOrder"
+                        class="col-span-6 flex h-7 items-center justify-center gap-1 rounded-md border border-border bg-background text-xs font-medium text-foreground hover:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        @click="shareCustomerImage"
+                    >
+                        <AppIcon name="image" size="11" />
+                        {{ t('orders.share_image') }}
                     </button>
                     <button
                         type="button"

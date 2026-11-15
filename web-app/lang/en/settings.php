@@ -214,6 +214,8 @@ return [
     'sound_kds_served' => 'Served',
     'saved' => 'Settings saved.',
     'order_edit_enabled' => 'Allow editing orders',
+    'invoice_share_image' => 'Let staff share the invoice as an image',
+    'invoice_share_image_helper' => 'Off by default. When on, the POS and the order list get a button that shows the invoice as a picture with Copy, Share and Save, to send to a customer on WhatsApp, Messenger or email. Printing is not affected.',
     'order_edit_enabled_helper' => 'On by default. When off, a sent order can no longer be changed from the POS or the API.',
     'order_delete_enabled' => 'Allow deleting orders',
     'order_delete_enabled_helper' => 'On by default. When off, orders can no longer be voided or cleared, and pending void requests cannot be approved.',

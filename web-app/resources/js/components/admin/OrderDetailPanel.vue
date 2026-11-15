@@ -22,9 +22,10 @@ const props = defineProps({
     canApprovePayments: { type: Boolean, default: false },
     canChangeStatus: { type: Boolean, default: false },
     canApproveOrder: { type: Boolean, default: false },
+    canShareImage: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['close', 'pay', 'collect', 'edit', 'print', 'delete', 'approve', 'approve-order', 'status', 'due']);
+const emit = defineEmits(['close', 'pay', 'collect', 'edit', 'print', 'delete', 'approve', 'approve-order', 'share-image', 'status', 'due']);
 
 const status = computed(() => props.order?.status ?? '');
 const isVoid = computed(() => status.value === 'void' || props.order?.deleted === true);
@@ -170,6 +171,10 @@ const buttonBase = 'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-
                 <button v-if="canDelete && ! isVoid" type="button" :class="[buttonBase, 'mr-auto border border-danger/50 text-danger hover:bg-danger/10']" @click="emit('delete', order)">
                     <AppIcon name="trash" size="12" />
                     {{ t('common.delete') }}
+                </button>
+                <button v-if="canShareImage" type="button" :class="[buttonBase, 'border border-border bg-surface text-foreground hover:bg-background']" @click="emit('share-image', order)">
+                    <AppIcon name="image" size="12" />
+                    {{ t('orders.share_image') }}
                 </button>
                 <button type="button" :class="[buttonBase, 'border border-border bg-surface text-foreground hover:bg-background']" @click="emit('print', order)">
                     <AppIcon name="print" size="12" />
