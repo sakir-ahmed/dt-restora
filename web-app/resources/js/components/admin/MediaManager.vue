@@ -238,9 +238,9 @@ const inputClass = 'h-7 w-full rounded-md border border-border bg-surface px-2 t
                 v-if="section.items.length === 0"
                 class="rounded-lg border border-dashed px-3 py-4 text-center text-[13px] text-muted transition-colors"
                 :class="section.key === 'photos' && dragging ? 'border-accent bg-accent/5' : 'border-border'"
-                @dragover.prevent="section.key === 'photos' && (dragging = true)"
+                @dragover.prevent="section.key === 'photos' && canManage && (dragging = true)"
                 @dragleave.prevent="dragging = false"
-                @drop.prevent="section.key === 'photos' && onDrop($event)"
+                @drop.prevent="section.key === 'photos' && canManage && onDrop($event)"
             >
                 {{ section.empty }}
             </div>

@@ -87,6 +87,8 @@ class PosController extends Controller
             'openShift' => $openShift,
             'canOverrideDiscount' => $user->can('discounts.override'),
             'canVoid' => $user->can('orders.void'),
+            'canCreateOrders' => $user->can('orders.create'),
+            'canManageShifts' => $user->can('shifts.manage'),
             'posPinMinutes' => Setting::current()->pos_pin_minutes,
             'posLockEnabled' => (bool) Setting::current()->pos_lock_enabled,
         ]);

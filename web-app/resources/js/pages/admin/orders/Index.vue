@@ -28,6 +28,7 @@ const props = defineProps({
     canApprovePayments: { type: Boolean, default: false },
     canPay: { type: Boolean, default: false },
     canEdit: { type: Boolean, default: false },
+    canPos: { type: Boolean, default: false },
     shareImage: { type: Boolean, default: false },
 });
 
@@ -396,6 +397,7 @@ async function putOnDue(order) {
         <PageHeader :title="t('nav.orders')" :description="t('orders.subtitle')">
             <template #actions>
                 <a
+                    v-if="canPos"
                     href="/admin/pos"
                     class="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground hover:opacity-90"
                 >
@@ -542,7 +544,7 @@ async function putOnDue(order) {
                         {{ t('orders.send_now') }}
                     </button>
                     <button
-                        v-if="row.raw_status !== 'paid' && row.raw_status !== 'void'"
+                        v-if="canPay && row.raw_status !== 'paid' && row.raw_status !== 'void'"
                         type="button"
                         class="flex h-6 items-center gap-1 rounded border border-success/50 px-1.5 text-[11px] text-success hover:bg-success/10"
                         @click.stop="pay(row)"

@@ -92,6 +92,7 @@ class OrderController extends Controller
             'canApprovePayments' => $request->user('staff')?->can('payments.manage'),
             'canPay' => (bool) $request->user('staff')?->can('orders.create'),
             'canEdit' => PosSettings::orderEditEnabled($branch) && $request->user('staff')?->can('orders.create'),
+            'canPos' => (bool) $request->user('staff')?->can('pos.access'),
             'shareImage' => PosSettings::invoiceShareImageEnabled($branch),
         ]);
     }

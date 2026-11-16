@@ -30,6 +30,9 @@ const props = defineProps({
     fiscalYears: { type: Array, required: true },
     from: { type: String, required: true },
     to: { type: String, required: true },
+    canPostJournals: { type: Boolean, default: false },
+    canManageVouchers: { type: Boolean, default: false },
+    canLockPeriods: { type: Boolean, default: false },
 });
 
 const tab = ref('statements');
@@ -179,7 +182,7 @@ function exportStatement(statement) {
     <div>
         <PageHeader :title="t('accounting.title')" :description="t('accounting.subtitle')">
             <template #actions>
-                <button type="button" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background" @click="openJournal">
+                <button v-if="canPostJournals" type="button" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background" @click="openJournal">
                     <AppIcon name="plus" size="12" />
                     {{ t('accounting.new_journal') }}
                 </button>
@@ -337,8 +340,8 @@ function exportStatement(statement) {
             </table>
         </section>
 
-        <section v-else-if="tab === 'vouchers'" class="grid gap-3 lg:grid-cols-[280px_1fr]">
-            <form novalidate class="space-y-2 rounded-lg border border-border bg-surface p-3" @submit.prevent="saveVoucher">
+        <section v-else-if="tab === 'vouchers'" class="grid gap-3" :class="canManageVouchers ? 'lg:grid-cols-[280px_1fr]' : ''">
+            <form v-if="canManageVouchers" novalidate class="space-y-2 rounded-lg border border-border bg-surface p-3" @submit.prevent="saveVoucher">
                 <FormField :label="t('common.status')">
                     <template #default="{ id }">
                         <select :id="id" v-model="voucherForm.type" class="h-8 w-full rounded-md border border-border bg-background px-2 text-[13px]">
@@ -402,8 +405,8 @@ function exportStatement(statement) {
             />
         </section>
 
-        <section v-else-if="tab === 'reconcile'" class="grid gap-3 lg:grid-cols-[280px_1fr]">
-            <form novalidate class="space-y-2 rounded-lg border border-border bg-surface p-3" @submit.prevent="saveStatement">
+        <section v-else-if="tab === 'reconcile'" class="grid gap-3" :class="canPostJournals ? 'lg:grid-cols-[280px_1fr]' : ''">
+            <form v-if="canPostJournals" novalidate class="space-y-2 rounded-lg border border-border bg-surface p-3" @submit.prevent="saveStatement">
                 <FormField :label="t('accounting.accounts')">
                     <template #default="{ id }">
                         <select :id="id" v-model="statementForm.account_code" class="h-8 w-full rounded-md border border-border bg-background px-2 text-[13px]">
@@ -445,13 +448,14 @@ function exportStatement(statement) {
                             <td class="px-3 py-1.5 text-right tabular-nums">{{ line.amount }}</td>
                             <td class="px-3 py-1.5">
                                 <span v-if="line.journal_id" class="text-success">{{ line.journal_id }}</span>
-                                <span v-else class="flex items-center gap-1">
+                                <span v-else-if="canPostJournals" class="flex items-center gap-1">
                                     <select v-model="matchChoice[line.id]" class="h-7 rounded border border-border bg-background px-1 text-[12px]">
                                         <option value="">---</option>
                                         <option v-for="journal in journals.filter((item) => item.status === 'posted')" :key="journal.id" :value="journal.id">{{ journal.reference || journal.id }}</option>
                                     </select>
                                     <button type="button" class="h-7 rounded border border-border px-1.5 text-[11px]" @click="matchLine(line)">{{ t('accounting.match') }}</button>
                                 </span>
+                                <span v-else class="text-muted">&ndash;</span>
                             </td>
                         </tr>
                     </tbody>
@@ -481,10 +485,10 @@ function exportStatement(statement) {
             </template>
             <template #cell(actions)="{ row }">
                 <div class="flex justify-end gap-1">
-                    <button v-if="row.status === 'draft'" type="button" class="flex h-6 items-center rounded border border-success/50 px-1.5 text-[11px] text-success hover:bg-success/10" @click="approve(row)">
+                    <button v-if="canPostJournals && row.status === 'draft'" type="button" class="flex h-6 items-center rounded border border-success/50 px-1.5 text-[11px] text-success hover:bg-success/10" @click="approve(row)">
                         {{ t('accounting.approve') }}
                     </button>
-                    <button v-if="row.status === 'posted'" type="button" class="flex h-6 items-center rounded border border-danger/40 px-1.5 text-[11px] text-danger hover:bg-danger/10" @click="reverse(row)">
+                    <button v-if="canPostJournals && row.status === 'posted'" type="button" class="flex h-6 items-center rounded border border-danger/40 px-1.5 text-[11px] text-danger hover:bg-danger/10" @click="reverse(row)">
                         {{ t('accounting.reverse') }}
                     </button>
                 </div>
@@ -504,13 +508,14 @@ function exportStatement(statement) {
             searchable
         >
             <template #cell(name)="{ row }">
-                <input v-model="row.name" type="text" class="h-7 w-full rounded border border-border bg-background px-1.5 text-[13px]">
+                <input v-if="canPostJournals" v-model="row.name" type="text" class="h-7 w-full rounded border border-border bg-background px-1.5 text-[13px]">
+                <span v-else>{{ row.name }}</span>
             </template>
             <template #cell(is_active)="{ row }">
-                <input v-model="row.is_active" type="checkbox">
+                <input v-model="row.is_active" type="checkbox" :disabled="! canPostJournals">
             </template>
             <template #cell(actions)="{ row }">
-                <button type="button" class="h-6 rounded border border-border px-1.5 text-[11px]" @click="saveAccount(row)">{{ t('common.save') }}</button>
+                <button v-if="canPostJournals" type="button" class="h-6 rounded border border-border px-1.5 text-[11px]" @click="saveAccount(row)">{{ t('common.save') }}</button>
             </template>
         </DataTable>
 
@@ -531,7 +536,7 @@ function exportStatement(statement) {
                         <td class="px-3 py-1.5">{{ year.starts_at?.slice(0, 10) }} - {{ year.ends_at?.slice(0, 10) }}</td>
                         <td class="px-3 py-1.5"><StatusBadge :status="year.is_locked ? 'closed' : 'open'" /></td>
                         <td class="px-3 py-1.5 text-right">
-                            <button v-if="! year.is_locked" type="button" class="h-6 rounded border border-border px-1.5 text-[11px] hover:bg-background" @click="lockYear(year)">
+                            <button v-if="canLockPeriods && ! year.is_locked" type="button" class="h-6 rounded border border-border px-1.5 text-[11px] hover:bg-background" @click="lockYear(year)">
                                 {{ t('accounting.lock_year') }}
                             </button>
                         </td>

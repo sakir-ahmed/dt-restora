@@ -59,6 +59,9 @@ class AccountingController extends Controller
             'fiscalYears' => FiscalYear::query()->orderByDesc('starts_at')->get(),
             'from' => $from,
             'to' => $to,
+            'canPostJournals' => (bool) $request->user('staff')?->can('journals.post'),
+            'canManageVouchers' => (bool) $request->user('staff')?->can('vouchers.manage'),
+            'canLockPeriods' => (bool) $request->user('staff')?->can('periods.lock'),
         ]);
     }
 
