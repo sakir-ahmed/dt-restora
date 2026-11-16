@@ -40,7 +40,7 @@
 
 **Customers are not staff users.** They live in a separate `customers` table with their own auth guard (mobile OTP or Google). They can never reach `/admin`. Walk-in customers captured at the POS by mobile number are the same customer records, so loyalty works across every channel.
 
-Permissions are seeded per role (e.g. `orders.void`, `discounts.override`, `stock.adjust`, `journals.post`).
+Permissions are seeded per role (e.g. `orders.void`, `discounts.override`, `stock.adjust`, `journals.post`). `kds.access` covers the whole Kitchen Display: seeing the board and advancing tickets (start preparing, mark ready, mark served). Marking an order paid through the same endpoint stays with `orders.create`, so a kitchen role can never take payment.
 
 ---
 
