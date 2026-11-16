@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use Illuminate\Http\Request;
@@ -20,7 +21,8 @@ class CustomerController extends Controller
 
         $customers = Customer::query()
             ->withSum('loyaltyEntries as points', 'points')
-            ->withCount('orders')
+            // A deleted order is not a sale, so it does not count towards the customer's orders.
+            ->withCount(['orders as orders_count' => fn ($query) => $query->where('status', '!=', OrderStatus::Void->value)])
             ->when($search !== '', function ($query) use ($search): void {
                 $query->where(function ($inner) use ($search): void {
                     $inner->where('name', 'like', '%'.$search.'%')

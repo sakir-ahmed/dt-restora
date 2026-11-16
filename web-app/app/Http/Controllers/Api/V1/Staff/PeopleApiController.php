@@ -9,6 +9,7 @@ use App\Actions\Attendance\RegisterAttendanceDeviceAction;
 use App\Actions\Payroll\CalculateStaffPayAction;
 use App\Actions\Payroll\DeleteSalaryAdvanceAction;
 use App\Actions\Payroll\RecordSalaryAdvanceAction;
+use App\Enums\OrderStatus;
 use App\Enums\PayBasis;
 use App\Http\Controllers\Api\Concerns\InteractsWithApi;
 use App\Http\Controllers\Api\Controller;
@@ -58,7 +59,10 @@ class PeopleApiController extends Controller
             'email' => $customer->email,
             'is_active' => (bool) $customer->is_active,
             'points' => (int) $customer->loyaltyEntries()->sum('points'),
-            'orders_count' => Order::query()->where('customer_id', $customer->id)->count(),
+            'orders_count' => Order::query()
+                ->where('customer_id', $customer->id)
+                ->where('status', '!=', OrderStatus::Void->value)
+                ->count(),
             'orders' => $orders->map(fn (Order $order): array => [
                 'id' => $order->id,
                 'invoice_no' => $order->invoice_no,
@@ -259,7 +263,7 @@ class PeopleApiController extends Controller
                         'employee_id' => $employee->id,
                         'employee' => $employee->name,
                         'designation' => $employee->designation,
-                        'status' => $attendance?->status ?? 'not_recorded',
+                        'status' => $attendance->status ?? 'not_recorded',
                         'clock_in' => $attendance?->clock_in?->toIso8601String(),
                         'clock_out' => $attendance?->clock_out?->toIso8601String(),
                         'hours' => number_format($attendance?->hours() ?? 0.0, 2, '.', ''),
@@ -452,7 +456,7 @@ class PeopleApiController extends Controller
      */
     private function validatedUser(Request $request, ?User $account): array
     {
-        $id = $account?->id ?? 'NULL';
+        $id = $account->id ?? 'NULL';
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:150'],
@@ -486,7 +490,7 @@ class PeopleApiController extends Controller
             return null;
         }
 
-        return $branchId > 0 ? $branchId : ($existing?->branch_id ?? $currentBranchId);
+        return $branchId > 0 ? $branchId : ($existing->branch_id ?? $currentBranchId);
     }
 
     /**
@@ -514,7 +518,7 @@ class PeopleApiController extends Controller
             'designation' => $employee->designation,
             'mobile' => $employee->mobile,
             'device_user_id' => $employee->device_user_id,
-            'pay_basis' => $employee->pay_basis instanceof PayBasis ? $employee->pay_basis->value : $employee->pay_basis,
+            'pay_basis' => $employee->pay_basis->value,
             'pay_rate' => (string) $employee->pay_rate,
             'monthly_salary' => (string) $employee->monthly_salary,
             'joined_at' => $employee->joined_at?->toDateString(),

@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\Branch;
 use App\Models\Customer;
+use App\Models\Order;
 use App\Models\Setting;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
@@ -56,6 +58,36 @@ it('lists customers matching a mobile search', function (): void {
     $names = collect($response->viewData('page')['props']['customers'])->pluck('name');
 
     expect($names->all())->toBe(['Mina']);
+});
+
+it('counts only live orders in the customer table, skipping deleted ones', function (): void {
+    $branch = Branch::factory()->create(['code' => 'BR01']);
+    $customer = Customer::query()->create(['name' => 'Mina', 'mobile' => '8801711111111']);
+
+    $orders = [
+        ['invoice' => 'A1', 'status' => 'paid'],
+        ['invoice' => 'A2', 'status' => 'void'],
+        ['invoice' => 'A3', 'status' => 'preparing'],
+    ];
+
+    foreach ($orders as $order) {
+        Order::query()->create([
+            'branch_id' => $branch->id,
+            'customer_id' => $customer->id,
+            'invoice_no' => $order['invoice'],
+            'order_type' => 'dine_in',
+            'status' => $order['status'],
+            'subtotal' => '100.00',
+            'total' => '100.00',
+        ]);
+    }
+
+    $response = $this->actingAs($this->owner, 'staff')->get('/admin/customers');
+
+    $count = collect($response->viewData('page')['props']['customers'])
+        ->firstWhere('name', 'Mina')['orders_count'];
+
+    expect($count)->toBe(2);
 });
 
 it('saves the delete confirmation delay and shares it with every page', function (): void {
