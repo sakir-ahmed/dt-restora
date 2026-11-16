@@ -757,3 +757,21 @@ it('prints the logo and footer on the invoice only when the branch settings say 
         ->assertSee('<img', false)
         ->assertDontSee('New message');
 });
+
+it('switches any method off and on, cash included', function (): void {
+    $cash = PaymentMethod::findByCode('cash');
+
+    $this->actingAs($this->owner, 'staff')->put(route('admin.settings.payment-methods.update', $cash), [
+        'name' => 'Cash', 'is_active' => false,
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    expect($cash->fresh()->is_active)->toBeFalse()
+        ->and(in_array('cash', PosSettings::enabledMethods($this->branch)))->toBeFalse();
+
+    $this->actingAs($this->owner, 'staff')->put(route('admin.settings.payment-methods.update', $cash), [
+        'name' => 'Cash', 'is_active' => true,
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    expect($cash->fresh()->is_active)->toBeTrue()
+        ->and(in_array('cash', PosSettings::enabledMethods($this->branch)))->toBeTrue();
+});

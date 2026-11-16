@@ -410,6 +410,8 @@ Route::prefix('admin')
         Route::post('sync-conflicts/{item}/retry', [SyncConflictController::class, 'retry'])->name('sync.retry')->middleware('permission:sync.resolve');
 
         Route::get('customers', [CustomerController::class, 'index'])->name('customers.index')->middleware('permission:customers.view');
+        Route::put('customers/{customer}', [CustomerController::class, 'update'])->name('customers.update')->middleware('permission:customers.manage');
+        Route::delete('customers/{customer}', [CustomerController::class, 'destroy'])->name('customers.destroy')->middleware('permission:customers.manage');
 
         Route::get('settings', [SettingController::class, 'index'])->name('settings.index')->middleware('permission:settings.manage');
         Route::put('settings', [SettingController::class, 'update'])->name('settings.update')->middleware('permission:settings.manage');
