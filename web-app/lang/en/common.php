@@ -82,4 +82,5 @@ return [
     'demo_banner' => 'Sign in and explore all features. Demo data resets daily at 4:00 AM (Dhaka time).',
     'demo_banner_call' => 'Want this software for your business? Call',
     'no_permission' => 'You do not have permission for this action.',
+    'upload_too_large' => 'The upload is too large for the server. Try fewer or smaller files.',
 ];

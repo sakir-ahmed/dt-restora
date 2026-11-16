@@ -9,6 +9,10 @@ use App\Models\MenuItem;
 use App\Models\User;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Database\Seeders\RoleSeeder;
+use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Http\Exceptions\PostTooLargeException;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
@@ -105,6 +109,20 @@ it('rejects unsupported links, non images and empty submissions', function (): v
         ->assertSessionHasErrors(['images' => __('media.nothing_to_add')]);
 
     expect(Media::query()->count())->toBe(0);
+});
+
+it('answers a post body past the PHP limit with a friendly error, not an error page', function (): void {
+    $this->actingAs($this->owner, 'staff');
+
+    $request = Request::create('/admin/media', 'POST');
+    $request->headers->set('X-Inertia', 'true');
+    $request->headers->set('referer', 'http://localhost/admin/media');
+    $request->setLaravelSession($this->app['session.store']);
+
+    $response = app(ExceptionHandler::class)->render($request, new PostTooLargeException('The POST data is too large.'));
+
+    expect($response)->toBeInstanceOf(RedirectResponse::class)
+        ->and($this->app['session.store']->get('errors')->get('images'))->toBe([__('common.upload_too_large')]);
 });
 
 it('limits staff without the permission', function (): void {

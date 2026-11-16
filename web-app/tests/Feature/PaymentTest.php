@@ -17,6 +17,7 @@ use Database\Seeders\ChartOfAccountsSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Role;
 
 beforeEach(function (): void {
     $this->seed([ChartOfAccountsSeeder::class, RoleSeeder::class]);
@@ -204,4 +205,23 @@ it('renders the bkash callback page for duplicates without new side effects', fu
 
     expect($payment->fresh()->status)->toBe(Payment::STATUS_COMPLETED)
         ->and(Payment::where('gateway_payment_id', 'PM-DUP')->count())->toBe(1);
+});
+
+it('keeps payment away from a role that can only view orders', function (): void {
+    $viewer = User::factory()->create(['branch_id' => $this->branch->id]);
+    $viewer->assignRole(Role::findOrCreate('order-viewer', 'staff'));
+    $viewer->givePermissionTo(['admin.access', 'orders.view']);
+
+    $props = $this->actingAs($viewer, 'staff')->get('/admin/orders')->inertiaProps();
+
+    expect($props['canPay'])->toBeFalse()
+        ->and($props['canPos'])->toBeFalse()
+        ->and($props['canApprovePayments'])->toBeFalse()
+        ->and($props['canVoid'])->toBeFalse();
+
+    $this->actingAs($viewer, 'staff')
+        ->post("/admin/orders/{$this->order->id}/pay", ['tendered' => 100])
+        ->assertForbidden();
+
+    expect($this->order->fresh()->status)->not->toBe(OrderStatus::Paid);
 });
