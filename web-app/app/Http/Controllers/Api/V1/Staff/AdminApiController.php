@@ -126,6 +126,7 @@ class AdminApiController extends Controller
             'channels' => $enabled ? collect($branchIds)->flatMap(fn (int $id): array => [
                 'private-branch.'.$id.'.kitchen',
                 'private-branch.'.$id.'.alerts',
+                'private-branch.'.$id.'.delivery',
             ])->all() : [],
         ]);
     }

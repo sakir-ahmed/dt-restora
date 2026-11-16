@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1\Staff;
 
 use App\Actions\Sales\ApproveOrderVoidAction;
 use App\Actions\Sales\CollectDueAction;
+use App\Actions\Sales\DeletePreorderAction;
 use App\Actions\Sales\PayOrderAction;
 use App\Actions\Sales\RequestOrderVoidAction;
 use App\Enums\OrderChannel;
@@ -22,6 +23,7 @@ use App\Models\Setting;
 use App\Models\VoidRequest;
 use App\Services\PosSettings;
 use App\Services\PreorderService;
+use App\Support\DeleteReasons;
 use App\Support\PreorderInput;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -100,7 +102,7 @@ class SalesApiController extends Controller
             $paid = $order->amountPaid();
             $deleted = $order->status === OrderStatus::Void;
 
-            return $this->orderPayload($order) + [
+            return $this->orderPayload($order, kitchen: true) + [
                 'is_due' => true,
                 'deleted' => $deleted,
                 'paid' => number_format($paid, 2, '.', ''),
@@ -147,7 +149,7 @@ class SalesApiController extends Controller
 
             $action->execute($order, $validated['method'], (float) $validated['amount'], $validated['reference'] ?? null, $user);
 
-            return $this->success($this->orderPayload($order->fresh()) + [
+            return $this->success($this->orderPayload($order->fresh(), kitchen: true) + [
                 'balance' => number_format($order->fresh()->balanceDue(), 2, '.', ''),
             ], __('orders.due_collected'));
         });
@@ -193,7 +195,7 @@ class SalesApiController extends Controller
 
             $action->executeDue($order, $validated['lines'] ?? [], $user);
 
-            return $this->success($this->orderPayload($order->fresh()) + [
+            return $this->success($this->orderPayload($order->fresh(), kitchen: true) + [
                 'balance' => number_format($order->fresh()->balanceDue(), 2, '.', ''),
             ], __('orders.due_recorded', ['due' => number_format($order->fresh()->balanceDue(), 2)]));
         });
@@ -223,7 +225,7 @@ class SalesApiController extends Controller
             $approveVoid->execute($pending, $user);
         });
 
-        return $this->success($this->orderPayload($order->fresh()), __('orders.deleted'));
+        return $this->success($this->orderPayload($order->fresh(), kitchen: true), __('orders.deleted'));
     }
 
     public function preorders(Request $request, string $branch): JsonResponse
@@ -232,10 +234,20 @@ class SalesApiController extends Controller
         $this->permit($user, 'preorders.view');
         $branchModel = $this->branchOrFail($request, $branch);
 
+        $search = trim((string) $request->input('q', ''));
+
         $preorders = Preorder::query()
             ->where('branch_id', $branchModel->id)
             ->when($request->input('filter.status'), fn ($query, $status) => $query->where('status', $status))
+            ->when($request->input('source'), fn ($query, $source) => $query->where('source', $source))
+            ->when($search !== '', fn ($query) => $query->where(function ($inner) use ($search): void {
+                $inner->where('order_no', 'like', "%{$search}%")
+                    ->orWhere('customer_name', 'like', "%{$search}%")
+                    ->orWhere('customer_mobile', 'like', "%{$search}%")
+                    ->orWhere('note', 'like', "%{$search}%");
+            }))
             ->with('table:id,name')
+            ->with(['order' => fn ($query) => $query->select(['orders.id', 'orders.preorder_id', 'orders.invoice_no'])])
             ->latest('id')
             ->limit(200)
             ->get()
@@ -330,9 +342,52 @@ class SalesApiController extends Controller
             'balance_due' => number_format($preorder->balanceDue(), 2, '.', ''),
             'sms_sent' => $preorder->sms_sent_at !== null,
             'created_at' => $preorder->created_at->toIso8601String(),
+            'order_id' => $preorder->order?->id,
+            'order_invoice_no' => $preorder->order?->invoice_no,
             'print_url' => route('admin.preorders.print', ['preorder' => $preorder->id]),
             'slip_url' => route('web.preorder.slip', ['token' => $preorder->token]),
         ];
+    }
+
+    /**
+     * Turn a waiting pre-order into the real order the kitchen and the till work from. The
+     * pre-order ends as completed; the order keeps the link through preorder_id.
+     */
+    public function sendPreorder(Request $request, string $branch, Preorder $preorder, PreorderService $service): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'preorders.manage');
+        $branchModel = $this->branchOrFail($request, $branch);
+        abort_unless($preorder->branch_id === $branchModel->id, 404);
+
+        if ($preorder->status !== Preorder::PENDING || $preorder->order()->exists()) {
+            throw ValidationException::withMessages(['status' => __('preorders.already_sent')]);
+        }
+
+        $order = $service->sendToOrder($preorder, $user);
+
+        return $this->success([
+            'preorder' => $this->preorderPayload($preorder->fresh('table:id,name')),
+            'order' => $this->orderPayload($order, kitchen: true),
+        ], __('preorders.sent_done', ['invoice' => $order->invoice_no]));
+    }
+
+    /**
+     * Delete a pre-order taken by mistake. The row is kept, marked as deleted, and follows the
+     * "Show deleted items" setting in the list.
+     */
+    public function destroyPreorder(Request $request, string $branch, Preorder $preorder, DeletePreorderAction $action): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'preorders.manage');
+        $branchModel = $this->branchOrFail($request, $branch);
+        abort_unless($preorder->branch_id === $branchModel->id, 404);
+
+        $reason = DeleteReasons::validate($request);
+
+        $action->execute($preorder, $user, $reason['reason'], $reason['note']);
+
+        return $this->success(['id' => $preorder->id, 'deleted' => true], __('preorders.deleted_done'));
     }
 
     /**

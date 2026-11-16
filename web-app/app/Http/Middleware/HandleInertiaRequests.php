@@ -9,13 +9,12 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\DemoJourney;
 use App\Services\DemoSmsInbox;
-use App\Services\Metrics\MetricsService;
 use App\Services\PosSettings;
 use App\Services\PublicCache;
 use App\Services\SmsService;
+use App\Services\StaffAlerts;
 use App\Support\Brand;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -96,7 +95,7 @@ class HandleInertiaRequests extends Middleware
         ];
     }
 
-    private function currentBranchId(User $user): ?int
+    public function currentBranchId(User $user): ?int
     {
         if ($user->branch_id !== null) {
             return (int) $user->branch_id;
@@ -121,69 +120,7 @@ class HandleInertiaRequests extends Middleware
      */
     private function cachedNotifications(User $user): array
     {
-        // Alerts the person marked as read stay hidden until their text changes.
-        $read = (array) $user->notifications_read;
-
-        return array_values(array_filter(
-            $this->currentNotifications($user),
-            fn (array $item): bool => ($read[$item['id']] ?? null) !== self::fingerprint($item),
-        ));
-    }
-
-    /**
-     * Every alert for the person's branch, read or not (cached for a minute, shared by the people on that branch).
-     *
-     * @return array<int, array{id: string, icon: string, title: string, body: string, href: string}>
-     */
-    public function currentNotifications(User $user): array
-    {
-        $branchId = $this->currentBranchId($user);
-
-        return Cache::remember('admin-alerts:'.($branchId ?? 'all').':'.app()->getLocale(), 60, fn (): array => $this->notifications($user));
-    }
-
-    /**
-     * @param  array{id: string, title: string, body: string}  $item
-     */
-    public static function fingerprint(array $item): string
-    {
-        return md5($item['id'].'|'.$item['title'].'|'.$item['body']);
-    }
-
-    /**
-     * @return array<int, array{id: string, icon: string, title: string, body: string, href: string}>
-     */
-    private function notifications(User $user): array
-    {
-        $metrics = app(MetricsService::class);
-        $branchId = $this->currentBranchId($user);
-        $items = [];
-
-        $lowStock = $metrics->lowStock($branchId);
-
-        if ($lowStock !== []) {
-            $items[] = [
-                'id' => 'low-stock',
-                'icon' => 'boxes-stacked',
-                'title' => __('dashboard.alerts.low_stock_count', ['count' => count($lowStock)]),
-                'body' => $lowStock[0]['name'],
-                'href' => '/admin/ingredients',
-            ];
-        }
-
-        $spike = $metrics->wastageSpike($branchId);
-
-        if ($spike !== null) {
-            $items[] = [
-                'id' => 'wastage-spike',
-                'icon' => 'trash',
-                'title' => __('dashboard.alerts.wastage_spike'),
-                'body' => $spike['today'],
-                'href' => '/admin/wastage',
-            ];
-        }
-
-        return $items;
+        return app(StaffAlerts::class)->unread($user, $this->currentBranchId($user));
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Enums\OrderKind;
 use App\Enums\OrderStatus;
 use App\Enums\OrderType;
 use App\Models\Concerns\BelongsToBranch;
+use App\Services\PosSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -145,6 +146,47 @@ class Order extends Model
     public function isAwaitingApproval(): bool
     {
         return $this->approval_status === self::APPROVAL_AWAITING;
+    }
+
+    /**
+     * The kitchen steps an order can be moved to: any other step, forward or back, whether or not
+     * it is paid. Paying and deleting are separate actions, so they are not offered.
+     * An order from a delivery platform only moves forward, because the platform was already told.
+     *
+     * @return array<int, string>
+     */
+    public function nextKitchenStatuses(): array
+    {
+        return collect([OrderStatus::Pending, OrderStatus::Preparing, OrderStatus::Ready, OrderStatus::Served])
+            ->filter(fn (OrderStatus $next): bool => $this->canMoveKitchenStatus($next))
+            ->map(fn (OrderStatus $next): string => $next->value)
+            ->values()
+            ->all();
+    }
+
+    public function canMoveKitchenStatus(OrderStatus $next): bool
+    {
+        $steps = [OrderStatus::Pending, OrderStatus::Preparing, OrderStatus::Ready, OrderStatus::Served];
+        $current = $this->kitchen_status ?? OrderStatus::Pending;
+
+        // A deleted order is out of the kitchen. A paid one is not: paying first is allowed.
+        if ($this->status === OrderStatus::Void || $this->isAwaitingApproval() || $this->isHeldBack(PosSettings::preorderReleaseMinutes($this->branch)) || ! in_array($next, $steps, true) || $next === $current) {
+            return false;
+        }
+
+        $goesBack = array_search($next, $steps, true) < array_search($current, $steps, true);
+
+        return ! ($goesBack && $this->aggregator_channel_id !== null);
+    }
+
+    /**
+     * An edited aggregator order owes the platform its commission on the new total.
+     */
+    public function syncAggregatorCommission(): void
+    {
+        if ($this->aggregator_channel_id !== null && (float) $this->commission_amount > 0) {
+            $this->update(['commission_amount' => $this->aggregatorChannel->commissionFor((float) $this->total)]);
+        }
     }
 
     /** @return BelongsTo<User, $this> */

@@ -43,6 +43,20 @@ trait InteractsWithApi
         }
     }
 
+    /**
+     * Any one of the permissions is enough, for the buttons the kitchen and the till share.
+     */
+    protected function permitAny(User $user, string ...$permissions): void
+    {
+        foreach ($permissions as $permission) {
+            if ($user->can($permission)) {
+                return;
+            }
+        }
+
+        abort(403, __('api.forbidden'));
+    }
+
     protected function branchOrFail(Request $request, string $key): Branch
     {
         $branch = ctype_digit($key)
@@ -89,7 +103,7 @@ trait InteractsWithApi
     /**
      * @return array<string, mixed>
      */
-    protected function orderPayload(Order $order): array
+    protected function orderPayload(Order $order, bool $kitchen = false): array
     {
         $order->loadMissing(['items', 'payments', 'table', 'cashier', 'voidRequest', 'customer']);
 
@@ -97,6 +111,11 @@ trait InteractsWithApi
             'id' => $order->id,
             'invoice_no' => $order->invoice_no,
             'status' => $order->status->value,
+            // The kitchen journey, for the staff app only: the step the ticket is on and where it may go.
+            ...($kitchen ? [
+                'kitchen_status' => $order->kitchen_status->value,
+                'next_statuses' => $order->nextKitchenStatuses(),
+            ] : []),
             'order_type' => $order->order_type->value,
             'total' => (string) $order->total,
             'tracking_token' => $order->tracking_token,

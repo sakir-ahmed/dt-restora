@@ -8,3 +8,8 @@ parameters:
         - app
         - database/factories
         - database/seeders
+
+    ignoreErrors:
+        # The roles table carries extra columns (label, label_bn, description, all_branches)
+        # added by our own migration; spatie's Role model does not know them.
+        - '#Access to an undefined property Spatie\\Permission\\Models\\Role::\$#'
