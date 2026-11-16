@@ -143,7 +143,7 @@ return [
             'view' => 'View reports',
         ],
         'dashboard' => [
-            'view' => 'View the dashboard',
+            'view' => 'View dashboard sales figures',
         ],
         'activity' => [
             'view' => 'View the activity log',

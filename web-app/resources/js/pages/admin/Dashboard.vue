@@ -1,5 +1,5 @@
 <script setup>
-import { router } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import {
     ArcElement,
@@ -34,6 +34,7 @@ const props = defineProps({
     to: { type: String, required: true },
     previousFrom: { type: String, required: true },
     previousTo: { type: String, required: true },
+    canViewMetrics: { type: Boolean, default: false },
     summary: { type: Object, required: true },
     previous: { type: Object, required: true },
     salesByDay: { type: Array, default: () => [] },
@@ -48,6 +49,12 @@ const props = defineProps({
     alerts: { type: Object, required: true },
     setup: { type: Object, required: true },
 });
+
+const page = usePage();
+
+function can(permission) {
+    return (page.props.auth?.user?.permissions ?? []).includes(permission);
+}
 
 function change(key) {
     const current = Number(props.summary[key] ?? 0);
@@ -342,20 +349,67 @@ const profitLines = computed(() => ([
     { label: t('dashboard.expenses'), value: props.summary.expenses, kind: 'cost' },
     { label: t('dashboard.net_profit'), value: props.summary.net_profit, kind: 'profit' },
 ]));
+
+// Roles without the sales figures land on a launcher: every screen this person can open.
+const quickLinks = computed(() => {
+    const links = [
+        { label: t('nav.pos'), href: '/admin/pos', icon: 'cash-register', permission: 'pos.access' },
+        { label: t('nav.kds'), href: '/admin/kds', icon: 'utensils', permission: 'kds.access' },
+        { label: t('nav.orders'), href: '/admin/orders', icon: 'receipt', permission: 'orders.view' },
+        { label: t('nav.preorders'), href: '/admin/preorders', icon: 'bag-shopping', permission: 'preorders.view' },
+        { label: t('nav.reservations'), href: '/admin/reservations', icon: 'calendar-days', permission: 'reservations.view' },
+        { label: t('nav.tables'), href: '/admin/tables', icon: 'bell-concierge', permission: 'tables.view' },
+        { label: t('nav.menu'), href: '/admin/menu', icon: 'book-open', permission: 'menu.view' },
+        { label: t('nav.ingredients'), href: '/admin/ingredients', icon: 'boxes-stacked', permission: 'inventory.view' },
+        { label: t('inventory.suppliers'), href: '/admin/suppliers', icon: 'store', permission: 'inventory.view' },
+        { label: t('nav.purchases'), href: '/admin/purchases', icon: 'truck-fast', permission: 'purchases.manage' },
+        { label: t('nav.recipes'), href: '/admin/recipes', icon: 'list-check', permission: 'recipes.manage' },
+        { label: t('nav.wastage'), href: '/admin/wastage', icon: 'trash', permission: 'inventory.view' },
+        { label: t('nav.stock_counts'), href: '/admin/stock-counts', icon: 'clipboard-list', permission: 'inventory.view' },
+        { label: t('nav.transfers'), href: '/admin/stock-transfers', icon: 'right-left', permission: 'transfers.manage' },
+        { label: t('nav.customers'), href: '/admin/customers', icon: 'users', permission: 'customers.view' },
+        { label: t('loyalty.title'), href: '/admin/loyalty', icon: 'gift', permission: 'loyalty.manage' },
+        { label: t('coupons.title'), href: '/admin/coupons', icon: 'ticket', permission: 'coupons.manage' },
+        { label: t('nav.sms'), href: '/admin/sms', icon: 'paper-plane', permission: 'sms.manage' },
+        { label: t('nav.staff'), href: '/admin/staff', icon: 'user-shield', permission: 'staff.view' },
+        { label: t('nav.roles'), href: '/admin/roles', icon: 'shield-halved', permission: 'roles.manage' },
+        { label: t('nav.attendance'), href: '/admin/attendance', icon: 'clock', permission: 'attendance.manage' },
+        { label: t('nav.payroll'), href: '/admin/payroll', icon: 'money-bill-wave', permission: 'payroll.manage' },
+        { label: t('nav.letters'), href: '/admin/letters', icon: 'envelope', permission: 'letters.manage' },
+        { label: t('nav.careers'), href: '/admin/careers', icon: 'briefcase', permission: 'careers.manage' },
+        { label: t('nav.blog'), href: '/admin/blog', icon: 'newspaper', permission: 'blog.manage' },
+        { label: t('nav.delivery'), href: '/admin/delivery', icon: 'motorcycle', permission: 'delivery.dispatch' },
+        { label: t('nav.accounting'), href: '/admin/accounting', icon: 'scale-balanced', permission: 'accounting.view' },
+        { label: t('expenses.title'), href: '/admin/expenses', icon: 'wallet', permission: 'expenses.manage' },
+        { label: t('nav.reports'), href: '/admin/reports', icon: 'chart-column', permission: 'reports.view' },
+        { label: t('nav.branches'), href: '/admin/branches', icon: 'building', permission: 'branches.view' },
+        { label: t('aggregators.title'), href: '/admin/aggregators', icon: 'motorcycle', permission: 'aggregators.manage' },
+        { label: t('nav.settings'), href: '/admin/settings', icon: 'gear', permission: 'settings.manage' },
+        { label: t('sync_conflicts.title'), href: '/admin/sync-conflicts', icon: 'rotate', permission: 'sync.resolve' },
+        { label: t('nav.activity_log'), href: '/admin/activity-log', icon: 'clock', permission: 'activity.view' },
+    ];
+
+    // The rider screen has no permission of its own; the rider role marks it.
+    if ((page.props.auth?.user?.roles ?? []).includes('rider')) {
+        links.unshift({ label: t('delivery.rider_title'), href: '/rider', icon: 'motorcycle', permission: null });
+    }
+
+    return links.filter((link) => link.permission === null || can(link.permission));
+});
 </script>
 
 <template>
     <div>
-        <PageHeader :title="t('dashboard.title')" :description="t('dashboard.subtitle')">
+        <PageHeader :title="t('dashboard.title')" :description="canViewMetrics ? t('dashboard.subtitle') : t('dashboard.welcome', { name: page.props.auth?.user?.name })">
             <template #default>
-                <div class="mt-2">
+                <div v-if="canViewMetrics" class="mt-2">
                     <DateRangePicker :from="from" :to="to" :active="period" @change="setRange" />
                 </div>
             </template>
         </PageHeader>
 
         <!-- KPI row -->
-        <div class="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-2.5 2xl:grid-cols-6">
+        <div v-if="canViewMetrics" class="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-2.5 2xl:grid-cols-6">
             <KpiCard info @info="infoKey = 'gross_sales'" :label="t('dashboard.gross_sales')" :value="formatMoney(summary.gross_sales, { symbol: true })" :change="change('gross_sales')" :sparkline="salesByDay.map((row) => Number(row.total))" />
             <KpiCard info @info="infoKey = 'net_sales'" :label="t('dashboard.net_sales')" :value="formatMoney(summary.net_sales, { symbol: true })" :change="change('net_sales')" />
             <KpiCard info @info="infoKey = 'food_cost'" :label="t('dashboard.food_cost')" :value="foodCostPercent + '%'" :state="Number(foodCostPercent) > 40 ? 'danger' : 'success'" />
@@ -367,6 +421,31 @@ const profitLines = computed(() => ([
             <KpiCard v-if="alerts.lowStock > 0" action info tone="danger" state="danger" :label="t('dashboard.low_stock')" :value="formatNumber(alerts.lowStock)" @click="listOpen = 'low_stock'" @info="infoKey = 'low_stock'" />
             <KpiCard v-if="preorders > 0" action info tone="success" :label="t('dashboard.preorders')" :value="formatNumber(preorders)" @click="listOpen = 'preorders'" @info="infoKey = 'preorders'" />
         </div>
+
+        <!-- Without the sales figures the dashboard is the operational cards plus a launcher -->
+        <div v-else-if="alerts.lowStock > 0 || preorders > 0" class="grid grid-cols-2 gap-2">
+            <KpiCard v-if="alerts.lowStock > 0" action info tone="danger" state="danger" :label="t('dashboard.low_stock')" :value="formatNumber(alerts.lowStock)" @click="listOpen = 'low_stock'" @info="infoKey = 'low_stock'" />
+            <KpiCard v-if="preorders > 0" action info tone="success" :label="t('dashboard.preorders')" :value="formatNumber(preorders)" @click="listOpen = 'preorders'" @info="infoKey = 'preorders'" />
+        </div>
+
+        <section v-if="! canViewMetrics && quickLinks.length" class="mt-3">
+            <h2 class="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+                <AppIcon name="bolt" size="14" class="text-accent" />
+                {{ t('dashboard.quick_access') }}
+            </h2>
+
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
+                <Link
+                    v-for="link in quickLinks"
+                    :key="link.href"
+                    :href="link.href"
+                    class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2.5 text-[13px] text-foreground transition-colors hover:border-primary/40 hover:bg-background"
+                >
+                    <AppIcon :name="link.icon" size="16" class="shrink-0 text-accent" />
+                    <span class="truncate">{{ link.label }}</span>
+                </Link>
+            </div>
+        </section>
 
         <!-- Alerts -->
         <div v-if="alerts.wastageSpike" class="mt-3 grid gap-2">
@@ -382,7 +461,7 @@ const profitLines = computed(() => ([
         </div>
 
         <!-- Charts -->
-        <div class="mt-3 grid gap-2.5 lg:grid-cols-2">
+        <div v-if="canViewMetrics" class="mt-3 grid gap-2.5 lg:grid-cols-2">
             <ChartCard
                 info
                 :title="t('dashboard.sales_trend')"
@@ -602,7 +681,7 @@ const profitLines = computed(() => ([
         </ListModal>
 
         <!-- Fresh install setup checklist -->
-        <section v-if="isFreshInstall" class="mt-4 rounded-lg border border-border bg-surface p-4">
+        <section v-if="canViewMetrics && isFreshInstall" class="mt-4 rounded-lg border border-border bg-surface p-4">
             <h2 class="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                 <AppIcon name="clipboard-list" size="14" class="text-accent" />
                 {{ t('dashboard.setup.title') }}

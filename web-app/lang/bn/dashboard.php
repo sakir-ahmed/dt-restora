@@ -7,6 +7,7 @@ return [
     'subtitle' => 'আজকের গুরুত্বপূর্ণ সবকিছু।',
     'welcome' => 'স্বাগতম, :name',
     'subtitle' => 'আজকের অবস্থা এখানে।',
+    'quick_access' => 'দ্রুত প্রবেশ',
     'gross_sales' => 'মোট বিক্রয়',
     'net_sales' => 'নিট বিক্রয়',
     'net_profit' => 'নিট লাভ',

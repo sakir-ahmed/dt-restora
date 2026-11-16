@@ -290,7 +290,7 @@ All confirm texts live in `lang/en` and `lang/bn`.
 
 **Behavior**
 
-- Role-specific dashboards: owner sees all branches; branch manager sees their branch; cashier sees only their shift summary.
+- Role-specific dashboards: owner sees all branches; branch manager sees their branch; cashier sees only their shift summary. Every staff role can open the dashboard (`admin.access`); the sales figures need `dashboard.view`. Roles without it get the operational cards their own permissions allow (low stock with `inventory.view`, waiting pre-orders with `preorders.view`) plus a quick-access launcher for the screens they can open, and riders get a link to the rider screen.
 - Cards and charts load independently with skeletons (never one global spinner). Show "Last updated 10:42" and a refresh button.
 - New orders update numbers in real time via Reverb with a subtle highlight flash (no jumping layout).
 - Highlight problems with semantic color **and** icon: Food Cost % above target shows rose with a triangle-exclamation icon, within target shows emerald with a circle-check icon. Targets are configurable.
