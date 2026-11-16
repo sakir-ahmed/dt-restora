@@ -12,6 +12,7 @@ Thumbs.db
 /.zed
 /.codex
 /.cursor/
+/.zcode
 /.claude/settings.local.json
 /.claude/.cc-writes
 
