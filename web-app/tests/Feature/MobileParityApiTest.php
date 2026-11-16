@@ -252,6 +252,9 @@ it('books with a pre-ordered menu and booking money through the api', function (
 });
 
 it('shows the day sheet and searches across days through the api', function (): void {
+    // A fixed mid-morning clock, so "today" and "tomorrow" bookings never shift with the hour the suite runs at.
+    $this->travelTo(now()->setTime(10, 0));
+
     asStaff($this, $this->token)
         ->postJson($this->base.'/reservations', apiReservation($this, [
             'guest_name' => 'Rahim',
@@ -259,8 +262,10 @@ it('shows the day sheet and searches across days through the api', function (): 
         ]))->assertCreated();
 
     asStaff($this, $this->token)
-        ->postJson($this->base.'/reservations', apiReservation($this, ['guest_name' => 'Karim']))
-        ->assertCreated();
+        ->postJson($this->base.'/reservations', apiReservation($this, [
+            'guest_name' => 'Karim',
+            'starts_at' => now()->setTime(13, 0)->toIso8601String(),
+        ]))->assertCreated();
 
     expect(asStaff($this, $this->token)->getJson($this->base.'/reservations')->json('data'))->toHaveCount(1)
         ->and(asStaff($this, $this->token)->getJson($this->base.'/reservations?q=rahi')->json('data'))->toHaveCount(1)

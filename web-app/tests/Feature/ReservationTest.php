@@ -19,6 +19,10 @@ use Database\Seeders\UnitSeeder;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function (): void {
+    // A fixed mid-morning clock, so bookings made "two hours from now" never spill into tomorrow
+    // when the suite runs in the evening.
+    $this->travelTo(now()->setTime(10, 0));
+
     $this->seed([ChartOfAccountsSeeder::class, RoleSeeder::class, UnitSeeder::class]);
 
     $this->branch = Branch::factory()->create(['code' => 'BR01']);
