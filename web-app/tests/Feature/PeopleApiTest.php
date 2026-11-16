@@ -61,6 +61,8 @@ it('creates and updates a system user with a role and refuses to switch off your
 });
 
 it('records attendance by hand and manages devices', function (): void {
+    // A fixed evening clock, so the day's 9-to-5 times are always in the past.
+    $this->travelTo(now()->setTime(18, 0));
     $this->withToken($this->token)->postJson($this->base.'/attendance', [
         'employee_id' => $this->employee->id,
         'work_date' => now()->toDateString(),

@@ -136,7 +136,7 @@ function varianceOf(item) {
                     {{ t('inventory.counts') }} #{{ openCount.id }}
                 </h2>
 
-                <div class="flex items-center gap-2">
+                <div v-if="canManage" class="flex items-center gap-2">
                     <button
                         type="button"
                         :disabled="saving"
@@ -180,7 +180,8 @@ function varianceOf(item) {
                                     type="text" inputmode="decimal" v-numeric
                                     step="0.001"
                                     :placeholder="item.counted_qty !== null ? String(Number(item.counted_qty)) : ''"
-                                    class="h-6 w-24 rounded border border-border bg-background px-1.5 text-right text-[13px] tabular-nums text-foreground outline-none focus:border-accent"
+                                    :disabled="! canManage"
+                                    class="h-6 w-24 rounded border border-border bg-background px-1.5 text-right text-[13px] tabular-nums text-foreground outline-none focus:border-accent disabled:opacity-70"
                                 >
                             </td>
                             <td class="px-3 py-1.5 text-right tabular-nums" :class="varianceOf(item) !== null && varianceOf(item) < 0 ? 'text-danger' : varianceOf(item) > 0 ? 'text-success' : 'text-muted'">

@@ -54,11 +54,8 @@ class PaymentMethodController extends Controller
             'name' => __('settings.method_name'),
         ]);
 
-        // Cash is what the shift close and quick save rely on, so it always stays on.
-        if ($method->code === 'cash') {
-            $validated['is_active'] = true;
-        }
-
+        // Every method, cash included, may be turned off; a method switched off here
+        // leaves the POS of every branch (the till simply stops offering it).
         $method->update($validated);
 
         activity()->causedBy($request->user('staff'))->performedOn($method)->log('payment_method.updated');

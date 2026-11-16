@@ -159,7 +159,7 @@ async function remove(method) {
                         </select>
                     </template>
                 </FormField>
-                <SwitchField v-if="editing?.code !== 'cash'" v-model="form.is_active" :label="t('settings.method_active')" />
+                <SwitchField v-model="form.is_active" :label="t('settings.method_active')" />
                 <p v-if="editing?.is_system" class="text-xs text-muted">{{ t('settings.method_system') }}</p>
             </form>
             <template #footer>

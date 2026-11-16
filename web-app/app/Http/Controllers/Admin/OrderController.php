@@ -8,6 +8,7 @@ use App\Actions\Sales\ApproveOrderVoidAction;
 use App\Actions\Sales\CreateOrderAction;
 use App\Actions\Sales\HandOrderToKitchenAction;
 use App\Actions\Sales\PayOrderAction;
+use App\Actions\Sales\PushOrderToPlatformAction;
 use App\Actions\Sales\RequestOrderVoidAction;
 use App\Actions\Sales\ReviseSettledSaleAction;
 use App\Enums\OrderChannel;
@@ -25,7 +26,6 @@ use App\Models\Setting;
 use App\Models\Shift;
 use App\Models\User;
 use App\Models\VoidRequest;
-use App\Services\Aggregators\PlatformAdapters;
 use App\Services\PosSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -74,7 +74,7 @@ class OrderController extends Controller
             ->latest()
             ->limit(100)
             ->get()
-            ->map(fn (Order $order): array => $order->toArray() + ['next_statuses' => $this->nextKitchenStatuses($order)])
+            ->map(fn (Order $order): array => $order->toArray() + ['next_statuses' => $order->nextKitchenStatuses()])
             ->values();
 
         return Inertia::render('admin/orders/Index', [
@@ -92,6 +92,7 @@ class OrderController extends Controller
             'canApprovePayments' => $request->user('staff')?->can('payments.manage'),
             'canPay' => (bool) $request->user('staff')?->can('orders.create'),
             'canEdit' => PosSettings::orderEditEnabled($branch) && $request->user('staff')?->can('orders.create'),
+            'canPos' => (bool) $request->user('staff')?->can('pos.access'),
             'shareImage' => PosSettings::invoiceShareImageEnabled($branch),
         ]);
     }
@@ -250,13 +251,11 @@ class OrderController extends Controller
             revising: $order,
         );
 
-        if ($order->aggregator_channel_id !== null && (float) $order->commission_amount > 0) {
-            $order->update(['commission_amount' => $order->aggregatorChannel->commissionFor((float) $order->total)]);
-        }
+        $order->syncAggregatorCommission();
 
         activity()->performedOn($order)->causedBy($user)->log('order.revised');
 
-        $this->pushToPlatform($order, null, cart: true);
+        app(PushOrderToPlatformAction::class)->execute($order, null, cart: true);
 
         $this->broadcastSafely(fn () => broadcast(new OrderCreated($order->branch_id, [
             'order_id' => $order->id,
@@ -424,7 +423,7 @@ class OrderController extends Controller
             // Paid is reached by taking payment, so it leaves the kitchen step alone.
             $order->update(['status' => $next->value]);
         } else {
-            if (! $this->canMoveKitchenStatus($order, $next)) {
+            if (! $order->canMoveKitchenStatus($next)) {
                 return back()->with('error', __('orders.invalid_status'));
             }
 
@@ -440,7 +439,7 @@ class OrderController extends Controller
                 ->log('order.status_changed');
         }
 
-        $this->pushToPlatform($order, $next === OrderStatus::Ready ? 'ready' : null);
+        app(PushOrderToPlatformAction::class)->execute($order, $next === OrderStatus::Ready ? 'ready' : null);
 
         $this->broadcastSafely(fn () => broadcast(new OrderStatusChanged($order->branch_id, [
             'order_id' => $order->id,
@@ -487,37 +486,6 @@ class OrderController extends Controller
     }
 
     /**
-     * The kitchen steps an order can be moved to: any other step, forward or back, whether or not
-     * it is paid. Paying and deleting are separate actions, so they are not offered.
-     * An order from a delivery platform only moves forward, because the platform was already told.
-     *
-     * @return array<int, string>
-     */
-    private function nextKitchenStatuses(Order $order): array
-    {
-        return collect([OrderStatus::Pending, OrderStatus::Preparing, OrderStatus::Ready, OrderStatus::Served])
-            ->filter(fn (OrderStatus $next): bool => $this->canMoveKitchenStatus($order, $next))
-            ->map(fn (OrderStatus $next): string => $next->value)
-            ->values()
-            ->all();
-    }
-
-    private function canMoveKitchenStatus(Order $order, OrderStatus $next): bool
-    {
-        $steps = [OrderStatus::Pending, OrderStatus::Preparing, OrderStatus::Ready, OrderStatus::Served];
-        $current = $order->kitchen_status ?? OrderStatus::Pending;
-
-        // A deleted order is out of the kitchen. A paid one is not: paying first is allowed.
-        if ($order->status === OrderStatus::Void || $order->isAwaitingApproval() || $order->isHeldBack(PosSettings::preorderReleaseMinutes($order->branch)) || ! in_array($next, $steps, true) || $next === $current) {
-            return false;
-        }
-
-        $goesBack = array_search($next, $steps, true) < array_search($current, $steps, true);
-
-        return ! ($goesBack && $order->aggregator_channel_id !== null);
-    }
-
-    /**
      * Live screens (kitchen, other POS terminals) hear about an order through the socket server.
      * The order is already saved by now, so a socket server that is down must not turn the save
      * into an error. It is reported instead.
@@ -528,27 +496,6 @@ class OrderController extends Controller
             $send();
         } catch (\Throwable $exception) {
             report($exception);
-        }
-    }
-
-    /**
-     * Tell a delivery platform about a kitchen status or an edited cart.
-     * A failure never blocks the kitchen: it is kept on the channel.
-     */
-    private function pushToPlatform(Order $order, ?string $status, bool $cart = false): void
-    {
-        $channel = $order->aggregatorChannel;
-
-        $adapter = PlatformAdapters::for($channel);
-
-        if ($adapter === null) {
-            return;
-        }
-
-        if ($cart) {
-            $adapter->pushCart($order);
-        } elseif ($status !== null) {
-            $adapter->pushStatus($order, $status);
         }
     }
 

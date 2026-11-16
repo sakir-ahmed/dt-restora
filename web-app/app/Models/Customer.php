@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\SafeDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -12,7 +13,7 @@ use Laravel\Sanctum\HasApiTokens;
 
 class Customer extends Authenticatable
 {
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable, SafeDeletes;
 
     protected $fillable = [
         'name', 'mobile', 'email', 'google_id', 'password', 'locale', 'is_active', 'mobile_verified_at', 'birthday',

@@ -18,14 +18,19 @@ use App\Actions\Sales\CreateOrderAction;
 use App\Actions\Sales\HandOrderToKitchenAction;
 use App\Actions\Sales\OpenShiftAction;
 use App\Actions\Sales\PayOrderAction;
+use App\Actions\Sales\PushOrderToPlatformAction;
 use App\Actions\Sales\RequestOrderVoidAction;
+use App\Actions\Sales\ReviseSettledSaleAction;
 use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Enums\OrderType;
 use App\Events\OrderCreated;
+use App\Events\OrderStatusChanged;
 use App\Http\Controllers\Api\Concerns\InteractsWithApi;
 use App\Http\Controllers\Api\Controller;
+use App\Jobs\SendSmsJob;
 use App\Models\AggregatorChannel;
+use App\Models\Branch;
 use App\Models\Coupon;
 use App\Models\Customer;
 use App\Models\DataVersion;
@@ -36,6 +41,7 @@ use App\Models\IngredientStock;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Models\PaymentMethod;
 use App\Models\Preorder;
 use App\Models\Purchase;
 use App\Models\Recipe;
@@ -48,6 +54,7 @@ use App\Models\StaffAttendance;
 use App\Models\StockTransfer;
 use App\Models\Supplier;
 use App\Models\Unit;
+use App\Models\User;
 use App\Models\VoidRequest;
 use App\Models\Wastage;
 use App\Services\Aggregators\AggregatorOrderService;
@@ -56,11 +63,18 @@ use App\Services\CouponService;
 use App\Services\LoyaltyService;
 use App\Services\Metrics\MetricsService;
 use App\Services\PosSettings;
+use App\Services\ReservationService;
+use App\Services\Sms\SmsTemplates;
+use App\Services\StaffAlerts;
 use App\Support\DeleteReasons;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class StaffApiController extends Controller
 {
@@ -104,7 +118,7 @@ class StaffApiController extends Controller
             ->paginate(min(100, (int) $request->input('per_page', 25)));
 
         return $this->success([
-            'orders' => collect($orders->items())->map(fn (Order $order) => $this->orderPayload($order))->all(),
+            'orders' => collect($orders->items())->map(fn (Order $order) => $this->orderPayload($order, kitchen: true))->all(),
             'meta' => [
                 'current_page' => $orders->currentPage(),
                 'last_page' => $orders->lastPage(),
@@ -175,7 +189,7 @@ class StaffApiController extends Controller
                 'invoice_no' => $order->invoice_no,
             ]))->toOthers();
 
-            return $this->success($this->orderPayload($order), __('orders.created', ['invoice' => $order->invoice_no]), 201);
+            return $this->success($this->orderPayload($order, kitchen: true), __('orders.created', ['invoice' => $order->invoice_no]), 201);
         });
     }
 
@@ -186,10 +200,71 @@ class StaffApiController extends Controller
         $branchModel = $this->branchOrFail($request, $branch);
         abort_unless($order->branch_id === $branchModel->id, 404);
 
-        return $this->success($this->orderPayload($order));
+        return $this->success($this->orderPayload($order, kitchen: true));
     }
 
     public function updateStatus(Request $request, string $branch, Order $order): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $branchModel = $this->branchOrFail($request, $branch);
+        abort_unless($order->branch_id === $branchModel->id, 404);
+
+        $validated = $request->validate([
+            'status' => ['required', 'in:pending,preparing,ready,served,paid'],
+        ]);
+
+        // The kitchen steps are the Kitchen Display's buttons, so kds.access may press them.
+        // Reaching paid is order work instead: that stays with orders.create.
+        abort_unless(
+            $user->can('orders.create') || ($validated['status'] !== OrderStatus::Paid->value && $user->can('kds.access')),
+            403,
+            __('api.forbidden')
+        );
+
+        abort_if($order->isAwaitingApproval(), 422, __('orders.awaiting_approval_locked'));
+        abort_if($order->isHeldBack(PosSettings::preorderReleaseMinutes($branchModel)), 422, __('orders.held_back_locked'));
+
+        $next = OrderStatus::from($validated['status']);
+        $current = $order->kitchen_status ?? $order->status;
+
+        if ($next === OrderStatus::Paid) {
+            // Paid is reached by taking payment, so it leaves the kitchen step alone.
+            $order->update(['status' => $next->value]);
+        } else {
+            abort_unless($order->canMoveKitchenStatus($next), 422, __('orders.invalid_status'));
+
+            // An order still open carries the step as its status too. A paid one stays paid.
+            $order->update(($order->status->isKitchenActive()
+                ? ['status' => $next->value, 'kitchen_status' => $next->value]
+                : ['kitchen_status' => $next->value])
+                // The kitchen user who picks the order up is shown on its ticket.
+                + ($next === OrderStatus::Preparing ? ['prepared_by' => $user->id] : []));
+
+            activity()->performedOn($order)->causedBy($user)
+                ->withProperties(['from' => $current->value, 'to' => $next->value])
+                ->log('order.status_changed');
+        }
+
+        app(PushOrderToPlatformAction::class)->execute($order, $next === OrderStatus::Ready ? 'ready' : null);
+
+        try {
+            broadcast(new OrderStatusChanged($order->branch_id, [
+                'order_id' => $order->id,
+                'invoice_no' => $order->invoice_no,
+                'status' => $next->value,
+            ]))->toOthers();
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
+        return $this->success($this->orderPayload($order->fresh(), kitchen: true));
+    }
+
+    /**
+     * Change the items, table or discount of an order. One that is already paid goes through the
+     * settled-sale revision, which keeps its payments and fixes the books.
+     */
+    public function updateOrder(Request $request, string $branch, Order $order, CreateOrderAction $action, ReviseSettledSaleAction $revisePaid): JsonResponse
     {
         $user = $this->staffUser($request);
         $this->permit($user, 'orders.create');
@@ -197,23 +272,81 @@ class StaffApiController extends Controller
         abort_unless($order->branch_id === $branchModel->id, 404);
 
         $validated = $request->validate([
-            'status' => ['required', 'in:pending,preparing,ready,served'],
+            'order_type' => ['required', 'in:dine_in,takeaway,delivery'],
+            'restaurant_table_id' => ['nullable', 'integer'],
+            'customer_mobile' => ['nullable', 'string', 'max:20'],
+            'customer_name' => ['nullable', 'string', 'max:100'],
+            'note' => ['nullable', 'string', 'max:500'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.menu_item_id' => ['required', 'integer'],
+            'items.*.variant_id' => ['nullable', 'integer'],
+            'items.*.quantity' => ['required', 'integer', 'min:1'],
+            'items.*.add_ons' => ['nullable', 'array'],
+            'items.*.add_ons.*.id' => ['required', 'integer'],
+            'items.*.add_ons.*.qty' => ['nullable', 'integer', 'min:1'],
+            'discount' => ['nullable', 'array'],
+            'discount.type' => ['required_with:discount', 'in:percent,fixed'],
+            'discount.value' => ['required_with:discount', 'numeric', 'min:0'],
         ]);
 
-        $next = OrderStatus::from($validated['status']);
+        if ($order->status === OrderStatus::Paid) {
+            $order = $revisePaid->execute($order, $validated['items'], $validated['discount'] ?? null, $validated['note'] ?? null, $user);
 
-        abort_if($order->isAwaitingApproval(), 422, __('orders.awaiting_approval_locked'));
-        abort_if($order->isHeldBack(PosSettings::preorderReleaseMinutes($branchModel)), 422, __('orders.held_back_locked'));
-        abort_unless($order->status->canTransitionTo($next), 422, __('orders.invalid_status'));
+            return $this->success($this->orderPayload($order, kitchen: true), __('orders.revised', ['invoice' => $order->invoice_no]));
+        }
 
-        $order->update([
-            'status' => $next,
-            'kitchen_status' => $next,
-            // The kitchen user who picks the order up is shown on its ticket.
-            'prepared_by' => $next === OrderStatus::Preparing ? $user->id : $order->prepared_by,
-        ]);
+        // Revising replaces the order, which would leave the booking money on the old one.
+        if ($order->payments()->where('is_advance', true)->exists()) {
+            throw ValidationException::withMessages(['order' => __('orders.advance_locked')]);
+        }
 
-        return $this->success($this->orderPayload($order->fresh()));
+        $customer = null;
+        $mobile = trim((string) ($validated['customer_mobile'] ?? ''));
+
+        if ($mobile !== '') {
+            $customer = Customer::query()->firstOrCreate(
+                ['mobile' => normalize_bd_mobile($mobile)],
+                ['name' => trim((string) ($validated['customer_name'] ?? '')) ?: __('orders.walk_in_customer')],
+            );
+        }
+
+        $order = $action->execute(
+            branch: $branchModel,
+            type: OrderType::from($validated['order_type']),
+            lines: $validated['items'],
+            cashier: $user,
+            tableId: $validated['restaurant_table_id'] ?? null,
+            customer: $customer,
+            discount: $validated['discount'] ?? null,
+            note: $validated['note'] ?? null,
+            deliveryFee: (float) $order->delivery_fee,
+            deliveryZoneId: $order->delivery_zone_id,
+            deliveryAddress: $order->delivery_address,
+            revising: $order,
+        );
+
+        $order->syncAggregatorCommission();
+
+        activity()->performedOn($order)->causedBy($user)->log('order.revised');
+
+        app(PushOrderToPlatformAction::class)->execute($order, null, cart: true);
+
+        try {
+            broadcast(new OrderCreated($order->branch_id, [
+                'order_id' => $order->id,
+                'invoice_no' => $order->invoice_no,
+                'order_type' => $order->order_type->value,
+                'table' => $order->table?->name,
+                'items' => $order->items->map(fn ($item) => [
+                    'name' => $item->name,
+                    'quantity' => $item->quantity,
+                ])->all(),
+            ]))->toOthers();
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
+        return $this->success($this->orderPayload($order, kitchen: true), __('orders.revised', ['invoice' => $order->invoice_no]));
     }
 
     /**
@@ -228,7 +361,7 @@ class StaffApiController extends Controller
 
         $action->approve($order, $user);
 
-        return $this->success($this->orderPayload($order->fresh()), __('orders.sent_to_kitchen', ['invoice' => $order->invoice_no]));
+        return $this->success($this->orderPayload($order->fresh(), kitchen: true), __('orders.sent_to_kitchen', ['invoice' => $order->invoice_no]));
     }
 
     /**
@@ -243,7 +376,7 @@ class StaffApiController extends Controller
 
         $action->release($order, $user);
 
-        return $this->success($this->orderPayload($order->fresh()), __('orders.sent_to_kitchen', ['invoice' => $order->invoice_no]));
+        return $this->success($this->orderPayload($order->fresh(), kitchen: true), __('orders.sent_to_kitchen', ['invoice' => $order->invoice_no]));
     }
 
     public function pay(Request $request, string $branch, Order $order, PayOrderAction $action): JsonResponse
@@ -267,7 +400,7 @@ class StaffApiController extends Controller
                 $action->executeCash($order, (float) $validated['tendered'], $user);
             }
 
-            return $this->success($this->orderPayload($order->fresh()), __('orders.paid_success'));
+            return $this->success($this->orderPayload($order->fresh(), kitchen: true), __('orders.paid_success'));
         });
     }
 
@@ -296,7 +429,7 @@ class StaffApiController extends Controller
 
         $order = $action->execute($voidRequest, $user);
 
-        return $this->success($this->orderPayload($order));
+        return $this->success($this->orderPayload($order, kitchen: true));
     }
 
     public function stock(Request $request, string $branch): JsonResponse
@@ -531,64 +664,222 @@ class StaffApiController extends Controller
 
     // ------------------------------------------------------------ reservations
 
-    /** Today's and upcoming bookings with their tables. */
+    /** What each status button does: from which statuses the move is allowed. */
+    private const RESERVATION_TRANSITIONS = [
+        Reservation::SEATED => [Reservation::BOOKED],
+        Reservation::COMPLETED => [Reservation::SEATED],
+        Reservation::CANCELLED => [Reservation::BOOKED],
+        Reservation::NO_SHOW => [Reservation::BOOKED],
+    ];
+
+    /**
+     * The day sheet: one day by default, a from/to stretch on request, and a search that looks
+     * past the chosen day across the last 30 and next 90 days, like the web panel.
+     */
     public function reservationsIndex(Request $request, string $branch): JsonResponse
     {
         $user = $this->staffUser($request);
         $this->permit($user, 'reservations.view');
         $branchModel = $this->branchOrFail($request, $branch);
 
+        $from = $this->reservationMoment($request, 'from') ?? now()->startOfDay();
+        $to = $this->reservationMoment($request, 'to') ?? $from->copy()->addDay();
+
+        if ($request->filled('date')) {
+            $from = $this->reservationMoment($request, 'date')->copy()->startOfDay();
+            $to = $from->copy()->addDay();
+        }
+
+        if ($to->lessThanOrEqualTo($from) || $from->diffInDays($to) > 31) {
+            $to = $from->copy()->addDay();
+        }
+
+        // A search looks past the chosen day: every booking of the last 30 and the next 90 days
+        // that matches the guest, the mobile, the booking number, a note or a table name.
+        $search = trim((string) $request->input('q', ''));
+
+        if ($search !== '') {
+            $from = now()->subDays(30)->startOfDay();
+            $to = now()->addDays(90)->endOfDay();
+        }
+
+        $methods = PaymentMethod::query()->active()->orderBy('sort_order')->orderBy('id')->get();
+
         $rows = Reservation::query()
+            ->visible()
             ->where('branch_id', $branchModel->id)
-            ->whereDate('starts_at', '>=', now()->subDay())
-            ->with('tables:id,name')
+            ->overlapping($from, $to)
+            ->when($search !== '', fn ($query) => $query->where(function ($inner) use ($search): void {
+                $inner->where('guest_name', 'like', "%{$search}%")
+                    ->orWhere('guest_mobile', 'like', "%{$search}%")
+                    ->orWhere('booking_no', 'like', "%{$search}%")
+                    ->orWhere('note', 'like', "%{$search}%")
+                    ->orWhereHas('tables', fn ($table) => $table->where('name', 'like', "%{$search}%"));
+            }))
+            ->with(['tables:id,name,area,seats', 'mealOrder' => fn ($query) => $query->select(['orders.id', 'orders.reservation_id', 'orders.invoice_no'])])
             ->orderBy('starts_at')
-            ->limit(100)
-            ->get();
+            ->limit(200)
+            ->get()
+            ->map(fn (Reservation $reservation): array => $this->reservationPayload($reservation, $methods))
+            ->values()
+            ->all();
 
         return $this->success($rows);
     }
 
-    public function storeReservation(Request $request, string $branch): JsonResponse
+    public function storeReservation(Request $request, string $branch, ReservationService $service): JsonResponse
     {
         $user = $this->staffUser($request);
         $this->permit($user, 'reservations.manage');
         $branchModel = $this->branchOrFail($request, $branch);
 
         $validated = $request->validate([
-            'guest_name' => ['required', 'string', 'max:150'],
-            'guest_mobile' => ['nullable', 'string', 'max:32'],
-            'party_size' => ['required', 'integer', 'min:1'],
+            'guest_name' => ['required', 'string', 'max:120'],
+            'guest_mobile' => ['nullable', 'string', 'max:20'],
+            'party_size' => ['required', 'integer', 'min:1', 'max:200'],
+            'table_ids' => ['nullable', 'array', 'max:12'],
+            'table_ids.*' => ['integer', Rule::exists('restaurant_tables', 'id')->where('branch_id', $branchModel->id)->where('is_active', true)],
             'starts_at' => ['required', 'date'],
-            'note' => ['nullable', 'string', 'max:500'],
-            'table_ids' => ['nullable', 'array'],
-            'table_ids.*' => ['integer', 'exists:restaurant_tables,id'],
+            'ends_at' => ['nullable', 'date', 'after:starts_at'],
+            'note' => ['nullable', 'string', 'max:200'],
+            'items' => ['nullable', 'array', 'max:40'],
+            'items.*.menu_item_id' => ['required', 'integer', Rule::exists('menu_items', 'id')->where('branch_id', $branchModel->id)->where('is_available', true)],
+            'items.*.variant_id' => ['nullable', 'integer', 'exists:menu_item_variants,id'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:50'],
+            'items.*.add_ons' => ['nullable', 'array', 'max:10'],
+            'items.*.add_ons.*.id' => ['required', 'integer', 'exists:menu_item_addons,id'],
+            'items.*.add_ons.*.qty' => ['nullable', 'integer', 'min:1', 'max:9'],
+            'deposit_amount' => ['nullable', 'numeric', 'min:0', 'max:10000000'],
+            'deposit_method' => ['nullable', 'required_with:deposit_amount', 'string', 'max:20'],
+            'deposit_reference' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $reservation = Reservation::query()->create([
-            'branch_id' => $branchModel->id,
-            'guest_name' => $validated['guest_name'],
-            'guest_mobile' => $validated['guest_mobile'] ?? null,
-            'party_size' => $validated['party_size'],
-            'starts_at' => CarbonImmutable::parse($validated['starts_at']),
-            'ends_at' => CarbonImmutable::parse($validated['starts_at'])->addHours(2),
-            'note' => $validated['note'] ?? null,
-            'status' => Reservation::BOOKED,
-            'created_by' => $user->id,
-        ]);
+        $startsAt = Carbon::parse((string) $validated['starts_at'])->setTimezone((string) config('app.timezone'));
+        $endsAt = isset($validated['ends_at'])
+            ? Carbon::parse((string) $validated['ends_at'])->setTimezone((string) config('app.timezone'))
+            : $startsAt->copy()->addHours(2);
 
-        if (! empty($validated['table_ids'])) {
-            $tableIds = RestaurantTable::query()
-                ->where('branch_id', $branchModel->id)
-                ->whereIn('id', $validated['table_ids'])
-                ->pluck('id');
-            $reservation->tables()->sync($tableIds);
+        if ($startsAt->diffInHours($endsAt) > 12) {
+            throw ValidationException::withMessages(['ends_at' => __('reservations.too_long')]);
         }
 
-        return $this->success(['id' => $reservation->id, 'booking_no' => $reservation->booking_no], null, 201);
+        $tableIds = array_map('intval', (array) ($validated['table_ids'] ?? []));
+
+        if ($tableIds !== [] && Reservation::clashes($tableIds, $startsAt, $endsAt)) {
+            throw ValidationException::withMessages(['table_ids' => __('reservations.clash')]);
+        }
+
+        $priced = $service->priceLines($branchModel, (array) ($validated['items'] ?? []));
+        $deposit = round((float) ($validated['deposit_amount'] ?? 0), 2);
+
+        $reservation = DB::transaction(function () use ($validated, $branchModel, $user, $startsAt, $endsAt, $tableIds, $priced, $deposit, $service): Reservation {
+            $reservation = Reservation::query()->create([
+                'branch_id' => $branchModel->id,
+                'guest_name' => trim((string) $validated['guest_name']),
+                'guest_mobile' => $validated['guest_mobile'] ?? null,
+                'party_size' => (int) $validated['party_size'],
+                'starts_at' => $startsAt,
+                'ends_at' => $endsAt,
+                'note' => $validated['note'] ?? null,
+                'preorder' => $priced['lines'] === [] ? null : $priced['lines'],
+                'preorder_total' => $priced['total'],
+                'status' => Reservation::BOOKED,
+                'created_by' => $user->id,
+            ]);
+
+            if ($tableIds !== []) {
+                $reservation->tables()->sync($this->reservationTablePositions($tableIds));
+            }
+
+            if ($deposit > 0) {
+                $service->collectDeposit($reservation, $deposit, (string) $validated['deposit_method'], $validated['deposit_reference'] ?? null, $user);
+            }
+
+            return $reservation;
+        });
+
+        activity()->performedOn($reservation)->causedBy($user)->log('reservations.created');
+
+        $this->confirmReservationBySms($reservation->fresh(['tables']), $branchModel);
+
+        return $this->success($this->reservationPayload($reservation->fresh(['tables', 'mealOrder']), PaymentMethod::query()->active()->get()), __('reservations.created', ['booking' => $reservation->booking_no]), 201);
     }
 
-    public function reservationStatus(Request $request, string $branch, Reservation $reservation): JsonResponse
+    /**
+     * Change a holding booking's guest, tables, time or pre-ordered menu. Booking money has its
+     * own buttons, so it cannot be edited here.
+     */
+    public function updateReservation(Request $request, string $branch, Reservation $reservation, ReservationService $service): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'reservations.manage');
+        $branchModel = $this->branchOrFail($request, $branch);
+        abort_unless($reservation->branch_id === $branchModel->id, 404);
+
+        if (! in_array($reservation->status, Reservation::HOLDING, true)) {
+            throw ValidationException::withMessages(['status' => __('reservations.closed')]);
+        }
+
+        $validated = $request->validate([
+            'guest_name' => ['required', 'string', 'max:120'],
+            'guest_mobile' => ['nullable', 'string', 'max:20'],
+            'party_size' => ['required', 'integer', 'min:1', 'max:200'],
+            'table_ids' => ['nullable', 'array', 'max:12'],
+            'table_ids.*' => ['integer', Rule::exists('restaurant_tables', 'id')->where('branch_id', $branchModel->id)->where('is_active', true)],
+            'starts_at' => ['required', 'date'],
+            'ends_at' => ['nullable', 'date', 'after:starts_at'],
+            'note' => ['nullable', 'string', 'max:200'],
+            'items' => ['nullable', 'array', 'max:40'],
+            'items.*.menu_item_id' => ['required', 'integer', Rule::exists('menu_items', 'id')->where('branch_id', $branchModel->id)->where('is_available', true)],
+            'items.*.variant_id' => ['nullable', 'integer', 'exists:menu_item_variants,id'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:50'],
+            'items.*.add_ons' => ['nullable', 'array', 'max:10'],
+            'items.*.add_ons.*.id' => ['required', 'integer', 'exists:menu_item_addons,id'],
+            'items.*.add_ons.*.qty' => ['nullable', 'integer', 'min:1', 'max:9'],
+        ]);
+
+        $startsAt = Carbon::parse((string) $validated['starts_at'])->setTimezone((string) config('app.timezone'));
+        $endsAt = isset($validated['ends_at'])
+            ? Carbon::parse((string) $validated['ends_at'])->setTimezone((string) config('app.timezone'))
+            : $startsAt->copy()->addHours(2);
+
+        if ($startsAt->diffInHours($endsAt) > 12) {
+            throw ValidationException::withMessages(['ends_at' => __('reservations.too_long')]);
+        }
+
+        $tableIds = array_map('intval', (array) ($validated['table_ids'] ?? []));
+
+        if ($tableIds !== [] && Reservation::clashes($tableIds, $startsAt, $endsAt, $reservation->id)) {
+            throw ValidationException::withMessages(['table_ids' => __('reservations.clash')]);
+        }
+
+        $priced = $service->priceLines($branchModel, (array) ($validated['items'] ?? []));
+
+        DB::transaction(function () use ($reservation, $validated, $startsAt, $endsAt, $tableIds, $priced): void {
+            $reservation->update([
+                'guest_name' => trim((string) $validated['guest_name']),
+                'guest_mobile' => $validated['guest_mobile'] ?? null,
+                'party_size' => (int) $validated['party_size'],
+                'starts_at' => $startsAt,
+                'ends_at' => $endsAt,
+                'note' => $validated['note'] ?? null,
+                'preorder' => $priced['lines'] === [] ? null : $priced['lines'],
+                'preorder_total' => $priced['total'],
+            ]);
+
+            $reservation->tables()->sync($this->reservationTablePositions($tableIds));
+        });
+
+        activity()->performedOn($reservation)->causedBy($user)->log('reservations.updated');
+
+        return $this->success($this->reservationPayload($reservation->fresh(['tables', 'mealOrder']), PaymentMethod::query()->active()->get()), __('reservations.updated'));
+    }
+
+    /**
+     * Seat, complete, cancel or mark a no-show. Seating the party sends their pre-ordered food
+     * to the kitchen as a real order, like the web panel's buttons.
+     */
+    public function reservationStatus(Request $request, string $branch, Reservation $reservation, ReservationService $service): JsonResponse
     {
         $user = $this->staffUser($request);
         $this->permit($user, 'reservations.manage');
@@ -599,9 +890,181 @@ class StaffApiController extends Controller
             'status' => ['required', 'in:'.implode(',', Reservation::STATUSES)],
         ]);
 
-        $reservation->update(['status' => $validated['status']]);
+        $to = (string) $validated['status'];
+        abort_unless(isset(self::RESERVATION_TRANSITIONS[$to]), 422);
 
-        return $this->success(['id' => $reservation->id, 'status' => $reservation->status]);
+        if (! in_array($reservation->status, self::RESERVATION_TRANSITIONS[$to], true)) {
+            throw ValidationException::withMessages(['status' => __('reservations.cannot_change')]);
+        }
+
+        $message = __('reservations.status_'.$to.'_done');
+
+        DB::transaction(function () use ($reservation, $to, $user, $service, &$message): void {
+            $reservation->update(['status' => $to]);
+
+            // Seating the party sends their pre-ordered food to the kitchen.
+            if ($to === Reservation::SEATED) {
+                $order = $service->sendPreorder($reservation, $user);
+
+                if ($order !== null) {
+                    $message = __('reservations.seated_with_preorder', ['invoice' => $order->invoice_no]);
+                }
+            }
+        });
+
+        activity()->performedOn($reservation)->causedBy($user)->log('reservations.'.$to);
+
+        return $this->success($this->reservationPayload($reservation->fresh(['tables', 'mealOrder']), PaymentMethod::query()->active()->get()), $message);
+    }
+
+    /**
+     * Delete a booking entered by mistake. Only one that never had guests or money attached can
+     * go: a seated or completed booking has a kitchen order behind it, and booking money must be
+     * settled first.
+     */
+    public function destroyReservation(Request $request, string $branch, Reservation $reservation): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'reservations.manage');
+        $branchModel = $this->branchOrFail($request, $branch);
+        abort_unless($reservation->branch_id === $branchModel->id, 404);
+
+        $reason = DeleteReasons::validate($request);
+
+        if (in_array($reservation->status, [Reservation::SEATED, Reservation::COMPLETED], true)) {
+            throw ValidationException::withMessages(['status' => __('reservations.delete_blocked_seated')]);
+        }
+
+        if ($reservation->deposit_status !== Reservation::DEPOSIT_NONE) {
+            throw ValidationException::withMessages(['status' => __('reservations.delete_blocked_deposit')]);
+        }
+
+        DB::transaction(function () use ($reservation, $user, $reason): void {
+            $reservation->forceFill(['deleted_by' => $user->id, 'delete_reason' => $reason['reason'], 'delete_note' => $reason['note']])->save();
+            $reservation->delete();
+        });
+
+        activity()->performedOn($reservation)->causedBy($user)->withProperties($reason)->log('reservations.deleted');
+
+        return $this->success(['id' => $reservation->id, 'deleted' => true], __('reservations.deleted'));
+    }
+
+    /** Take booking money while the booking still holds its tables. */
+    public function collectReservationDeposit(Request $request, string $branch, Reservation $reservation, ReservationService $service): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'reservations.manage');
+        $branchModel = $this->branchOrFail($request, $branch);
+        abort_unless($reservation->branch_id === $branchModel->id, 404);
+
+        $validated = $request->validate([
+            'deposit_amount' => ['required', 'numeric', 'gt:0', 'max:10000000'],
+            'deposit_method' => ['required', 'string', 'max:20'],
+            'deposit_reference' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        if (! in_array($reservation->status, Reservation::HOLDING, true)) {
+            throw ValidationException::withMessages(['status' => __('reservations.closed')]);
+        }
+
+        $service->collectDeposit($reservation, (float) $validated['deposit_amount'], (string) $validated['deposit_method'], $validated['deposit_reference'] ?? null, $user);
+
+        return $this->success($this->reservationPayload($reservation->fresh(['tables', 'mealOrder']), PaymentMethod::query()->active()->get()), __('reservations.deposit_collected'));
+    }
+
+    /** Give the booking money back, or keep it after a no-show or a late cancel. */
+    public function closeReservationDeposit(Request $request, string $branch, Reservation $reservation, string $outcome, ReservationService $service): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'reservations.manage');
+        $branchModel = $this->branchOrFail($request, $branch);
+        abort_unless($reservation->branch_id === $branchModel->id, 404);
+        abort_unless(in_array($outcome, ['refund', 'forfeit'], true), 404);
+
+        $service->closeDeposit($reservation, $outcome, $user);
+
+        return $this->success($this->reservationPayload($reservation->fresh(['tables', 'mealOrder']), PaymentMethod::query()->active()->get()), __('reservations.deposit_'.$outcome.'_done'));
+    }
+
+    /**
+     * The booking as the day sheet shows it: tables, pre-ordered menu, booking money and the
+     * kitchen order a seated party produced.
+     *
+     * @param  Collection<int, PaymentMethod>  $methods
+     * @return array<string, mixed>
+     */
+    private function reservationPayload(Reservation $reservation, $methods): array
+    {
+        $method = $methods->firstWhere('code', $reservation->deposit_method);
+
+        return [
+            'id' => $reservation->id,
+            'deleted' => $reservation->trashed(),
+            'booking_no' => $reservation->booking_no,
+            'guest_name' => $reservation->guest_name,
+            'guest_mobile' => $reservation->guest_mobile,
+            'party_size' => $reservation->party_size,
+            'table_ids' => $reservation->tables->pluck('id')->values()->all(),
+            'tables' => $reservation->tables->map(fn ($table): array => $table->only(['id', 'name', 'area', 'seats']))->values()->all(),
+            'seats' => $reservation->tables->sum('seats'),
+            'starts_at' => $reservation->starts_at->toIso8601String(),
+            'ends_at' => $reservation->ends_at->toIso8601String(),
+            'order_invoice_no' => $reservation->mealOrder?->invoice_no,
+            'status' => $reservation->status,
+            'note' => $reservation->note,
+            'preorder' => $reservation->preorder ?? [],
+            'preorder_total' => (string) $reservation->preorder_total,
+            'deposit' => [
+                'status' => $reservation->deposit_status,
+                'amount' => (string) $reservation->deposit_amount,
+                'applied' => (string) $reservation->deposit_applied,
+                'balance' => number_format($reservation->depositBalance(), 2, '.', ''),
+                'method' => $reservation->deposit_method,
+                'method_name' => $method?->name ?? $reservation->deposit_method,
+                'method_name_bn' => $method?->name_bn,
+                'reference' => $reservation->deposit_reference,
+            ],
+        ];
+    }
+
+    private function reservationMoment(Request $request, string $field): ?Carbon
+    {
+        $value = $request->input($field);
+
+        return is_string($value) && $value !== '' ? Carbon::parse($value)->setTimezone((string) config('app.timezone')) : null;
+    }
+
+    /**
+     * The chosen tables keyed by id, remembering the order they were picked in.
+     *
+     * @param  array<int, int>  $tableIds
+     * @return array<int, array{position: int}>
+     */
+    private function reservationTablePositions(array $tableIds): array
+    {
+        $positions = [];
+
+        foreach (array_values($tableIds) as $position => $tableId) {
+            $positions[$tableId] = ['position' => $position];
+        }
+
+        return $positions;
+    }
+
+    private function confirmReservationBySms(Reservation $reservation, Branch $branch): void
+    {
+        $mobile = normalize_bd_mobile((string) $reservation->guest_mobile);
+
+        if ($mobile === '') {
+            return;
+        }
+
+        SendSmsJob::deliver($mobile, SmsTemplates::render('reservation_confirmed', [
+            'booking' => $reservation->booking_no,
+            'branch' => $branch->name,
+            'tables' => $reservation->tables->pluck('name')->implode(', '),
+            'when' => $reservation->starts_at->setTimezone(config('app.timezone'))->translatedFormat('D j M, g:i A'),
+        ]), 'reservation_confirmed');
     }
 
     // ------------------------------------------------------------ attendance
@@ -878,7 +1341,6 @@ class StaffApiController extends Controller
     public function dashboard(Request $request, MetricsService $metrics): JsonResponse
     {
         $user = $this->staffUser($request);
-        $this->permit($user, 'dashboard.view');
         $branchId = $request->input('branch') === 'all' || $request->input('branch') === null
             ? $user->branch_id
             : (int) $request->input('branch');
@@ -887,19 +1349,74 @@ class StaffApiController extends Controller
             $branchId = $user->branch_id;
         }
 
+        // Every role can open the dashboard, like the web panel. The sales figures behind it stay
+        // with roles holding dashboard.view; the others get the cards their own permissions allow.
+        $seesMetrics = $user->can('dashboard.view');
+        $seesStock = $user->can('inventory.view');
+        $seesPreorders = $user->can('preorders.view');
+        $seesReservations = $user->can('reservations.view');
+
         $from = CarbonImmutable::now()->startOfDay();
         $to = CarbonImmutable::now()->endOfDay();
 
         return $this->success([
-            'summary' => $metrics->summary($branchId, $from, $to),
-            'low_stock' => $metrics->lowStock($branchId),
-            'wastage_spike' => $metrics->wastageSpike($branchId),
-            'dues' => $metrics->dues($branchId, $from, $to),
-            'preorders_waiting' => Preorder::query()
+            'can_view_metrics' => $seesMetrics,
+            'can_view_stock' => $seesStock,
+            'can_view_preorders' => $seesPreorders,
+            'can_view_reservations' => $seesReservations,
+            'summary' => $seesMetrics ? $metrics->summary($branchId, $from, $to) : MetricsService::EMPTY_SUMMARY,
+            'low_stock' => $seesStock ? $metrics->lowStock($branchId) : [],
+            'wastage_spike' => $seesStock ? $metrics->wastageSpike($branchId) : null,
+            'dues' => $seesMetrics ? $metrics->dues($branchId, $from, $to) : MetricsService::EMPTY_DUES,
+            // Menu-book pre-orders still waiting, plus bookings that carry a pre-ordered menu.
+            'preorders_waiting' => ($seesPreorders ? Preorder::query()
                 ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
                 ->where('status', Preorder::PENDING)
-                ->count(),
+                ->count() : 0)
+                + ($seesReservations ? Reservation::query()
+                    ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+                    ->where('status', Reservation::BOOKED)
+                    ->whereNotNull('preorder')
+                    ->count() : 0),
+            'waiting_preorders' => $metrics->waitingPreorders($branchId, $seesPreorders, $seesReservations),
         ]);
+    }
+
+    /**
+     * The bell's alerts, the same low-stock and wastage-spike list the web panel shows, with the
+     * ones this person has not read yet.
+     */
+    public function notifications(Request $request, StaffAlerts $alerts): JsonResponse
+    {
+        $user = $this->staffUser($request);
+
+        $unread = $alerts->unread($user, $this->alertBranchId($user));
+
+        return $this->success([
+            'notifications' => $unread,
+            'count' => count($unread),
+        ]);
+    }
+
+    /** Mark every alert as read for this person. An alert reappears when its text changes. */
+    public function readNotifications(Request $request, StaffAlerts $alerts): JsonResponse
+    {
+        $user = $this->staffUser($request);
+
+        $alerts->markAllRead($user, $this->alertBranchId($user));
+
+        return $this->success(['read' => true]);
+    }
+
+    private function alertBranchId(User $user): ?int
+    {
+        if ($user->branch_id !== null) {
+            return (int) $user->branch_id;
+        }
+
+        $first = Branch::query()->orderBy('id')->value('id');
+
+        return $first !== null ? (int) $first : null;
     }
 
     public function report(Request $request, string $type, MetricsService $metrics): JsonResponse
@@ -1143,7 +1660,7 @@ class StaffApiController extends Controller
             ->limit(50)
             ->get();
 
-        return $this->success($orders->map(fn (Order $order): array => $this->orderPayload($order) + [
+        return $this->success($orders->map(fn (Order $order): array => $this->orderPayload($order, kitchen: true) + [
             'delivery' => $order->delivery === null ? null : [
                 'id' => $order->delivery->id,
                 'status' => $order->delivery->status,
@@ -1347,6 +1864,6 @@ class StaffApiController extends Controller
         $channel = AggregatorChannel::query()->findOrFail($validated['aggregator_channel_id']);
         $order = $service->receive($channel, [...$validated, 'branch_id' => $branchModel->id]);
 
-        return $this->success($this->orderPayload($order), null, 201);
+        return $this->success($this->orderPayload($order, kitchen: true), null, 201);
     }
 }

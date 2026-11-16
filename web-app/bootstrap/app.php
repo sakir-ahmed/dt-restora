@@ -12,6 +12,7 @@ use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -93,6 +94,12 @@ return Application::configure(basePath: dirname(__DIR__))
                 }
 
                 return response()->json(['success' => false, 'error' => $error], $status);
+            }
+
+            // An upload past PHP's post_max_size never reaches validation;
+            // it becomes a friendly field error instead of an error page.
+            if ($e instanceof PostTooLargeException) {
+                return back()->withErrors(['images' => __('common.upload_too_large')]);
             }
 
             if (! $request->inertia()) {

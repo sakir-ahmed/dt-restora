@@ -20,36 +20,6 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    /**
-     * What a role without dashboard.view sees instead of the sales figures: the same prop shapes,
-     * all zero, so the page contract stays stable and nothing leaks.
-     */
-    private const EMPTY_SUMMARY = [
-        'gross_sales' => '0.00',
-        'net_sales' => '0.00',
-        'discount' => '0.00',
-        'vat' => '0.00',
-        'service_charge' => '0.00',
-        'food_cost' => '0.00',
-        'wastage_cost' => '0.00',
-        'salary_cost' => '0.00',
-        'expenses' => '0.00',
-        'commission' => '0.00',
-        'net_profit' => '0.00',
-        'orders' => 0,
-        'order_items' => 0,
-    ];
-
-    private const EMPTY_DUES = [
-        'customers' => 0,
-        'oldest_days' => 0,
-        'top' => [],
-        'outstanding' => '0.00',
-        'open_count' => 0,
-        'new_due' => '0.00',
-        'collected' => '0.00',
-    ];
-
     public function __invoke(Request $request, MetricsService $metrics): Response
     {
         [$from, $to, $period] = $this->period($request);
@@ -76,13 +46,13 @@ class DashboardController extends Controller
             'previousFrom' => $prevFrom->toDateString(),
             'previousTo' => $prevTo->toDateString(),
             'canViewMetrics' => $seesMetrics,
-            'summary' => $seesMetrics ? $metrics->summary($branchId, $from, $to) : self::EMPTY_SUMMARY,
-            'previous' => $seesMetrics ? $metrics->summary($branchId, $prevFrom, $prevTo) : self::EMPTY_SUMMARY,
+            'summary' => $seesMetrics ? $metrics->summary($branchId, $from, $to) : MetricsService::EMPTY_SUMMARY,
+            'previous' => $seesMetrics ? $metrics->summary($branchId, $prevFrom, $prevTo) : MetricsService::EMPTY_SUMMARY,
             'salesByDay' => $seesMetrics ? $metrics->salesByDay($branchId, $from, $to) : [],
             'salesByChannel' => $seesMetrics ? $metrics->salesByChannel($branchId, $from, $to) : [],
             'topItems' => $seesMetrics ? $metrics->topItems($branchId, $from, $to) : [],
             'expensesByCategory' => $seesMetrics ? $metrics->expensesByCategory($branchId, $from, $to) : [],
-            'dues' => $seesMetrics ? $metrics->dues($branchId, $from, $to) : self::EMPTY_DUES,
+            'dues' => $seesMetrics ? $metrics->dues($branchId, $from, $to) : MetricsService::EMPTY_DUES,
             'branchComparison' => $seesMetrics && $seesAll ? $metrics->branchComparison($from, $to) : [],
             // Menu-book pre-orders still waiting, plus bookings that carry a pre-ordered menu.
             'preorders' => ($seesPreorders ? Preorder::query()
@@ -95,7 +65,7 @@ class DashboardController extends Controller
                     ->whereNotNull('preorder')
                     ->count() : 0),
             'lowStockItems' => array_slice($lowStock, 0, 50),
-            'waitingPreorders' => $this->waitingPreorders($branchId, $seesPreorders, $seesReservations),
+            'waitingPreorders' => $metrics->waitingPreorders($branchId, $seesPreorders, $seesReservations),
             'alerts' => [
                 'lowStock' => count($lowStock),
                 'wastageSpike' => $seesStock ? $metrics->wastageSpike($branchId ?? $this->firstBranchId()) : null,
@@ -108,50 +78,6 @@ class DashboardController extends Controller
                 'users' => User::count(),
             ],
         ]);
-    }
-
-    /**
-     * The pre-orders still waiting, soonest first: menu-book pre-orders and bookings that carry a
-     * pre-ordered menu. A short list for the dashboard card.
-     *
-     * @return array<int, array{kind: string, no: string, name: ?string, at: ?string, total: string, items: int}>
-     */
-    private function waitingPreorders(?int $branchId, bool $seesPreorders, bool $seesReservations): array
-    {
-        $menuBook = $seesPreorders ? Preorder::query()
-            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
-            ->where('status', Preorder::PENDING)
-            ->latest('id')
-            ->limit(50)
-            ->get()
-            ->map(fn (Preorder $preorder): array => [
-                'kind' => 'menu_book',
-                'no' => $preorder->order_no,
-                'name' => $preorder->customer_name,
-                'at' => ($preorder->expected_at ?? $preorder->created_at)->toIso8601String(),
-                'planned' => $preorder->expected_at !== null,
-                'total' => (string) $preorder->total,
-                'items' => $preorder->itemCount(),
-            ]) : collect();
-
-        $bookings = $seesReservations ? Reservation::query()
-            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
-            ->where('status', Reservation::BOOKED)
-            ->whereNotNull('preorder')
-            ->orderBy('starts_at')
-            ->limit(50)
-            ->get()
-            ->map(fn (Reservation $reservation): array => [
-                'kind' => 'booking',
-                'no' => $reservation->booking_no,
-                'name' => $reservation->guest_name,
-                'at' => $reservation->starts_at->toIso8601String(),
-                'planned' => true,
-                'total' => (string) $reservation->preorder_total,
-                'items' => (int) collect($reservation->preorder)->sum('quantity'),
-            ]) : collect();
-
-        return $menuBook->concat($bookings)->sortBy('at')->take(30)->values()->all();
     }
 
     /**

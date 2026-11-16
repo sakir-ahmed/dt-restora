@@ -519,7 +519,7 @@ const quickLinks = computed(() => {
                 <header class="flex items-center justify-between">
                     <h3 class="text-sm font-semibold text-foreground">{{ t('dashboard.dues_title') }}</h3>
                     <div class="flex items-center gap-2">
-                        <a :href="route('admin.dues.index')" class="text-xs text-muted hover:text-foreground">{{ t('common.view') }}</a>
+                        <a v-if="can('orders.view')" :href="route('admin.dues.index')" class="text-xs text-muted hover:text-foreground">{{ t('common.view') }}</a>
                         <InfoButton @click="infoKey = 'dues'" />
                     </div>
                 </header>
@@ -601,7 +601,7 @@ const quickLinks = computed(() => {
             <header class="flex items-center justify-between border-b border-border px-3 py-2">
                 <h3 class="text-sm font-semibold text-foreground">{{ t('dashboard.branch_comparison') }}</h3>
                 <div class="flex items-center gap-2">
-                    <a href="/admin/reports?type=branch-pl" class="text-xs text-muted hover:text-foreground">{{ t('common.view') }}</a>
+                    <a v-if="can('reports.view')" href="/admin/reports?type=branch-pl" class="text-xs text-muted hover:text-foreground">{{ t('common.view') }}</a>
                     <InfoButton @click="infoKey = 'branch_comparison'" />
                 </div>
             </header>
@@ -655,7 +655,7 @@ const quickLinks = computed(() => {
                 </li>
             </ul>
             <template #footer>
-                <a :href="route('admin.ingredients.index')" class="text-xs font-medium text-primary hover:underline">{{ t('dashboard.low_stock_list.open') }}</a>
+                <a v-if="can('inventory.view')" :href="route('admin.ingredients.index')" class="text-xs font-medium text-primary hover:underline">{{ t('dashboard.low_stock_list.open') }}</a>
             </template>
         </ListModal>
 
@@ -676,7 +676,7 @@ const quickLinks = computed(() => {
                 </li>
             </ul>
             <template #footer>
-                <a :href="route('admin.preorders.index')" class="text-xs font-medium text-primary hover:underline">{{ t('dashboard.preorder_list.open') }}</a>
+                <a v-if="can('preorders.view')" :href="route('admin.preorders.index')" class="text-xs font-medium text-primary hover:underline">{{ t('dashboard.preorder_list.open') }}</a>
             </template>
         </ListModal>
 

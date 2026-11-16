@@ -14,6 +14,8 @@ use App\Models\Expense;
 use App\Models\LoyaltyEntry;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\Preorder;
+use App\Models\Reservation;
 use App\Models\Setting;
 use App\Models\VoidRequest;
 use App\Models\Wastage;
@@ -26,6 +28,39 @@ use Illuminate\Support\Facades\DB;
  */
 class MetricsService
 {
+    /**
+     * What a role without dashboard.view sees instead of the sales figures: the same shapes,
+     * all zero, so the page contract stays stable and nothing leaks.
+     *
+     * @var array<string, string|int>
+     */
+    public const EMPTY_SUMMARY = [
+        'gross_sales' => '0.00',
+        'net_sales' => '0.00',
+        'discount' => '0.00',
+        'vat' => '0.00',
+        'service_charge' => '0.00',
+        'food_cost' => '0.00',
+        'wastage_cost' => '0.00',
+        'salary_cost' => '0.00',
+        'expenses' => '0.00',
+        'commission' => '0.00',
+        'net_profit' => '0.00',
+        'orders' => 0,
+        'order_items' => 0,
+    ];
+
+    /** @var array<string, string|int|array<int, mixed>> */
+    public const EMPTY_DUES = [
+        'customers' => 0,
+        'oldest_days' => 0,
+        'top' => [],
+        'outstanding' => '0.00',
+        'open_count' => 0,
+        'new_due' => '0.00',
+        'collected' => '0.00',
+    ];
+
     public function __construct(private readonly CalculateStaffPayAction $pay) {}
 
     /**
@@ -341,6 +376,51 @@ class MetricsService
             'today' => number_format($today, 2, '.', ''),
             'week_average' => number_format($weekAvg, 2, '.', ''),
         ];
+    }
+
+    /**
+     * The pre-orders still waiting, soonest first: menu-book pre-orders and bookings that carry a
+     * pre-ordered menu. A short list for the dashboard card, each block shown only to roles that
+     * may see it.
+     *
+     * @return array<int, array{kind: string, no: string, name: ?string, at: ?string, planned: bool, total: string, items: int}>
+     */
+    public function waitingPreorders(?int $branchId, bool $seesPreorders, bool $seesReservations): array
+    {
+        $menuBook = $seesPreorders ? Preorder::query()
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->where('status', Preorder::PENDING)
+            ->latest('id')
+            ->limit(50)
+            ->get()
+            ->map(fn (Preorder $preorder): array => [
+                'kind' => 'menu_book',
+                'no' => $preorder->order_no,
+                'name' => $preorder->customer_name,
+                'at' => ($preorder->expected_at ?? $preorder->created_at)->toIso8601String(),
+                'planned' => $preorder->expected_at !== null,
+                'total' => (string) $preorder->total,
+                'items' => $preorder->itemCount(),
+            ]) : collect();
+
+        $bookings = $seesReservations ? Reservation::query()
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->where('status', Reservation::BOOKED)
+            ->whereNotNull('preorder')
+            ->orderBy('starts_at')
+            ->limit(50)
+            ->get()
+            ->map(fn (Reservation $reservation): array => [
+                'kind' => 'booking',
+                'no' => $reservation->booking_no,
+                'name' => $reservation->guest_name,
+                'at' => $reservation->starts_at->toIso8601String(),
+                'planned' => true,
+                'total' => (string) $reservation->preorder_total,
+                'items' => (int) collect($reservation->preorder)->sum('quantity'),
+            ]) : collect();
+
+        return $menuBook->concat($bookings)->sortBy('at')->take(30)->values()->all();
     }
 
     /**

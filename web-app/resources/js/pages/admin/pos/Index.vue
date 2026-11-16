@@ -30,6 +30,8 @@ const props = defineProps({
     openShift: { type: Object, default: null },
     canOverrideDiscount: { type: Boolean, default: false },
     canVoid: { type: Boolean, default: false },
+    canCreateOrders: { type: Boolean, default: false },
+    canManageShifts: { type: Boolean, default: false },
     posPinMinutes: { type: Number, default: 5 },
     posLockEnabled: { type: Boolean, default: false },
     stockBook: { type: Object, default: () => ({ allow_negative: true, recipes: {}, stock: {} }) },
@@ -361,7 +363,22 @@ async function clearTable(table) {
     }
 }
 
+// Saving and paying orders needs orders.create; a role with only pos.access can look but not sell.
+function guardOrderCreate() {
+    if (! props.canCreateOrders) {
+        notify.error(t('common.no_permission'));
+
+        return false;
+    }
+
+    return true;
+}
+
 async function markOrderPaid(order) {
+    if (! guardOrderCreate()) {
+        return;
+    }
+
     const result = await confirm({
         variant: 'success',
         title: t('orders.mark_paid'),
@@ -1388,6 +1405,10 @@ function confirmBillReview() {
 }
 
 async function submitOrder(mode = 'send_to_kitchen', reviewed = false) {
+    if (! guardOrderCreate()) {
+        return;
+    }
+
     if (latestOrder.value || discountBlocked.value) {
         if (discountBlocked.value) {
             notify.error(t('orders.discount_limit_exceeded'));
@@ -1449,7 +1470,7 @@ async function submitOrder(mode = 'send_to_kitchen', reviewed = false) {
         return;
     }
 
-    if (! openShift.value) {
+    if (! openShift.value && props.canManageShifts) {
         openShiftDialog();
         notify.info(t('orders.shift_needed'));
 
@@ -1652,6 +1673,10 @@ function printAfter(action, order) {
 }
 
 async function payNow(source = 'confirm_payment') {
+    if (! guardOrderCreate()) {
+        return;
+    }
+
     const order = pagePropsOrder();
 
     if (! order) {
@@ -2240,6 +2265,10 @@ function removePayLine(index) {
 }
 
 function paySplit() {
+    if (! guardOrderCreate()) {
+        return;
+    }
+
     const order = latestOrder.value;
 
     if (! order) {
@@ -2292,6 +2321,10 @@ function paySplit() {
 }
 
 function payWalletManual() {
+    if (! guardOrderCreate()) {
+        return;
+    }
+
     const order = latestOrder.value;
 
     if (! order) {
@@ -2339,6 +2372,10 @@ function payWalletManual() {
 }
 
 function paySingle() {
+    if (! guardOrderCreate()) {
+        return;
+    }
+
     const order = latestOrder.value;
 
     if (! order) {
@@ -2448,7 +2485,7 @@ const canCompleteWithDue = computed(() => !! latestOrder.value
     && ! payLines.value.some((line) => methodType(line.method) === 'wallet'));
 
 // The due button works straight from the cart (quick save on due) or on an order already sent.
-const canQuickDue = computed(() => canCompleteWithDue.value || (canSendOrder() && ! lastPayment.value));
+const canQuickDue = computed(() => props.canCreateOrders && (canCompleteWithDue.value || (canSendOrder() && ! lastPayment.value)));
 
 // The dialog asks for the customer when the ticket has none, then saves the sale on due.
 const dueDialog = ref(null);
@@ -2487,7 +2524,7 @@ function openDueDialog() {
         return;
     }
 
-    if (! latestOrder.value && ! openShift.value) {
+    if (! latestOrder.value && ! openShift.value && props.canManageShifts) {
         openShiftDialog();
         notify.info(t('orders.shift_needed'));
 
@@ -2505,6 +2542,10 @@ function closeDueDialog() {
 }
 
 function confirmDue() {
+    if (! guardOrderCreate()) {
+        return;
+    }
+
     if (! customerMobile.value) {
         notify.error(t('orders.due_needs_customer'));
 
@@ -2567,7 +2608,7 @@ const payLinesReady = computed(() => {
 
     return Math.abs(payLinesTotal() - orderDue()) < 0.01;
 });
-const canConfirmPayment = computed(() => !! latestOrder.value && ! lastPayment.value && payLinesReady.value);
+const canConfirmPayment = computed(() => props.canCreateOrders && !! latestOrder.value && ! lastPayment.value && payLinesReady.value);
 const confirmPaymentLabel = computed(() => (payMode.value === 'wallet' ? t('payments.record_manual') : t('orders.confirm_payment')));
 const laneLocked = computed(() => !! lastPayment.value);
 const discountAllTotal = computed(() => itemDiscountTotal.value + billDiscountAmount.value);
@@ -2852,6 +2893,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         </template>
                     </div>
                     <button
+                        v-if="openShift || canManageShifts"
                         type="button"
                         class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs font-medium disabled:cursor-default"
                         :class="openShift ? 'border-success/40 bg-success/10 text-success' : 'border-accent bg-accent text-accent-foreground hover:opacity-90'"
@@ -3018,7 +3060,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                     <button
                         v-if="posActions.send_to_kitchen.enabled"
                         type="button"
-                        :disabled="cart.length === 0 || !! latestOrder || discountBlocked"
+                        :disabled="! canCreateOrders || cart.length === 0 || !! latestOrder || discountBlocked"
                         class="flex h-7 items-center justify-center gap-1 rounded-md bg-primary text-[13px] font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                         :class="primarySpanClass"
                         @click="submitOrder('send_to_kitchen')"
@@ -3029,7 +3071,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                     <button
                         v-if="! dueEditing && posActions.quick_save.enabled && payMethods.includes('cash')"
                         type="button"
-                        :disabled="cart.length === 0 || !! latestOrder || discountBlocked"
+                        :disabled="! canCreateOrders || cart.length === 0 || !! latestOrder || discountBlocked"
                         class="flex h-7 items-center justify-center gap-1 rounded-md bg-accent text-[13px] font-semibold text-accent-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                         :class="primarySpanClass"
                         @click="submitOrder('quick_save')"
@@ -3641,7 +3683,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
 
         <!-- Shift dialog -->
         <Teleport to="body">
-            <div v-if="shiftDialogOpen && ! openShift" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div v-if="shiftDialogOpen && canManageShifts && ! openShift" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
                 <div class="w-full max-w-sm rounded-xl border border-border bg-surface p-4">
                     <h2 class="text-lg font-semibold text-foreground">{{ t('orders.open_shift') }}</h2>
                     <p class="mt-0.5 text-sm text-muted">{{ t('orders.open_shift_hint') }}</p>

@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\Branch;
 use App\Models\Customer;
+use App\Models\Order;
 use App\Models\Setting;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
@@ -58,6 +60,36 @@ it('lists customers matching a mobile search', function (): void {
     expect($names->all())->toBe(['Mina']);
 });
 
+it('counts only live orders in the customer table, skipping deleted ones', function (): void {
+    $branch = Branch::factory()->create(['code' => 'BR01']);
+    $customer = Customer::query()->create(['name' => 'Mina', 'mobile' => '8801711111111']);
+
+    $orders = [
+        ['invoice' => 'A1', 'status' => 'paid'],
+        ['invoice' => 'A2', 'status' => 'void'],
+        ['invoice' => 'A3', 'status' => 'preparing'],
+    ];
+
+    foreach ($orders as $order) {
+        Order::query()->create([
+            'branch_id' => $branch->id,
+            'customer_id' => $customer->id,
+            'invoice_no' => $order['invoice'],
+            'order_type' => 'dine_in',
+            'status' => $order['status'],
+            'subtotal' => '100.00',
+            'total' => '100.00',
+        ]);
+    }
+
+    $response = $this->actingAs($this->owner, 'staff')->get('/admin/customers');
+
+    $count = collect($response->viewData('page')['props']['customers'])
+        ->firstWhere('name', 'Mina')['orders_count'];
+
+    expect($count)->toBe(2);
+});
+
 it('saves the delete confirmation delay and shares it with every page', function (): void {
     $base = ['discount_limit_percent' => 10, 'wastage_spike_multiplier' => 1.5, 'pos_pin_minutes' => 5, 'delivery_otp_enabled' => true];
 
@@ -77,4 +109,67 @@ it('saves the delete confirmation delay and shares it with every page', function
     $this->actingAs($this->owner, 'staff')->put('/admin/settings', $base + ['delete_confirm_delay_enabled' => false, 'delete_confirm_delay_seconds' => 7])->assertRedirect();
 
     $this->actingAs($this->owner, 'staff')->get('/admin/settings')->assertInertia(fn ($page) => $page->where('confirmDelay.enabled', false));
+});
+
+it('edits a customer and refuses a bad mobile', function (): void {
+    $customer = Customer::query()->create(['name' => 'Mina', 'mobile' => '8801711111111']);
+
+    $this->actingAs($this->owner, 'staff')->put("/admin/customers/{$customer->id}", [
+        'name' => 'Mina Rahman', 'mobile' => '01811112222', 'email' => 'mina@example.com', 'is_active' => true,
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    expect($customer->fresh()->name)->toBe('Mina Rahman')
+        ->and($customer->fresh()->mobile)->toBe('8801811112222');
+
+    $this->actingAs($this->owner, 'staff')->put("/admin/customers/{$customer->id}", [
+        'name' => 'Mina', 'mobile' => '12345', 'email' => null, 'is_active' => true,
+    ])->assertSessionHasErrors('mobile');
+});
+
+it('keeps customer editing and deleting with the manage permission', function (): void {
+    $customer = Customer::query()->create(['name' => 'Rafi', 'mobile' => '8801811111111']);
+
+    $props = $this->actingAs($this->cashier, 'staff')->get('/admin/customers')->inertiaProps();
+
+    expect($props['canManage'])->toBeFalse();
+
+    $this->actingAs($this->cashier, 'staff')
+        ->put("/admin/customers/{$customer->id}", ['name' => 'X', 'mobile' => '', 'email' => null, 'is_active' => true])
+        ->assertForbidden();
+
+    $this->actingAs($this->cashier, 'staff')
+        ->delete("/admin/customers/{$customer->id}")
+        ->assertForbidden();
+
+    expect($customer->fresh()->trashed())->toBeFalse();
+});
+
+it('deletes a customer, keeps their orders and frees the mobile number', function (): void {
+    $branch = Branch::factory()->create(['code' => 'BR01']);
+    $customer = Customer::query()->create(['name' => 'Karim', 'mobile' => '8801911111111']);
+
+    Order::query()->create([
+        'branch_id' => $branch->id,
+        'customer_id' => $customer->id,
+        'invoice_no' => 'A1',
+        'order_type' => 'takeaway',
+        'status' => 'paid',
+        'subtotal' => '100.00',
+        'total' => '100.00',
+    ]);
+
+    $this->actingAs($this->owner, 'staff')->delete("/admin/customers/{$customer->id}")->assertRedirect();
+
+    $fresh = $customer->fresh();
+
+    expect($fresh->trashed())->toBeTrue()
+        ->and($fresh->mobile)->toBeNull()
+        ->and($fresh->is_active)->toBeFalse()
+        ->and(Order::query()->where('customer_id', $customer->id)->count())->toBe(1)
+        ->and(Customer::query()->where('mobile', '8801911111111')->count())->toBe(0);
+
+    // The freed number can be taken by a fresh customer.
+    Customer::query()->create(['name' => 'New Karim', 'mobile' => '8801911111111']);
+
+    expect(Customer::query()->where('mobile', '8801911111111')->count())->toBe(1);
 });

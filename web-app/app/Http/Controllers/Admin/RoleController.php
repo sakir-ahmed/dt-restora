@@ -7,10 +7,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Support\Rbac\PermissionCatalog;
 use App\Support\Rbac\RoleDefaults;
+use App\Support\Rbac\Roles;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -33,7 +32,7 @@ class RoleController extends Controller
             ->with('permissions:id,name')
             ->orderBy('id')
             ->get()
-            ->map(fn (Role $role): array => $this->present($role))
+            ->map(fn (Role $role): array => Roles::present($role))
             ->values();
 
         return Inertia::render('admin/roles/Index', [
@@ -48,17 +47,9 @@ class RoleController extends Controller
     {
         $this->authorize('roles.manage');
 
-        $validated = $request->validate([
-            'label' => ['required', 'string', 'max:80'],
-            'label_bn' => ['nullable', 'string', 'max:80'],
-            'description' => ['nullable', 'string', 'max:255'],
-            'all_branches' => ['boolean'],
-            'copy_from' => ['nullable', 'string', Rule::exists('roles', 'name')->where('guard_name', 'staff')],
-            'permissions' => ['nullable', 'array'],
-            'permissions.*' => ['string', Rule::in(PermissionCatalog::all())],
-        ]);
+        $validated = $request->validate(Roles::storeRules());
 
-        $name = $this->uniqueName((string) $validated['label']);
+        $name = Roles::uniqueName((string) $validated['label']);
 
         $permissions = isset($validated['copy_from']) && ! isset($validated['permissions'])
             ? Role::findByName($validated['copy_from'], 'staff')->permissions->pluck('name')->all()
@@ -71,7 +62,7 @@ class RoleController extends Controller
             'description' => $validated['description'] ?? null,
             'all_branches' => (bool) ($validated['all_branches'] ?? false),
         ])->save();
-        $role->syncPermissions($this->withRequired($permissions));
+        $role->syncPermissions(Roles::withRequired($permissions));
 
         activity()->performedOn($role)->causedBy($request->user('staff'))->log('roles.created');
 
@@ -81,18 +72,11 @@ class RoleController extends Controller
     public function update(Request $request, Role $role): RedirectResponse
     {
         $this->authorize('roles.manage');
-        $this->guardEditable($role);
+        Roles::guardEditable($role);
 
-        $validated = $request->validate([
-            'label' => ['nullable', 'string', 'max:80'],
-            'label_bn' => ['nullable', 'string', 'max:80'],
-            'description' => ['nullable', 'string', 'max:255'],
-            'all_branches' => ['boolean'],
-            'permissions' => ['present', 'array'],
-            'permissions.*' => ['string', Rule::in(PermissionCatalog::all())],
-        ]);
+        $validated = $request->validate(Roles::updateRules());
 
-        $permissions = $this->withRequired($validated['permissions']);
+        $permissions = Roles::withRequired($validated['permissions']);
 
         // Nobody may take the Roles screen away from their own account.
         $actor = $request->user('staff');
@@ -117,13 +101,13 @@ class RoleController extends Controller
 
         activity()->performedOn($role)->causedBy($actor)->withProperties(['permissions' => $permissions])->log('roles.updated');
 
-        return back()->with('success', __('roles.updated', ['role' => $this->label($role)]));
+        return back()->with('success', __('roles.updated', ['role' => Roles::label($role)]));
     }
 
     public function destroy(Request $request, Role $role): RedirectResponse
     {
         $this->authorize('roles.manage');
-        $this->guardEditable($role);
+        Roles::guardEditable($role);
 
         if (RoleDefaults::isDefault($role->name)) {
             return back()->with('error', __('roles.cannot_delete_standard'));
@@ -133,7 +117,7 @@ class RoleController extends Controller
             return back()->with('error', __('roles.cannot_delete_in_use', ['count' => $role->users()->count()]));
         }
 
-        $label = $this->label($role);
+        $label = Roles::label($role);
         $role->delete();
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -148,7 +132,7 @@ class RoleController extends Controller
     public function reset(Request $request, Role $role): RedirectResponse
     {
         $this->authorize('roles.manage');
-        $this->guardEditable($role);
+        Roles::guardEditable($role);
 
         if (! RoleDefaults::isDefault($role->name)) {
             return back()->with('error', __('roles.cannot_reset_custom'));
@@ -158,7 +142,7 @@ class RoleController extends Controller
 
         activity()->performedOn($role)->causedBy($request->user('staff'))->log('roles.reset');
 
-        return back()->with('success', __('roles.was_reset', ['role' => $this->label($role)]));
+        return back()->with('success', __('roles.was_reset', ['role' => Roles::label($role)]));
     }
 
     /**
@@ -174,71 +158,5 @@ class RoleController extends Controller
         activity()->causedBy($request->user('staff'))->log('roles.reset_all');
 
         return back()->with('success', __('roles.all_were_reset'));
-    }
-
-    private function guardEditable(Role $role): void
-    {
-        abort_unless($role->guard_name === 'staff', 404);
-
-        if (RoleDefaults::isLocked($role->name)) {
-            throw ValidationException::withMessages(['role' => __('roles.locked_error')]);
-        }
-    }
-
-    /**
-     * Every role can sign in to the panel.
-     *
-     * @param  array<int, string>  $permissions
-     * @return array<int, string>
-     */
-    private function withRequired(array $permissions): array
-    {
-        return array_values(array_unique([...$permissions, PermissionCatalog::REQUIRED]));
-    }
-
-    private function uniqueName(string $label): string
-    {
-        $base = Str::slug($label) ?: 'role';
-        $name = $base;
-        $n = 2;
-
-        while (Role::query()->where('name', $name)->where('guard_name', 'staff')->exists() || RoleDefaults::isDefault($name)) {
-            $name = $base.'-'.$n++;
-        }
-
-        return $name;
-    }
-
-    private function label(Role $role): string
-    {
-        if (RoleDefaults::isDefault($role->name)) {
-            return __('permissions.roles.'.$role->name.'.name');
-        }
-
-        return (app()->getLocale() === 'bn' && $role->label_bn) ? $role->label_bn : ($role->label ?: $role->name);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function present(Role $role): array
-    {
-        $permissions = $role->permissions->pluck('name')->values()->all();
-        $isDefault = RoleDefaults::isDefault($role->name);
-
-        return [
-            'id' => $role->id,
-            'name' => $role->name,
-            'label' => $this->label($role),
-            'label_en' => $isDefault ? null : $role->label,
-            'label_bn' => $isDefault ? null : $role->label_bn,
-            'description' => $isDefault ? __('permissions.roles.'.$role->name.'.description') : $role->description,
-            'is_default' => $isDefault,
-            'is_locked' => RoleDefaults::isLocked($role->name),
-            'all_branches' => (bool) $role->all_branches,
-            'users_count' => (int) $role->users_count,
-            'permissions' => $permissions,
-            'modified' => RoleDefaults::differsFromDefault($role->name, $permissions),
-        ];
     }
 }
