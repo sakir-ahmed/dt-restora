@@ -394,13 +394,20 @@ class OrderController extends Controller
 
     public function updateStatus(Request $request, Order $order): RedirectResponse
     {
-        $this->authorize('orders.create');
-
-        abort_unless($request->user('staff')->canAccessBranch($order->branch_id), 404);
-
         $validated = $request->validate([
             'status' => ['required', 'in:pending,preparing,ready,served,paid'],
         ]);
+
+        // The kitchen steps are the Kitchen Display's buttons, so kds.access may press them.
+        // Reaching paid is order work instead: that stays with orders.create.
+        $user = $request->user('staff');
+
+        abort_unless(
+            $user->can('orders.create') || ($validated['status'] !== OrderStatus::Paid->value && $user->can('kds.access')),
+            403
+        );
+
+        abort_unless($user->canAccessBranch($order->branch_id), 404);
 
         if ($order->isAwaitingApproval()) {
             return back()->with('error', __('orders.awaiting_approval_locked'));

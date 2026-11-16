@@ -7,6 +7,7 @@ return [
     'subtitle' => 'Everything that matters today.',
     'welcome' => 'Welcome, :name',
     'subtitle' => 'Here is what is happening today.',
+    'quick_access' => 'Quick access',
     'gross_sales' => 'Gross Sales',
     'net_sales' => 'Net Sales',
     'net_profit' => 'Net Profit',

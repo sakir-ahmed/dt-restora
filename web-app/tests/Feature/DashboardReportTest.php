@@ -74,9 +74,11 @@ it('shows the dashboard with matching metrics to the owner', function (): void {
 
     $response->assertOk();
 
-    $summary = $response->viewData('page')['props']['summary'];
+    $props = $response->viewData('page')['props'];
+    $summary = $props['summary'];
 
-    expect($summary['gross_sales'])->toBe('800.00')
+    expect($props['canViewMetrics'])->toBeTrue()
+        ->and($summary['gross_sales'])->toBe('800.00')
         ->and($summary['net_sales'])->toBe('800.00')
         ->and($summary['orders'])->toBe(2);
 });
