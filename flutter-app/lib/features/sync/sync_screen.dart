@@ -4,6 +4,7 @@ import '../../core/local_db.dart';
 import '../../core/theme.dart';
 import '../../ui/widgets.dart';
 import '../../ui/tr_text.dart';
+import '../../core/l10n.dart';
 
 const _conflictText = {
   'NEGATIVE_STOCK': 'Not enough stock for this order',
@@ -24,11 +25,42 @@ class SyncScreen extends StatefulWidget {
 
 class _SyncScreenState extends State<SyncScreen> {
   late Future<List<OutboxItem>> _items;
+  List<Map<String, dynamic>> _serverConflicts = [];
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _items = AppScope.read(context).db.outbox();
+    if (AppScope.read(context).can('sync.resolve')) {
+      _loadServerConflicts();
+    }
+  }
+
+  Future<void> _loadServerConflicts() async {
+    final app = AppScope.read(context);
+    await guarded(context, () async {
+      final res = await app.api.get('/sync/conflicts') as Map;
+      if (mounted) {
+        setState(() => _serverConflicts = asRows(res['conflicts']));
+      }
+    });
+  }
+
+  Future<void> _resolveServerConflict(Map<String, dynamic> item, String action) async {
+    final app = AppScope.read(context);
+    final go = await confirm(
+      context,
+      action == 'retry' ? tr('Send this item to the server again?') : tr('Discard this item for good?'),
+      action: action == 'retry' ? tr('Try again') : tr('Discard'),
+    );
+    if (go != true || !mounted) {
+      return;
+    }
+    final ok = await guarded(
+        context, () async => app.api.post('/sync/conflicts/${item['id']}/$action'));
+    if (ok) {
+      await _loadServerConflicts();
+    }
   }
 
   void _reload() => setState(() => _items = AppScope.read(context).db.outbox());
@@ -101,6 +133,28 @@ class _SyncScreenState extends State<SyncScreen> {
                       : StatusChip(o.status.name),
                 ),
               ),
+            if (app.can('sync.resolve')) ...[
+              const SectionTitle('Needs review'),
+              if (_serverConflicts.isEmpty) const EmptyState('No server conflicts.'),
+              for (final c in _serverConflicts)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.warning_amber_rounded, color: Brand.warning),
+                    title: Text('${titleCase('${c['type']}')}  -  ${c['user']?['name'] ?? ''}'),
+                    subtitle: Text(
+                      '${fmtDate('${c['created_at']}')}\n${_conflictText['${c['conflict_reason']}'] ?? c['conflict_reason'] ?? tr('Rejected')}',
+                    ),
+                    isThreeLine: true,
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (v) => _resolveServerConflict(c, v),
+                      itemBuilder: (_) => [
+                        PopupMenuItem(value: 'retry', child: Text(tr('Try again'))),
+                        PopupMenuItem(value: 'discard', child: Text(tr('Discard'))),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           ]);
         },
       ),

@@ -22,9 +22,11 @@ import '../setup/tables_screen.dart';
 import '../setup/units_screen.dart';
 import '../shifts/shift_screen.dart';
 import '../staff/hr_screens.dart';
+import '../staff/roles_screen.dart';
 import '../staff/staff_screens.dart';
 import '../sync/sync_screen.dart';
 import 'app_drawer.dart';
+import 'notifications_screen.dart';
 import '../../ui/tr_text.dart';
 
 /// One screen per tile. Groups mirror the web admin's sidebar: Sales,
@@ -64,6 +66,7 @@ final modules = <Module>[
   Module('Customers', Icons.people, 'customers.view', (_) => const CustomersScreen(), group: 'People'),
   Module('Coupons', Icons.local_offer, 'coupons.manage', (_) => const CouponsScreen(), group: 'People'),
   Module('Staff', Icons.badge, 'staff.view', (_) => const StaffScreen(), group: 'People'),
+  Module('Roles', Icons.shield_outlined, 'roles.manage', (_) => const RolesScreen(), group: 'People'),
   Module('Attendance', Icons.schedule, 'attendance.manage', (_) => const AttendanceScreen(), group: 'People'),
   Module('Payroll', Icons.payments_outlined, 'payroll.manage', (_) => const PayrollScreen(), group: 'Finance'),
   Module('Delivery', Icons.delivery_dining, 'delivery.dispatch', (_) => const DispatchScreen(), group: 'People'),
@@ -111,6 +114,7 @@ class HomeScreen extends StatelessWidget {
           ),
         ]),
         actions: [
+          const AlertBell(),
           _SyncBadge(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SyncScreen()))),
           IconButton(
             tooltip: 'Light or dark',
