@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\Coupon;
 use App\Models\Customer;
 use App\Models\Employee;
+use App\Models\Order;
 use App\Models\User;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Database\Seeders\RoleSeeder;
@@ -112,4 +113,54 @@ it('keeps people management to permitted roles', function (): void {
     $token = $waiter->createToken('staff', ['staff'])->plainTextToken;
 
     $this->withToken($token)->postJson($this->base.'/users', ['name' => 'X', 'password' => 'secret-pass-1', 'roles' => ['cashier']])->assertForbidden();
+});
+
+it('edits a customer through the api and refuses a bad mobile', function (): void {
+    $customer = Customer::query()->create(['name' => 'Rahim', 'mobile' => '01712345678']);
+
+    $this->withToken($this->token)->putJson('/api/v1/customers/'.$customer->id, [
+        'name' => 'Rahim Uddin', 'mobile' => '01812345678', 'email' => 'rahim@example.com', 'is_active' => true,
+    ])->assertOk()->assertJsonPath('data.id', $customer->id);
+
+    expect($customer->fresh()->name)->toBe('Rahim Uddin')
+        ->and($customer->fresh()->mobile)->toBe('8801812345678');
+
+    $this->withToken($this->token)->putJson('/api/v1/customers/'.$customer->id, [
+        'name' => 'Rahim', 'mobile' => '123', 'email' => null, 'is_active' => true,
+    ])->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_FAILED');
+});
+
+it('deletes a customer through the api, keeping their orders and freeing the mobile', function (): void {
+    $customer = Customer::query()->create(['name' => 'Karim', 'mobile' => '01711111111']);
+
+    Order::query()->create([
+        'branch_id' => $this->branch->id,
+        'customer_id' => $customer->id,
+        'invoice_no' => 'A1',
+        'order_type' => 'takeaway',
+        'status' => 'paid',
+        'subtotal' => '100.00',
+        'total' => '100.00',
+    ]);
+
+    $this->withToken($this->token)->deleteJson('/api/v1/customers/'.$customer->id)->assertOk();
+
+    expect($customer->fresh()->trashed())->toBeTrue()
+        ->and($customer->fresh()->mobile)->toBeNull()
+        ->and(Order::query()->where('customer_id', $customer->id)->count())->toBe(1)
+        ->and(Customer::query()->where('mobile', '8801711111111')->count())->toBe(0);
+});
+
+it('keeps customer editing and deleting behind customers.manage', function (): void {
+    $customer = Customer::query()->create(['name' => 'Salam', 'mobile' => '01722222222']);
+    $cashier = User::factory()->role('cashier', $this->branch->id)->create();
+    $token = $cashier->createToken('staff', ['staff'])->plainTextToken;
+
+    $this->withToken($token)->putJson('/api/v1/customers/'.$customer->id, [
+        'name' => 'X', 'mobile' => '', 'email' => null, 'is_active' => true,
+    ])->assertForbidden();
+
+    $this->withToken($token)->deleteJson('/api/v1/customers/'.$customer->id)->assertForbidden();
+
+    expect($customer->fresh()->trashed())->toBeFalse();
 });

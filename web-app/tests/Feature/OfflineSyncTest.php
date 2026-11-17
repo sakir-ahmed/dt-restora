@@ -21,6 +21,7 @@ use App\Models\Wastage;
 use Database\Seeders\ChartOfAccountsSeeder as ChartOfAccountsSeederAlias;
 use Database\Seeders\RoleSeeder;
 use Database\Seeders\UnitSeeder;
+use Illuminate\Auth\AuthManager;
 
 beforeEach(function (): void {
     $this->seed([ChartOfAccountsSeederAlias::class, RoleSeeder::class, UnitSeeder::class]);
@@ -580,4 +581,64 @@ it('reports a conflict for an invalid queued status change', function (): void {
             'type' => 'order_status',
             'payload' => ['order_client_id' => '01H-BAD-STATUS', 'status' => 'nonsense'],
         ]]])->assertOk()->assertJsonPath('data.results.0.status', SyncItem::STATUS_CONFLICT);
+});
+
+it('lists, discards and retries sync conflicts through the api', function (): void {
+    // Stock exactly one serving, then push an order with nothing left: a conflict.
+    $gram = Unit::query()->where('symbol', 'g')->firstOrFail();
+    $ingredient = Ingredient::factory()->create(['unit_id' => $gram->id]);
+
+    IngredientStock::query()->create([
+        'branch_id' => $this->branch->id,
+        'ingredient_id' => $ingredient->id,
+        'stock_qty' => 0,
+        'avg_cost' => 0.1,
+    ]);
+
+    $recipe = Recipe::query()->create(['menu_item_id' => $this->item->id]);
+    $recipe->items()->create(['ingredient_id' => $ingredient->id, 'qty' => 100]);
+
+    pushItem($this);
+
+    $conflict = SyncItem::query()->where('status', SyncItem::STATUS_CONFLICT)->firstOrFail();
+
+    $owner = User::factory()->role('owner')->create();
+    $token = $owner->createToken('staff', ['staff'])->plainTextToken;
+    $cashierToken = $this->cashier->createToken('staff', ['staff'])->plainTextToken;
+
+    // A cashier may not review conflicts.
+    $this->withToken($cashierToken)->getJson('/api/v1/sync/conflicts')->assertForbidden();
+
+    // The test app keeps the auth guard between requests, so the cashier above would stay
+    // the signed-in user; drop the guards to let the owner's token resolve.
+    $this->app->make(AuthManager::class)->forgetGuards();
+
+    $this->withToken($token)->getJson('/api/v1/sync/conflicts')
+        ->assertOk()
+        ->assertJsonPath('data.conflicts.0.id', $conflict->id)
+        ->assertJsonPath('data.conflicts.0.conflict_reason', $conflict->conflict_reason)
+        ->assertJsonStructure(['data' => ['conflicts' => [['payload', 'user', 'type']], 'recent']]);
+
+    // Top the stock up, retry, and the item is accepted.
+    IngredientStock::query()->where('ingredient_id', $ingredient->id)->update(['stock_qty' => 1000]);
+
+    $this->withToken($token)->postJson('/api/v1/sync/conflicts/'.$conflict->id.'/retry')
+        ->assertOk()
+        ->assertJsonPath('data.status', 'accepted');
+
+    expect($conflict->fresh()->status)->toBe(SyncItem::STATUS_ACCEPTED)
+        ->and($conflict->fresh()->conflict_reason)->toBeNull();
+
+    // A discarded item leaves the list: empty the stock again so the next push conflicts.
+    IngredientStock::query()->where('ingredient_id', $ingredient->id)->update(['stock_qty' => 0]);
+    pushItem($this);
+    $this->app->make(AuthManager::class)->forgetGuards();
+    $next = SyncItem::query()->where('status', SyncItem::STATUS_CONFLICT)->firstOrFail();
+
+    $this->withToken($token)->postJson('/api/v1/sync/conflicts/'.$next->id.'/discard')
+        ->assertOk()
+        ->assertJsonPath('data.status', 'discarded');
+
+    expect($next->fresh()->status)->toBe('discarded')
+        ->and(SyncItem::query()->where('status', SyncItem::STATUS_CONFLICT)->count())->toBe(0);
 });

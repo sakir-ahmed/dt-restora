@@ -6,6 +6,8 @@ namespace App\Http\Controllers\Api\V1\Staff;
 
 use App\Actions\Attendance\RecordStaffAttendanceAction;
 use App\Actions\Attendance\RegisterAttendanceDeviceAction;
+use App\Actions\Customers\DeleteCustomerAction;
+use App\Actions\Customers\UpdateCustomerAction;
 use App\Actions\Payroll\CalculateStaffPayAction;
 use App\Actions\Payroll\DeleteSalaryAdvanceAction;
 use App\Actions\Payroll\RecordSalaryAdvanceAction;
@@ -72,6 +74,44 @@ class PeopleApiController extends Controller
                 'created_at' => $order->created_at?->toIso8601String(),
             ])->all(),
         ]);
+    }
+
+    public function updateCustomer(Request $request, Customer $customer, UpdateCustomerAction $action): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'customers.manage');
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:100'],
+            'mobile' => ['nullable', 'string', 'max:20', Rule::unique('customers', 'mobile')->ignore($customer->id)],
+            'email' => ['nullable', 'string', 'email:filter', 'max:100', Rule::unique('customers', 'email')->ignore($customer->id)],
+            'is_active' => ['required', 'boolean'],
+        ]);
+
+        $mobile = trim((string) ($validated['mobile'] ?? '')) !== '' ? normalize_bd_mobile((string) $validated['mobile']) : null;
+
+        if ($mobile !== null && ! is_bd_mobile($mobile)) {
+            throw ValidationException::withMessages(['mobile' => __('web.err_mobile')]);
+        }
+
+        $customer = $action->execute($customer, [
+            'name' => $validated['name'],
+            'mobile' => $mobile,
+            'email' => $validated['email'] ?? null,
+            'is_active' => $validated['is_active'],
+        ], $user);
+
+        return $this->success(['id' => $customer->id], __('customers.saved'));
+    }
+
+    public function destroyCustomer(Request $request, Customer $customer, DeleteCustomerAction $action): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'customers.manage');
+
+        $action->execute($customer, $user);
+
+        return $this->success(['id' => $customer->id], __('customers.deleted'));
     }
 
     public function destroyCoupon(Request $request, Coupon $coupon): JsonResponse

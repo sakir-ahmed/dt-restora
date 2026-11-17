@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
+use App\Actions\Customers\DeleteCustomerAction;
+use App\Actions\Customers\UpdateCustomerAction;
 use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -75,14 +76,12 @@ class CustomerController extends Controller
             throw ValidationException::withMessages(['mobile' => __('web.err_mobile')]);
         }
 
-        $customer->update([
+        app(UpdateCustomerAction::class)->execute($customer, [
             'name' => $validated['name'],
             'mobile' => $mobile,
             'email' => $validated['email'] ?? null,
             'is_active' => $validated['is_active'],
-        ]);
-
-        activity()->performedOn($customer)->causedBy($request->user('staff'))->log('customer.updated');
+        ], $request->user('staff'));
 
         return back()->with('success', __('customers.saved'));
     }
@@ -91,31 +90,11 @@ class CustomerController extends Controller
      * Delete a person from the list. Orders and loyalty history keep their rows; the customer
      * becomes anonymous and the mobile number is freed, so the same person can be added again later.
      */
-    public function destroy(Request $request, Customer $customer): RedirectResponse
+    public function destroy(Request $request, Customer $customer, DeleteCustomerAction $action): RedirectResponse
     {
         $this->authorize('customers.manage');
 
-        $user = $request->user('staff');
-
-        DB::transaction(function () use ($customer, $user): void {
-            $customer->addresses()->delete();
-            $customer->tokens()->delete();
-
-            $customer->forceFill([
-                'name' => __('customers.anonymized_name'),
-                'mobile' => null,
-                'email' => null,
-                'google_id' => null,
-                'password' => null,
-                'birthday' => null,
-                'is_active' => false,
-                'deleted_by' => $user->id,
-            ])->save();
-
-            $customer->delete();
-        });
-
-        activity()->performedOn($customer)->causedBy($user)->log('customer.deleted');
+        $action->execute($customer, $request->user('staff'));
 
         return back()->with('success', __('customers.deleted'));
     }

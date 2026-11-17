@@ -147,6 +147,8 @@ Deletes are `POST .../delete` with `reason_code` (`entry_mistake`, `duplicate_en
 | Method | Path | Permission | Notes |
 | ------ | ---- | ---------- | ----- |
 | GET | `/api/v1/customers/{customer}` | `customers.view` | Points, order count and the latest 30 orders |
+| PUT | `/api/v1/customers/{customer}` | `customers.manage` | Edit name, mobile, email and active flag; the mobile is normalised to the 8801... form |
+| DELETE | `/api/v1/customers/{customer}` | `customers.manage` | Deletes the person: orders and loyalty history stay, the row becomes anonymous and the mobile number is freed |
 | DELETE | `/api/v1/coupons/{coupon}` | `coupons.manage` | Switches the coupon off; the list carries `redemptions_count` |
 | GET | `/staff` | `staff.view` | `employees`, `users` with roles, `roles` (every role name, including custom ones; never `super-admin`), `pay_bases` |
 | PUT / DELETE | `/employees/{employee}` | `employees.manage` | Update (pay basis, rate or salary, device id) or switch off; `POST /employees/{employee}/photo` uploads or removes the photo |
@@ -364,6 +366,9 @@ Used by the POS PWA (and any future staff app).
 | GET    | `/sync/bootstrap`                    | Full reference data (menu, prices, tables, settings, customers for lookup) plus a `data_version`                                                                                |
 | GET    | `/sync/changes?since={data_version}` | Delta updates, including deletions                                                                                                                                              |
 | POST   | `/sync/push`                         | Body: an array of queued items. Each item has `client_id` (ULID), `type` (`order`, `payment`, `shift`, `wastage`, `stock_count`, `attendance`), `payload`, `created_at_device`. |
+| GET    | `/sync/conflicts`                    | `sync.resolve`. Conflicting offline items waiting for review, with reason, payload and who queued them; `recent` lists the last accepted. |
+| POST   | `/sync/conflicts/{item}/retry`       | `sync.resolve`. Sends the item's payload again (for example after stock was topped up); on success the item becomes accepted. |
+| POST   | `/sync/conflicts/{item}/discard`     | `sync.resolve`. Discards the conflicting item after review. |
 
 **Rules**
 
