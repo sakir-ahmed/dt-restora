@@ -87,7 +87,13 @@ class _CustomersScreenState extends State<CustomersScreen> {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => CustomerDetailScreen(customer: c, onAdjust: app.can('loyalty.manage') ? () => _adjust(c) : null)),
+            MaterialPageRoute(
+              builder: (_) => CustomerDetailScreen(
+                customer: c,
+                onAdjust: app.can('loyalty.manage') ? () => _adjust(c) : null,
+                canManage: app.can('customers.manage'),
+              ),
+            ),
           ),
         ),
       ),
@@ -97,10 +103,68 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
 /// One customer: contact, loyalty points and the latest orders.
 class CustomerDetailScreen extends StatelessWidget {
-  const CustomerDetailScreen({super.key, required this.customer, this.onAdjust});
+  const CustomerDetailScreen({super.key, required this.customer, this.onAdjust, this.canManage = false});
 
   final Map<String, dynamic> customer;
   final Future<void> Function()? onAdjust;
+  final bool canManage;
+
+  Future<void> _edit(BuildContext context, Map<String, dynamic> c, Future<void> Function() reload) async {
+    final app = AppScope.read(context);
+    final name = TextEditingController(text: '${c['name']}');
+    final mobile = TextEditingController(text: '${c['mobile'] ?? ''}');
+    final email = TextEditingController(text: '${c['email'] ?? ''}');
+    final go = await showForm<bool>(
+      context,
+      title: tr('Edit customer'),
+      builder: (ctx) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        field(name, tr('Name')),
+        field(mobile, tr('Mobile'), type: TextInputType.phone),
+        field(email, tr('Email'), type: TextInputType.emailAddress),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Save'))),
+      ]),
+    );
+    final n = name.text.trim();
+    final m = mobile.text.trim();
+    final e = email.text.trim();
+    name.dispose();
+    mobile.dispose();
+    email.dispose();
+    if (go != true || n.isEmpty || !context.mounted) {
+      return;
+    }
+    final ok = await guarded(context, () async {
+      await app.api.put('/customers/${c['id']}', body: {
+        'name': n,
+        'mobile': m.isEmpty ? null : m,
+        'email': e.isEmpty ? null : e,
+        'is_active': c['is_active'] != false,
+      });
+    });
+    if (ok) {
+      if (context.mounted) {
+        snack(context, tr('Customer saved.'));
+      }
+      await reload();
+    }
+  }
+
+  Future<void> _delete(BuildContext context, Map<String, dynamic> c) async {
+    final app = AppScope.read(context);
+    final go = await confirm(
+      context,
+      'Delete ${c['name']}?',
+      body: tr('Orders and points history stay in the books; the person becomes anonymous and the mobile number is freed.'),
+      action: tr('Delete'),
+    );
+    if (go != true || !context.mounted) {
+      return;
+    }
+    final ok = await guarded(context, () async => app.api.delete('/customers/${c['id']}'));
+    if (ok && context.mounted) {
+      Navigator.pop(context);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -130,6 +194,20 @@ class CustomerDetailScreen extends StatelessWidget {
                       await onAdjust!();
                       await reload();
                     },
+                  ),
+                if (canManage)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.edit_outlined),
+                    title: Text(tr('Edit details')),
+                    onTap: () => _edit(context, c, reload),
+                  ),
+                if (canManage)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.delete_outline, color: Brand.danger),
+                    title: Text(tr('Delete customer')),
+                    onTap: () => _delete(context, c),
                   ),
               ]),
             ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart' hide Text;
 
+import '../../core/api_client.dart';
 import '../../core/theme.dart';
 import '../../ui/widgets.dart';
 import '../../ui/tr_text.dart';
@@ -30,6 +31,99 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
       await app.api.patch('/branches/${app.branchId}/reservations/${r['id']}/status',
           body: {'status': status});
     });
+    if (ok) {
+      _key.currentState?.reload();
+    }
+  }
+
+  Future<List<(String, String)>> _methods() async {
+    final app = AppScope.read(context);
+    try {
+      final res = await app.cachedGet('/branches/${app.branchId}/reference');
+      final list = ((res.data as Map)['payment_methods'] as List?)?.whereType<Map>().toList() ?? const [];
+      return [for (final m in list) ('${m['method']}', localized(app, m))];
+    } on ApiException {
+      return const [('cash', 'Cash')];
+    }
+  }
+
+  /// Booking money: collect a deposit on a booking that holds none.
+  Future<void> _takeDeposit(Map<String, dynamic> r) async {
+    final app = AppScope.read(context);
+    final amount = TextEditingController();
+    final reference = TextEditingController();
+    var method = 'cash';
+    final methods = await _methods();
+    if (!mounted) {
+      amount.dispose();
+      reference.dispose();
+      return;
+    }
+    final go = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+                20, 0, 20, MediaQuery.of(ctx).viewInsets.bottom + MediaQuery.of(ctx).padding.bottom + 20),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+              Text(tr('Booking money'), style: Theme.of(ctx).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              field(amount, tr('Amount'), type: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: 12),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final (code, name) in methods)
+                  FilterChip(
+                    label: Text(name),
+                    selected: method == code,
+                    onSelected: (on) => setSheet(() => method = code),
+                  ),
+              ]),
+              const SizedBox(height: 12),
+              field(reference, '${tr('Reference')} (${tr('optional')})'),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(tr('Collect')),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+    final value = double.tryParse(amount.text.trim());
+    final refText = reference.text.trim();
+    amount.dispose();
+    reference.dispose();
+    if (go != true || value == null || value <= 0 || !mounted) {
+      return;
+    }
+    final ok = await guarded(context, () async {
+      await app.api.post('/branches/${app.branchId}/reservations/${r['id']}/deposit', body: {
+        'deposit_amount': value,
+        'deposit_method': method,
+        if (refText.isNotEmpty) 'deposit_reference': refText,
+      });
+    });
+    if (ok) {
+      _key.currentState?.reload();
+    }
+  }
+
+  /// Give the booking money back, or keep it after a no-show or a late cancel.
+  Future<void> _closeDeposit(Map<String, dynamic> r, String outcome) async {
+    final app = AppScope.read(context);
+    final go = await confirm(
+      context,
+      outcome == 'refund' ? tr('Refund the booking money?') : tr('Keep the booking money?'),
+      action: outcome == 'refund' ? tr('Refund') : tr('Keep'),
+    );
+    if (go != true || !mounted) {
+      return;
+    }
+    final ok = await guarded(
+        context, () async => app.api.post('/branches/${app.branchId}/reservations/${r['id']}/deposit/$outcome'));
     if (ok) {
       _key.currentState?.reload();
     }
@@ -168,6 +262,9 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
     final status = '${r['status']}';
     final tables = asRows(r['tables']);
     final actions = _reservationActions[status] ?? const <String>[];
+    final deposit = (r['deposit'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
+    final depositStatus = '${deposit['status'] ?? 'none'}';
+    final canManage = AppScope.of(context).can('reservations.manage');
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -191,7 +288,42 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
               padding: const EdgeInsets.only(top: 4),
               child: Text('${r['note']}', style: TextStyle(color: context.muted, fontSize: 12)),
             ),
-          if (actions.isNotEmpty && AppScope.of(context).can('reservations.manage'))
+          if (depositStatus != 'none')
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '${tr('Booking money')}: ${fmtMoney(deposit['amount'])}'
+                '${deposit['method_name'] != null ? ' (${deposit['method_name']})' : ''}  -  ${titleCase(depositStatus)}',
+                style: TextStyle(color: context.muted, fontSize: 12.5),
+              ),
+            ),
+          if (canManage && depositStatus == 'none' && status == 'booked')
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(0, 36)),
+                onPressed: () => _takeDeposit(r),
+                icon: const Icon(Icons.savings_outlined),
+                label: Text(tr('Booking money')),
+              ),
+            ),
+          if (canManage && depositStatus == 'held')
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Wrap(spacing: 8, children: [
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 36)),
+                  onPressed: () => _closeDeposit(r, 'refund'),
+                  child: Text(tr('Refund')),
+                ),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 36), foregroundColor: Brand.danger),
+                  onPressed: () => _closeDeposit(r, 'forfeit'),
+                  child: Text(tr('Keep')),
+                ),
+              ]),
+            ),
+          if (actions.isNotEmpty && canManage)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Wrap(spacing: 8, children: [
