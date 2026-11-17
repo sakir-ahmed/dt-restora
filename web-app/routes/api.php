@@ -49,6 +49,9 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::get('/bootstrap', [SyncController::class, 'bootstrap'])->name('bootstrap');
         Route::get('/changes', [SyncController::class, 'changes'])->name('changes');
         Route::post('/push', [SyncController::class, 'push'])->name('push');
+        Route::get('/conflicts', [SyncController::class, 'conflicts'])->name('conflicts');
+        Route::post('/conflicts/{item}/discard', [SyncController::class, 'discardConflict'])->name('conflicts.discard');
+        Route::post('/conflicts/{item}/retry', [SyncController::class, 'retryConflict'])->name('conflicts.retry');
     });
 
     Route::prefix('rider')->name('rider.')->middleware('auth:sanctum')->group(function (): void {
@@ -107,6 +110,8 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::delete('/ingredient-categories/{category}', [InventoryApiController::class, 'destroyCategory'])->name('ingredient-categories.destroy');
         Route::post('/stock-transfers/{transfer}/delete', [InventoryApiController::class, 'deleteTransfer'])->name('transfers.delete');
         Route::get('/customers/{customer}', [PeopleApiController::class, 'customer'])->name('customers.show');
+        Route::put('/customers/{customer}', [PeopleApiController::class, 'updateCustomer'])->name('customers.update');
+        Route::delete('/customers/{customer}', [PeopleApiController::class, 'destroyCustomer'])->name('customers.destroy');
         Route::delete('/coupons/{coupon}', [PeopleApiController::class, 'destroyCoupon'])->name('coupons.destroy');
         Route::get('/realtime', [AdminApiController::class, 'realtime'])->name('realtime');
         Route::post('/broadcasting/auth', [BroadcastController::class, 'authenticate'])->name('broadcasting.auth');
