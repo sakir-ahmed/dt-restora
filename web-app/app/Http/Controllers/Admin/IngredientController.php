@@ -6,14 +6,18 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\IngredientRequest;
+use App\Import\CsvFile;
+use App\Import\IngredientImporter;
 use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\IngredientCategory;
 use App\Models\Unit;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class IngredientController extends Controller
 {
@@ -44,6 +48,41 @@ class IngredientController extends Controller
         Ingredient::query()->create($request->validated());
 
         return back()->with('success', __('inventory.ingredient_created'));
+    }
+
+    /**
+     * The sample CSV an import expects, headers and example rows.
+     */
+    public function importSample(): StreamedResponse
+    {
+        $this->authorize('inventory.manage');
+
+        return (new IngredientImporter)->sample();
+    }
+
+    /**
+     * What an import of the uploaded CSV would do, row by row.
+     */
+    public function importPreview(Request $request): JsonResponse
+    {
+        $this->authorize('inventory.manage');
+
+        $importer = new IngredientImporter;
+
+        $csv = CsvFile::fromUploadedFile(CsvFile::validatedUpload($request), $importer->headers());
+
+        return response()->json($importer->preview($csv));
+    }
+
+    /**
+     * Create the submitted rows: from the CSV preview or the add-multiple
+     * form, the payload is the same and everything is re-validated.
+     */
+    public function import(Request $request): JsonResponse
+    {
+        $this->authorize('inventory.manage');
+
+        return response()->json((new IngredientImporter)->run(CsvFile::validatedRows($request)));
     }
 
     public function update(IngredientRequest $request, Ingredient $ingredient): RedirectResponse

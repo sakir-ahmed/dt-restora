@@ -214,6 +214,22 @@ return [
     'transfer_delete_received_message' => 'This transfer was already received. Deleting it takes the quantity back out of the destination branch and returns it to the source branch, with the cost restored. It is refused if the destination already used the goods. The transfer stays in the history marked as deleted.',
     'transfer_delete_pending_message' => 'This transfer has not moved any stock yet. It stays in the history marked as deleted.',
     'transfer_delete_blocked' => 'Cannot delete: :ingredient has already been used at the receiving branch and only :available is left there. Nothing was changed.',
+    'add_multiple_ingredients' => 'Add multiple ingredients',
+    'import_ingredients' => 'Import ingredients from CSV',
+    'import_ingredients_help' => 'Columns: name, name_bn, unit, category, reorder_level, is_active. Units match by symbol or name (kg, g, l, ml, pcs), categories by name; leave a category empty for none. Yes/no columns take yes, no, 1 or 0.',
+    'add_multiple_categories' => 'Add multiple categories',
+    'import_categories' => 'Import categories from CSV',
+    'import_categories_help' => 'Columns: name, name_bn, sort_order, is_active. Names must be new. Yes/no columns take yes, no, 1 or 0.',
+    'add_multiple_recipes' => 'Add multiple recipes',
+    'import_recipes' => 'Import recipes from CSV',
+    'import_recipes_help' => 'Columns: menu_item, ingredient, qty, unit, note. Each row is one ingredient line; rows of the same menu item form one recipe, and the note of its first row becomes the recipe note. Menu items and ingredients match by name, a unit matches by symbol or name, and an empty unit means the base unit.',
+    'import_unknown_unit' => 'Unknown unit: :value. Use a symbol like kg, g, l, ml or pcs.',
+    'import_unknown_category' => 'Unknown ingredient category: :value.',
+    'import_unknown_menu_item' => 'Unknown menu item: :value.',
+    'import_name_exists' => 'An ingredient named :value already exists.',
+    'import_category_exists' => 'A category named :value already exists.',
+    'import_recipe_exists' => 'The recipe for :value already exists and will be replaced.',
+    'import_duplicate_line' => 'This menu item already has a line for this ingredient in the file.',
 ];
 
 // extra keys used by the dashboard alert

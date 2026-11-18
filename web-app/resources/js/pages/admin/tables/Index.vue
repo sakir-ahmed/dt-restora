@@ -2,6 +2,8 @@
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
+import BulkAddSlideOver from '@/components/admin/BulkAddSlideOver.vue';
+import CsvImportSlideOver from '@/components/admin/CsvImportSlideOver.vue';
 import QrCode from '@/components/QrCode.vue';
 import DataTable from '@/components/ui-kit/DataTable.vue';
 import FormField from '@/components/ui-kit/FormField.vue';
@@ -24,6 +26,22 @@ const confirm = useConfirm();
 const slideOverOpen = ref(false);
 const editingId = ref(null);
 const qrBusy = ref(false);
+const bulkOpen = ref(false);
+const importOpen = ref(false);
+
+const bulkFields = computed(() => [
+    { key: 'name', label: t('tables.name'), type: 'text', required: true },
+    { key: 'area', label: t('tables.area'), type: 'text' },
+    { key: 'seats', label: t('tables.seats'), type: 'number' },
+    { key: 'is_active', label: t('tables.active'), type: 'boolean', default: true },
+]);
+
+const importColumns = computed(() => [
+    { key: 'name', label: t('tables.name') },
+    { key: 'area', label: t('tables.area') },
+    { key: 'seats', label: t('tables.seats') },
+    { key: 'is_active', label: t('tables.active') },
+]);
 
 const inputClass = 'h-7 w-full rounded-md border bg-surface px-2 text-[13px] text-foreground outline-none focus:ring-2 focus:ring-accent/40';
 
@@ -256,6 +274,24 @@ async function copyQr(url) {
                 <button
                     v-if="canManage"
                     type="button"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background"
+                    @click="bulkOpen = true"
+                >
+                    <AppIcon name="copy" size="12" />
+                    {{ t('common.add_multiple') }}
+                </button>
+                <button
+                    v-if="canManage"
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background"
+                    @click="importOpen = true"
+                >
+                    <AppIcon name="upload" size="12" />
+                    {{ t('common.import_csv') }}
+                </button>
+                <button
+                    v-if="canManage"
+                    type="button"
                     class="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground hover:opacity-90"
                     @click="openCreate"
                 >
@@ -433,6 +469,24 @@ async function copyQr(url) {
             </template>
         </SlideOver>
 
+        <BulkAddSlideOver
+            :open="bulkOpen"
+            :title="t('tables.add_multiple_tables')"
+            :submit-url="route('admin.tables.import')"
+            :fields="bulkFields"
+            @close="bulkOpen = false"
+        />
+
+        <CsvImportSlideOver
+            :open="importOpen"
+            :title="t('tables.import_tables')"
+            :help="t('tables.import_tables_help')"
+            :sample-url="route('admin.tables.import.sample')"
+            :preview-url="route('admin.tables.import.preview')"
+            :import-url="route('admin.tables.import')"
+            :columns="importColumns"
+            @close="importOpen = false"
+        />
     </div>
 </template>
 

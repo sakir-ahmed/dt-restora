@@ -234,6 +234,12 @@ Route::prefix('admin')
         Route::post('menu/items', [AdminMenuController::class, 'storeItem'])->name('menu.items.store')->middleware('permission:menu.manage');
         Route::put('menu/items/{item}', [AdminMenuController::class, 'updateItem'])->name('menu.items.update')->middleware('permission:menu.manage');
         Route::delete('menu/items/{item}', [AdminMenuController::class, 'destroyItem'])->name('menu.items.destroy')->middleware('permission:menu.manage');
+        Route::get('menu/items/import/sample', [AdminMenuController::class, 'importItemSample'])->name('menu.items.import.sample')->middleware('permission:menu.manage');
+        Route::post('menu/items/import/preview', [AdminMenuController::class, 'importItemPreview'])->name('menu.items.import.preview')->middleware('permission:menu.manage');
+        Route::post('menu/items/import', [AdminMenuController::class, 'importItem'])->name('menu.items.import')->middleware('permission:menu.manage');
+        Route::get('menu/categories/import/sample', [AdminMenuController::class, 'importCategorySample'])->name('menu.categories.import.sample')->middleware('permission:menu.manage');
+        Route::post('menu/categories/import/preview', [AdminMenuController::class, 'importCategoryPreview'])->name('menu.categories.import.preview')->middleware('permission:menu.manage');
+        Route::post('menu/categories/import', [AdminMenuController::class, 'importCategory'])->name('menu.categories.import')->middleware('permission:menu.manage');
 
         Route::get('tables', [RestaurantTableController::class, 'index'])->name('tables.index')->middleware('permission:tables.view');
         Route::get('tables/qr-sheet', [RestaurantTableController::class, 'qrSheet'])->name('tables.qr-sheet')->middleware('permission:tables.view');
@@ -256,6 +262,9 @@ Route::prefix('admin')
         Route::post('tables', [RestaurantTableController::class, 'store'])->name('tables.store')->middleware('permission:tables.manage');
         Route::put('tables/{table}', [RestaurantTableController::class, 'update'])->name('tables.update')->middleware('permission:tables.manage');
         Route::delete('tables/{table}', [RestaurantTableController::class, 'destroy'])->name('tables.destroy')->middleware('permission:tables.manage');
+        Route::get('tables/import/sample', [RestaurantTableController::class, 'importSample'])->name('tables.import.sample')->middleware('permission:tables.manage');
+        Route::post('tables/import/preview', [RestaurantTableController::class, 'importPreview'])->name('tables.import.preview')->middleware('permission:tables.manage');
+        Route::post('tables/import', [RestaurantTableController::class, 'import'])->name('tables.import')->middleware('permission:tables.manage');
 
         Route::get('staff', [EmployeeController::class, 'index'])->name('staff.index')->middleware('permission:staff.view');
         Route::post('staff/employees', [EmployeeController::class, 'store'])->name('staff.employees.store')->middleware('permission:employees.manage');
@@ -292,11 +301,17 @@ Route::prefix('admin')
         Route::post('ingredients', [IngredientController::class, 'store'])->name('ingredients.store')->middleware('permission:inventory.manage');
         Route::put('ingredients/{ingredient}', [IngredientController::class, 'update'])->name('ingredients.update')->middleware('permission:inventory.manage');
         Route::delete('ingredients/{ingredient}', [IngredientController::class, 'destroy'])->name('ingredients.destroy')->middleware('permission:inventory.manage');
+        Route::get('ingredients/import/sample', [IngredientController::class, 'importSample'])->name('ingredients.import.sample')->middleware('permission:inventory.manage');
+        Route::post('ingredients/import/preview', [IngredientController::class, 'importPreview'])->name('ingredients.import.preview')->middleware('permission:inventory.manage');
+        Route::post('ingredients/import', [IngredientController::class, 'import'])->name('ingredients.import')->middleware('permission:inventory.manage');
 
         Route::get('ingredient-categories', [IngredientCategoryController::class, 'index'])->name('ingredient-categories.index')->middleware('permission:inventory.view');
         Route::post('ingredient-categories', [IngredientCategoryController::class, 'store'])->name('ingredient-categories.store')->middleware('permission:inventory.manage');
         Route::put('ingredient-categories/{category}', [IngredientCategoryController::class, 'update'])->name('ingredient-categories.update')->middleware('permission:inventory.manage');
         Route::delete('ingredient-categories/{category}', [IngredientCategoryController::class, 'destroy'])->name('ingredient-categories.destroy')->middleware('permission:inventory.manage');
+        Route::get('ingredient-categories/import/sample', [IngredientCategoryController::class, 'importSample'])->name('ingredient-categories.import.sample')->middleware('permission:inventory.manage');
+        Route::post('ingredient-categories/import/preview', [IngredientCategoryController::class, 'importPreview'])->name('ingredient-categories.import.preview')->middleware('permission:inventory.manage');
+        Route::post('ingredient-categories/import', [IngredientCategoryController::class, 'import'])->name('ingredient-categories.import')->middleware('permission:inventory.manage');
         Route::get('suppliers', [SupplierController::class, 'index'])->name('suppliers.index')->middleware('permission:inventory.view');
         Route::post('suppliers', [SupplierController::class, 'store'])->name('suppliers.store')->middleware('permission:inventory.manage');
         Route::put('suppliers/{supplier}', [SupplierController::class, 'update'])->name('suppliers.update')->middleware('permission:inventory.manage');
@@ -312,6 +327,9 @@ Route::prefix('admin')
 
         Route::get('recipes', [RecipeController::class, 'index'])->name('recipes.index')->middleware('permission:recipes.manage');
         Route::post('recipes', [RecipeController::class, 'store'])->name('recipes.store')->middleware('permission:recipes.manage');
+        Route::get('recipes/import/sample', [RecipeController::class, 'importSample'])->name('recipes.import.sample')->middleware('permission:recipes.manage');
+        Route::post('recipes/import/preview', [RecipeController::class, 'importPreview'])->name('recipes.import.preview')->middleware('permission:recipes.manage');
+        Route::post('recipes/import', [RecipeController::class, 'import'])->name('recipes.import')->middleware('permission:recipes.manage');
         Route::get('recipes/{item}/cost', [RecipeController::class, 'cost'])->name('recipes.cost')->middleware('permission:recipes.manage');
 
         Route::get('wastage', [WastageController::class, 'index'])->name('wastage.index')->middleware('permission:inventory.view');

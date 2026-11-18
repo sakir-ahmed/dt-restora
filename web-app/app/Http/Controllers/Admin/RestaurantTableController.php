@@ -6,16 +6,20 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\RestaurantTableRequest;
+use App\Import\CsvFile;
+use App\Import\RestaurantTableImporter;
 use App\Models\Branch;
 use App\Models\DataVersion;
 use App\Models\RestaurantTable;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class RestaurantTableController extends Controller
 {
@@ -137,6 +141,43 @@ class RestaurantTableController extends Controller
         activity()->performedOn($table)->causedBy($request->user('staff'))->log('tables.created');
 
         return back()->with('success', __('tables.created'));
+    }
+
+    /**
+     * The sample CSV an import expects, headers and example rows.
+     */
+    public function importSample(Request $request): StreamedResponse
+    {
+        $this->authorize('tables.manage');
+
+        return (new RestaurantTableImporter($request->user('staff'), $this->currentBranch($request)))->sample();
+    }
+
+    /**
+     * What an import of the uploaded CSV would do, row by row.
+     */
+    public function importPreview(Request $request): JsonResponse
+    {
+        $this->authorize('tables.manage');
+
+        $importer = new RestaurantTableImporter($request->user('staff'), $this->currentBranch($request));
+
+        $csv = CsvFile::fromUploadedFile(CsvFile::validatedUpload($request), $importer->headers());
+
+        return response()->json($importer->preview($csv));
+    }
+
+    /**
+     * Create the submitted rows: from the CSV preview or the add-multiple
+     * form, the payload is the same and everything is re-validated.
+     */
+    public function import(Request $request): JsonResponse
+    {
+        $this->authorize('tables.manage');
+
+        $importer = new RestaurantTableImporter($request->user('staff'), $this->currentBranch($request));
+
+        return response()->json($importer->run(CsvFile::validatedRows($request)));
     }
 
     public function update(RestaurantTableRequest $request, RestaurantTable $table): RedirectResponse

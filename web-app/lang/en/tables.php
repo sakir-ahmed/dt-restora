@@ -54,4 +54,8 @@ return [
     'delete_title' => 'Remove this table?',
     'delete_message' => 'A table with past orders is turned off so those orders keep their table. An unused table is removed.',
     'free' => 'Free',
+    'add_multiple_tables' => 'Add multiple tables',
+    'import_tables' => 'Import tables from CSV',
+    'import_tables_help' => 'Columns: name, area, seats, is_active. Names must be new in this branch. Yes/no columns take yes, no, 1 or 0.',
+    'import_name_conflict' => 'A table named :value already exists in this branch.',
 ];

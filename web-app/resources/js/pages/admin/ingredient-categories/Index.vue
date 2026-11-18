@@ -2,6 +2,8 @@
 import { useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
+import BulkAddSlideOver from '@/components/admin/BulkAddSlideOver.vue';
+import CsvImportSlideOver from '@/components/admin/CsvImportSlideOver.vue';
 import DataTable from '@/components/ui-kit/DataTable.vue';
 import FormField from '@/components/ui-kit/FormField.vue';
 import PageHeader from '@/components/ui-kit/PageHeader.vue';
@@ -20,6 +22,22 @@ const props = defineProps({
 const confirm = useConfirm();
 const slideOverOpen = ref(false);
 const editingId = ref(null);
+const bulkOpen = ref(false);
+const importOpen = ref(false);
+
+const bulkFields = computed(() => [
+    { key: 'name', label: t('inventory.category'), type: 'text', required: true },
+    { key: 'name_bn', label: t('branches.name_bn'), type: 'text' },
+    { key: 'sort_order', label: t('menu.sort_order'), type: 'number' },
+    { key: 'is_active', label: t('status.active'), type: 'boolean', default: true },
+]);
+
+const importColumns = computed(() => [
+    { key: 'name', label: t('inventory.category') },
+    { key: 'name_bn', label: t('branches.name_bn') },
+    { key: 'sort_order', label: t('menu.sort_order') },
+    { key: 'is_active', label: t('status.active') },
+]);
 
 const columns = computed(() => [
     { key: 'name', label: t('inventory.category'), align: 'left', sortable: true },
@@ -108,6 +126,24 @@ async function remove() {
                 <button
                     v-if="canManage"
                     type="button"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background"
+                    @click="bulkOpen = true"
+                >
+                    <AppIcon name="copy" size="12" />
+                    {{ t('common.add_multiple') }}
+                </button>
+                <button
+                    v-if="canManage"
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background"
+                    @click="importOpen = true"
+                >
+                    <AppIcon name="upload" size="12" />
+                    {{ t('common.import_csv') }}
+                </button>
+                <button
+                    v-if="canManage"
+                    type="button"
                     class="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground hover:opacity-90"
                     @click="openCreate"
                 >
@@ -176,6 +212,25 @@ async function remove() {
                 </button>
             </template>
         </SlideOver>
+
+        <BulkAddSlideOver
+            :open="bulkOpen"
+            :title="t('inventory.add_multiple_categories')"
+            :submit-url="route('admin.ingredient-categories.import')"
+            :fields="bulkFields"
+            @close="bulkOpen = false"
+        />
+
+        <CsvImportSlideOver
+            :open="importOpen"
+            :title="t('inventory.import_categories')"
+            :help="t('inventory.import_categories_help')"
+            :sample-url="route('admin.ingredient-categories.import.sample')"
+            :preview-url="route('admin.ingredient-categories.import.preview')"
+            :import-url="route('admin.ingredient-categories.import')"
+            :columns="importColumns"
+            @close="importOpen = false"
+        />
     </div>
 </template>
 

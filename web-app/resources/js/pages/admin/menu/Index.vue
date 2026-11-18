@@ -2,6 +2,8 @@
 import { useForm, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
+import BulkAddSlideOver from '@/components/admin/BulkAddSlideOver.vue';
+import CsvImportSlideOver from '@/components/admin/CsvImportSlideOver.vue';
 import FormField from '@/components/ui-kit/FormField.vue';
 import MoneyInput from '@/components/ui-kit/MoneyInput.vue';
 import PageHeader from '@/components/ui-kit/PageHeader.vue';
@@ -32,6 +34,53 @@ const loading = ref(false);
 const qrOpen = ref(false);
 const search = ref('');
 const activeCategory = ref(null);
+
+const itemBulkOpen = ref(false);
+const itemImportOpen = ref(false);
+const categoryBulkOpen = ref(false);
+const categoryImportOpen = ref(false);
+
+const itemBulkFields = computed(() => [
+    {
+        key: 'menu_category_id',
+        label: t('menu.category'),
+        type: 'select',
+        required: true,
+        options: props.categories.map((category) => ({ value: category.id, label: category.name })),
+    },
+    { key: 'name', label: t('menu.item'), type: 'text', required: true },
+    { key: 'name_bn', label: t('branches.name_bn'), type: 'text' },
+    { key: 'base_price', label: t('menu.price'), type: 'number', required: true, step: '0.01' },
+    { key: 'is_available', label: t('menu.is_available'), type: 'boolean', default: true },
+    { key: 'is_vegetarian', label: t('menu.is_vegetarian'), type: 'boolean', default: false },
+]);
+
+const itemImportColumns = computed(() => [
+    { key: 'category', label: t('menu.category') },
+    { key: 'name', label: t('menu.item') },
+    { key: 'name_bn', label: t('branches.name_bn') },
+    { key: 'description', label: t('menu.description') },
+    { key: 'description_bn', label: t('menu.description_bn') },
+    { key: 'price', label: t('menu.price') },
+    { key: 'is_available', label: t('menu.is_available') },
+    { key: 'is_vegetarian', label: t('menu.is_vegetarian') },
+    { key: 'barcode', label: t('menu.barcode') },
+    { key: 'sort_order', label: t('menu.sort_order') },
+]);
+
+const categoryBulkFields = computed(() => [
+    { key: 'name', label: t('menu.category'), type: 'text', required: true },
+    { key: 'name_bn', label: t('branches.name_bn'), type: 'text' },
+    { key: 'sort_order', label: t('menu.sort_order'), type: 'number' },
+    { key: 'is_active', label: t('status.active'), type: 'boolean', default: true },
+]);
+
+const categoryImportColumns = computed(() => [
+    { key: 'name', label: t('menu.category') },
+    { key: 'name_bn', label: t('branches.name_bn') },
+    { key: 'sort_order', label: t('menu.sort_order') },
+    { key: 'is_active', label: t('status.active') },
+]);
 
 const filteredCategories = computed(() => {
     const needle = search.value.trim().toLowerCase();
@@ -251,6 +300,24 @@ function reload() {
                     v-if="canManage"
                     type="button"
                     class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background"
+                    @click="itemBulkOpen = true"
+                >
+                    <AppIcon name="copy" size="12" />
+                    {{ t('common.add_multiple') }}
+                </button>
+                <button
+                    v-if="canManage"
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background"
+                    @click="itemImportOpen = true"
+                >
+                    <AppIcon name="upload" size="12" />
+                    {{ t('common.import_csv') }}
+                </button>
+                <button
+                    v-if="canManage"
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background"
                     @click="openCategory()"
                 >
                     <AppIcon name="plus" size="12" />
@@ -268,14 +335,35 @@ function reload() {
             </template>
         </PageHeader>
 
-        <div class="mb-3 flex h-7 max-w-xs items-center gap-1.5 rounded-md border border-border bg-surface px-2">
-            <AppIcon name="magnifying-glass" size="12" class="text-muted" />
-            <input
-                v-model="search"
-                type="search"
-                :placeholder="t('menu.search_items')"
-                class="w-full border-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted/60"
-            >
+        <div class="mb-3 flex items-center gap-2">
+            <div class="flex h-7 max-w-xs flex-1 items-center gap-1.5 rounded-md border border-border bg-surface px-2">
+                <AppIcon name="magnifying-glass" size="12" class="text-muted" />
+                <input
+                    v-model="search"
+                    type="search"
+                    :placeholder="t('menu.search_items')"
+                    class="w-full border-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted/60"
+                >
+            </div>
+
+            <template v-if="canManage">
+                <button
+                    type="button"
+                    class="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs font-medium text-muted hover:bg-background hover:text-foreground"
+                    @click="categoryBulkOpen = true"
+                >
+                    <AppIcon name="copy" size="12" />
+                    {{ t('menu.add_multiple_categories') }}
+                </button>
+                <button
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-xs font-medium text-muted hover:bg-background hover:text-foreground"
+                    @click="categoryImportOpen = true"
+                >
+                    <AppIcon name="upload" size="12" />
+                    {{ t('menu.import_menu_categories') }}
+                </button>
+            </template>
         </div>
 
         <SkeletonRows v-if="loading" :rows="6" />
@@ -571,6 +659,44 @@ function reload() {
                 </button>
             </template>
         </SlideOver>
+
+        <BulkAddSlideOver
+            :open="itemBulkOpen"
+            :title="t('menu.add_multiple_items')"
+            :submit-url="route('admin.menu.items.import')"
+            :fields="itemBulkFields"
+            @close="itemBulkOpen = false"
+        />
+
+        <CsvImportSlideOver
+            :open="itemImportOpen"
+            :title="t('menu.import_items')"
+            :help="t('menu.import_items_help')"
+            :sample-url="route('admin.menu.items.import.sample')"
+            :preview-url="route('admin.menu.items.import.preview')"
+            :import-url="route('admin.menu.items.import')"
+            :columns="itemImportColumns"
+            @close="itemImportOpen = false"
+        />
+
+        <BulkAddSlideOver
+            :open="categoryBulkOpen"
+            :title="t('menu.add_multiple_categories')"
+            :submit-url="route('admin.menu.categories.import')"
+            :fields="categoryBulkFields"
+            @close="categoryBulkOpen = false"
+        />
+
+        <CsvImportSlideOver
+            :open="categoryImportOpen"
+            :title="t('menu.import_menu_categories')"
+            :help="t('menu.import_menu_categories_help')"
+            :sample-url="route('admin.menu.categories.import.sample')"
+            :preview-url="route('admin.menu.categories.import.preview')"
+            :import-url="route('admin.menu.categories.import')"
+            :columns="categoryImportColumns"
+            @close="categoryImportOpen = false"
+        />
     </div>
 </template>
 

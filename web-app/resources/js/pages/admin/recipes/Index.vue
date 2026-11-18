@@ -2,6 +2,8 @@
 import { useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
+import BulkAddSlideOver from '@/components/admin/BulkAddSlideOver.vue';
+import CsvImportSlideOver from '@/components/admin/CsvImportSlideOver.vue';
 import DataTable from '@/components/ui-kit/DataTable.vue';
 import FormField from '@/components/ui-kit/FormField.vue';
 import PageHeader from '@/components/ui-kit/PageHeader.vue';
@@ -21,6 +23,25 @@ const props = defineProps({
 
 const slideOverOpen = ref(false);
 const editingItem = ref(null);
+const bulkOpen = ref(false);
+const importOpen = ref(false);
+
+// One row is one ingredient line; the server groups rows by menu item.
+const bulkFields = computed(() => [
+    { key: 'menu_item_id', label: t('menu.item'), type: 'select', required: true, options: props.items.map((item) => ({ value: item.id, label: item.name })) },
+    { key: 'ingredient_id', label: t('inventory.ingredient'), type: 'select', required: true, options: props.ingredients.map((ingredient) => ({ value: ingredient.id, label: ingredient.name })) },
+    { key: 'qty', label: t('inventory.qty'), type: 'number', required: true, step: '0.001' },
+    { key: 'unit_id', label: t('inventory.unit'), type: 'select', options: props.units.map((unit) => ({ value: unit.id, label: `${unit.name} (${unit.symbol})` })) },
+    { key: 'note', label: t('common.note'), type: 'text' },
+]);
+
+const importColumns = computed(() => [
+    { key: 'menu_item', label: t('menu.item') },
+    { key: 'ingredient', label: t('inventory.ingredient') },
+    { key: 'qty', label: t('inventory.qty') },
+    { key: 'unit', label: t('inventory.unit') },
+    { key: 'note', label: t('common.note') },
+]);
 
 const columns = computed(() => [
     { key: 'name', label: t('menu.item'), align: 'left', sortable: true },
@@ -202,6 +223,22 @@ function save() {
     <div>
         <PageHeader :title="t('inventory.recipes')" :description="t('inventory.recipes_subtitle')">
             <template #actions>
+                <button
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background"
+                    @click="bulkOpen = true"
+                >
+                    <AppIcon name="copy" size="12" />
+                    {{ t('common.add_multiple') }}
+                </button>
+                <button
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background"
+                    @click="importOpen = true"
+                >
+                    <AppIcon name="upload" size="12" />
+                    {{ t('common.import_csv') }}
+                </button>
                 <span v-if="missingCount > 0" class="text-xs text-warning">{{ t('inventory.recipes_missing', { count: missingCount }) }}</span>
                 <span v-else class="text-xs text-muted">{{ t('inventory.recipes_hint') }}</span>
             </template>
@@ -358,6 +395,25 @@ function save() {
                 </button>
             </template>
         </SlideOver>
+
+        <BulkAddSlideOver
+            :open="bulkOpen"
+            :title="t('inventory.add_multiple_recipes')"
+            :submit-url="route('admin.recipes.import')"
+            :fields="bulkFields"
+            @close="bulkOpen = false"
+        />
+
+        <CsvImportSlideOver
+            :open="importOpen"
+            :title="t('inventory.import_recipes')"
+            :help="t('inventory.import_recipes_help')"
+            :sample-url="route('admin.recipes.import.sample')"
+            :preview-url="route('admin.recipes.import.preview')"
+            :import-url="route('admin.recipes.import')"
+            :columns="importColumns"
+            @close="importOpen = false"
+        />
     </div>
 </template>
 
