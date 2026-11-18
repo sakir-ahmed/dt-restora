@@ -7,6 +7,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\MenuCategoryRequest;
 use App\Http\Requests\Admin\MenuItemRequest;
+use App\Import\CsvFile;
+use App\Import\MenuCategoryImporter;
+use App\Import\MenuItemImporter;
 use App\Jobs\SendSmsJob;
 use App\Models\Branch;
 use App\Models\DataVersion;
@@ -14,12 +17,14 @@ use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Services\Sms\SmsTemplates;
 use App\Support\DeletionGuard;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MenuController extends Controller
 {
@@ -152,6 +157,80 @@ class MenuController extends Controller
         });
 
         return back()->with('success', __('menu.item_created'));
+    }
+
+    /**
+     * The sample CSV an item import expects, headers and example rows.
+     */
+    public function importItemSample(Request $request): StreamedResponse
+    {
+        $this->authorize('menu.manage');
+
+        return (new MenuItemImporter($request->user('staff'), $this->currentBranch($request)))->sample();
+    }
+
+    /**
+     * What an import of the uploaded CSV would do, row by row.
+     */
+    public function importItemPreview(Request $request): JsonResponse
+    {
+        $this->authorize('menu.manage');
+
+        $importer = new MenuItemImporter($request->user('staff'), $this->currentBranch($request));
+
+        $csv = CsvFile::fromUploadedFile(CsvFile::validatedUpload($request), $importer->headers());
+
+        return response()->json($importer->preview($csv));
+    }
+
+    /**
+     * Create the submitted rows: from the CSV preview or the add-multiple
+     * form, the payload is the same and everything is re-validated.
+     */
+    public function importItem(Request $request): JsonResponse
+    {
+        $this->authorize('menu.manage');
+
+        $importer = new MenuItemImporter($request->user('staff'), $this->currentBranch($request));
+
+        return response()->json($importer->run(CsvFile::validatedRows($request)));
+    }
+
+    /**
+     * The sample CSV a category import expects, headers and example rows.
+     */
+    public function importCategorySample(Request $request): StreamedResponse
+    {
+        $this->authorize('menu.manage');
+
+        return (new MenuCategoryImporter($request->user('staff'), $this->currentBranch($request)))->sample();
+    }
+
+    /**
+     * What an import of the uploaded CSV would do, row by row.
+     */
+    public function importCategoryPreview(Request $request): JsonResponse
+    {
+        $this->authorize('menu.manage');
+
+        $importer = new MenuCategoryImporter($request->user('staff'), $this->currentBranch($request));
+
+        $csv = CsvFile::fromUploadedFile(CsvFile::validatedUpload($request), $importer->headers());
+
+        return response()->json($importer->preview($csv));
+    }
+
+    /**
+     * Create the submitted rows: from the CSV preview or the add-multiple
+     * form, the payload is the same and everything is re-validated.
+     */
+    public function importCategory(Request $request): JsonResponse
+    {
+        $this->authorize('menu.manage');
+
+        $importer = new MenuCategoryImporter($request->user('staff'), $this->currentBranch($request));
+
+        return response()->json($importer->run(CsvFile::validatedRows($request)));
     }
 
     public function updateItem(MenuItemRequest $request, MenuItem $item): RedirectResponse

@@ -21,6 +21,15 @@ class WastageRequest extends FormRequest
      */
     public function rules(): array
     {
+        if ($this->filled('menu_item_id')) {
+            return [
+                'menu_item_id' => ['required', 'integer', 'exists:menu_items,id'],
+                'qty' => ['required', 'numeric', 'gt:0', 'max:1000'],
+                'reason_code' => ['required', 'string', Rule::in(Wastage::REASONS)],
+                'note' => ['nullable', 'string', 'max:1000'],
+            ];
+        }
+
         return [
             'ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
             'unit_id' => ['required', 'integer', 'exists:units,id'],

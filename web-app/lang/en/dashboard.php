@@ -18,6 +18,7 @@ return [
     'expenses' => 'Expenses',
     'sales_trend' => 'Sales trend',
     'sales_by_channel' => 'Sales by channel',
+    'payments_by_method' => 'Payments by method',
     'channel_label' => 'Channel',
     'channel' => [
         'pos' => 'POS',
@@ -142,6 +143,12 @@ return [
                 'what' => 'Where the sales came from: POS, website or delivery apps.',
                 'formula' => 'Order totals in the period grouped by the order channel, except void orders. The table shows total / number of orders.',
                 'note1' => 'The channel totals add up to gross sales.',
+            ],
+            'payments_by_method' => [
+                'title' => 'Payments by method',
+                'what' => 'How the money of the period came in: cash, bKash, Nagad, card and every other method.',
+                'formula' => 'Completed payments of the period grouped by payment method, except payments of void orders. The table shows amount / number of payments.',
+                'note1' => 'Delivery app sales are settled by payout, so they have no payment rows here.',
             ],
             'top_items' => [
                 'title' => 'Top items',

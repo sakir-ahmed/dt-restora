@@ -38,7 +38,7 @@ function handle(file) {
         return;
     }
 
-    if (props.accept !== '*' && ! file.type.match(props.accept.replace('*', ''))) {
+    if (props.accept !== '*' && ! matchesAccept(file)) {
         notify.error(t('common.file_type_invalid'));
 
         return;
@@ -62,6 +62,21 @@ function clear() {
 
     previewUrl.value = null;
     emit('update:modelValue', null);
+}
+
+/**
+ * An accept list may be MIME patterns ("image/*") or file extensions
+ * (".csv"); CSV uploads carry no reliable MIME type, so they match by name.
+ */
+function matchesAccept(file) {
+    if (props.accept.startsWith('.')) {
+        const extensions = props.accept.split(',').map((entry) => entry.trim().toLowerCase());
+        const extension = `.${file.name.split('.').pop().toLowerCase()}`;
+
+        return extensions.includes(extension);
+    }
+
+    return file.type.match(props.accept.replace('*', '')) !== null;
 }
 </script>
 

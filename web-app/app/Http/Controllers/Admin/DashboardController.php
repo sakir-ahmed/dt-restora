@@ -50,6 +50,7 @@ class DashboardController extends Controller
             'previous' => $seesMetrics ? $metrics->summary($branchId, $prevFrom, $prevTo) : MetricsService::EMPTY_SUMMARY,
             'salesByDay' => $seesMetrics ? $metrics->salesByDay($branchId, $from, $to) : [],
             'salesByChannel' => $seesMetrics ? $metrics->salesByChannel($branchId, $from, $to) : [],
+            'salesByPaymentMethod' => $seesMetrics ? $metrics->salesByPaymentMethod($branchId, $from, $to) : [],
             'topItems' => $seesMetrics ? $metrics->topItems($branchId, $from, $to) : [],
             'expensesByCategory' => $seesMetrics ? $metrics->expensesByCategory($branchId, $from, $to) : [],
             'dues' => $seesMetrics ? $metrics->dues($branchId, $from, $to) : MetricsService::EMPTY_DUES,

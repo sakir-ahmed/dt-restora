@@ -7,6 +7,8 @@ namespace App\Http\Controllers\Admin;
 use App\Actions\Inventory\SaveRecipeAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\RecipeRequest;
+use App\Import\CsvFile;
+use App\Import\RecipeImporter;
 use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
@@ -19,6 +21,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class RecipeController extends Controller
 {
@@ -77,6 +80,43 @@ class RecipeController extends Controller
         );
 
         return back()->with('success', __('inventory.recipe_saved'));
+    }
+
+    /**
+     * The sample CSV an import expects, headers and example rows.
+     */
+    public function importSample(Request $request): StreamedResponse
+    {
+        $this->authorize('recipes.manage');
+
+        return (new RecipeImporter($request->user('staff'), $this->currentBranch($request)))->sample();
+    }
+
+    /**
+     * What an import of the uploaded CSV would do, row by row.
+     */
+    public function importPreview(Request $request): JsonResponse
+    {
+        $this->authorize('recipes.manage');
+
+        $importer = new RecipeImporter($request->user('staff'), $this->currentBranch($request));
+
+        $csv = CsvFile::fromUploadedFile(CsvFile::validatedUpload($request), $importer->headers());
+
+        return response()->json($importer->preview($csv));
+    }
+
+    /**
+     * Create the submitted rows: from the CSV preview or the add-multiple
+     * form, the payload is the same and everything is re-validated.
+     */
+    public function import(Request $request): JsonResponse
+    {
+        $this->authorize('recipes.manage');
+
+        $importer = new RecipeImporter($request->user('staff'), $this->currentBranch($request));
+
+        return response()->json($importer->run(CsvFile::validatedRows($request)));
     }
 
     public function cost(Request $request, MenuItem $item, CostingService $costing): JsonResponse
