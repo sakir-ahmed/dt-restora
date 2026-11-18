@@ -83,6 +83,50 @@ it('shows the dashboard with matching metrics to the owner', function (): void {
         ->and($summary['orders'])->toBe(2);
 });
 
+it('breaks payments down by method on the dashboard and the payment-method report', function (): void {
+    $this->seed(PaymentMethodSeeder::class);
+
+    $orderId = seedOrder($this, '1000.00');
+    $oldOrderId = seedOrder($this, '50.00', now()->subDays(3)->toDateTimeString());
+
+    foreach ([['cash', '600.00', $orderId, now()], ['bkash', '400.00', $orderId, now()], ['cash', '50.00', $oldOrderId, now()->subDays(3)]] as [$method, $amount, $order, $at]) {
+        DB::table('payments')->insert([
+            'order_id' => $order,
+            'method' => $method,
+            'amount' => $amount,
+            'status' => 'completed',
+            'created_at' => $at,
+            'updated_at' => $at,
+        ]);
+    }
+
+    $dashboard = $this->actingAs($this->owner, 'staff')->get('/admin?branch='.$this->branch->id);
+
+    $dashboard->assertOk();
+
+    $methods = $dashboard->viewData('page')['props']['salesByPaymentMethod'];
+
+    // Biggest method first, payment method names resolved, out-of-period payment left out.
+    expect($methods)->toHaveCount(2)
+        ->and($methods[0])->toBe(['method' => 'cash', 'name' => 'Cash', 'name_bn' => 'নগদ', 'amount' => '600.00', 'payments' => 1])
+        ->and($methods[1]['method'])->toBe('bkash')
+        ->and($methods[1]['name'])->toBe('bKash')
+        ->and($methods[1]['name_bn'])->toBe('বিকাশ')
+        ->and($methods[1]['amount'])->toBe('400.00');
+
+    $report = $this->actingAs($this->owner, 'staff')->get('/admin/reports?type=payment-method&from='.now()->toDateString().'&to='.now()->toDateString());
+
+    $report->assertOk();
+
+    $props = $report->viewData('page')['props'];
+
+    expect($props['rows'][0])->toBe(['method' => 'Cash', 'payments' => 1, 'amount' => '600.00', 'share' => '60.0%'])
+        ->and($props['rows'][1]['method'])->toBe('bKash')
+        ->and($props['rows'][1]['share'])->toBe('40.0%')
+        ->and($props['summaryCards'][0]['value'])->toBe('1000.00')
+        ->and($props['summaryCards'][1]['value'])->toBe('2');
+});
+
 it('computes the net profit from all cost lines', function (): void {
     seedOrder($this, '1000.00'); // food cost 300
 

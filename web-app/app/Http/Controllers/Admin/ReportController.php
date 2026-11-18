@@ -297,6 +297,21 @@ class ReportController extends Controller
     {
         $rows = $this->metrics->salesByPaymentMethod($branchId, $from, $to);
 
+        $total = array_sum(array_map(fn (array $row): float => (float) $row['amount'], $rows));
+
+        $locale = app()->getLocale();
+
+        $rows = array_map(function (array $row) use ($total, $locale): array {
+            $name = $locale === 'bn' && $row['name_bn'] !== null ? $row['name_bn'] : $row['name'];
+
+            return [
+                'method' => (string) $name,
+                'payments' => $row['payments'],
+                'amount' => $row['amount'],
+                'share' => $total > 0 ? number_format(((float) $row['amount'] / $total) * 100, 1, '.', '').'%' : '0.0%',
+            ];
+        }, $rows);
+
         return [
             __('reports.types.payment_method'),
             __('reports.descriptions.payment_method'),
@@ -305,8 +320,12 @@ class ReportController extends Controller
                 ['key' => 'method', 'label' => __('reports.method'), 'type' => 'text'],
                 ['key' => 'payments', 'label' => __('reports.payments'), 'type' => 'number'],
                 ['key' => 'amount', 'label' => __('reports.amount'), 'type' => 'money'],
+                ['key' => 'share', 'label' => __('reports.share'), 'type' => 'text'],
             ],
-            [],
+            [
+                ['label' => __('reports.amount'), 'value' => number_format($total, 2, '.', '')],
+                ['label' => __('reports.payments'), 'value' => (string) array_sum(array_column($rows, 'payments'))],
+            ],
         ];
     }
 

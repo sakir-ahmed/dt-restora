@@ -39,6 +39,7 @@ const props = defineProps({
     previous: { type: Object, required: true },
     salesByDay: { type: Array, default: () => [] },
     salesByChannel: { type: Array, default: () => [] },
+    salesByPaymentMethod: { type: Array, default: () => [] },
     topItems: { type: Array, default: () => [] },
     branchComparison: { type: Array, default: () => [] },
     expensesByCategory: { type: Array, default: () => [] },
@@ -121,6 +122,9 @@ function profitFacts() {
     ];
 }
 
+// Payment methods carry their own names in both languages from the server.
+const methodName = (row) => (page.props.locale === 'bn' && row.name_bn ? row.name_bn : row.name);
+
 const infoDetails = computed(() => {
     const s = props.summary;
     const channelName = (row) => t('dashboard.channel.' + row.channel);
@@ -201,6 +205,9 @@ const infoDetails = computed(() => {
         },
         sales_by_channel: {
             facts: props.salesByChannel.map((row) => fact(channelName(row), money(row.total) + ' / ' + formatNumber(row.orders))),
+        },
+        payments_by_method: {
+            facts: props.salesByPaymentMethod.map((row) => fact(methodName(row), money(row.amount) + ' / ' + formatNumber(row.payments))),
         },
         top_items: {
             facts: props.topItems.map((row) => fact(row.name, money(row.revenue) + ' / ' + formatNumber(row.qty))),
@@ -284,6 +291,18 @@ const channelData = computed(() => {
         datasets: [{
             data: props.salesByChannel.map((row) => Number(row.total)),
             backgroundColor: props.salesByChannel.map((_, index) => palette[index % palette.length]),
+        }],
+    };
+});
+
+const methodData = computed(() => {
+    const palette = [chartColors.success, chartColors.primary, chartColors.accent, chartColors.danger, chartColors.muted];
+
+    return {
+        labels: props.salesByPaymentMethod.map((row) => methodName(row)),
+        datasets: [{
+            data: props.salesByPaymentMethod.map((row) => Number(row.amount)),
+            backgroundColor: props.salesByPaymentMethod.map((_, index) => palette[index % palette.length]),
         }],
     };
 });
@@ -486,6 +505,19 @@ const quickLinks = computed(() => {
             >
                 <template #chart>
                     <Doughnut :data="channelData" :options="donutOptions" />
+                </template>
+            </ChartCard>
+
+            <ChartCard
+                info
+                :title="t('dashboard.payments_by_method')"
+                @info="infoKey = 'payments_by_method'"
+                :table-headers="[t('reports.method'), t('reports.amount'), t('reports.payments')]"
+                :table-rows="salesByPaymentMethod.map((row) => [methodName(row), row.amount, row.payments])"
+                export-name="payments-by-method"
+            >
+                <template #chart>
+                    <Doughnut :data="methodData" :options="donutOptions" />
                 </template>
             </ChartCard>
 

@@ -14,6 +14,7 @@ use App\Models\Expense;
 use App\Models\LoyaltyEntry;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\PaymentMethod;
 use App\Models\Preorder;
 use App\Models\Reservation;
 use App\Models\Setting;
@@ -456,7 +457,7 @@ class MetricsService
     }
 
     /**
-     * @return array<int, array{method: string, amount: string, payments: int}>
+     * @return array<int, array{method: string, name: string, name_bn: ?string, amount: string, payments: int}>
      */
     public function salesByPaymentMethod(?int $branchId, CarbonInterface $from, CarbonInterface $to): array
     {
@@ -467,17 +468,29 @@ class MetricsService
             ->when($branchId, fn ($query) => $query->where('orders.branch_id', $branchId))
             ->whereBetween('payments.created_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
             ->groupBy('payments.method')
-            ->orderBy('payments.method')
             ->selectRaw('payments.method as method')
             ->selectRaw('SUM(payments.amount) as amount')
             ->selectRaw('COUNT(*) as payments_count')
-            ->get();
+            ->get()
+            ->sortByDesc('amount')
+            ->values();
 
-        return $rows->map(fn ($row) => [
-            'method' => (string) $row->method,
-            'amount' => number_format((float) $row->amount, 2, '.', ''),
-            'payments' => (int) $row->payments_count,
-        ])->all();
+        $methods = PaymentMethod::query()
+            ->whereIn('code', $rows->pluck('method'))
+            ->get()
+            ->keyBy('code');
+
+        return $rows->map(function ($row) use ($methods): array {
+            $method = $methods->get((string) $row->method);
+
+            return [
+                'method' => (string) $row->method,
+                'name' => $method === null ? ucfirst((string) $row->method) : $method->name,
+                'name_bn' => $method === null ? null : $method->name_bn,
+                'amount' => number_format((float) $row->amount, 2, '.', ''),
+                'payments' => (int) $row->payments_count,
+            ];
+        })->all();
     }
 
     /**
