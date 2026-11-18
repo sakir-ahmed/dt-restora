@@ -333,7 +333,9 @@ Route::prefix('admin')
         Route::get('recipes/{item}/cost', [RecipeController::class, 'cost'])->name('recipes.cost')->middleware('permission:recipes.manage');
 
         Route::get('wastage', [WastageController::class, 'index'])->name('wastage.index')->middleware('permission:inventory.view');
+        Route::get('wastage/menu-item/{item}', [WastageController::class, 'menuItem'])->name('wastage.menu-item')->middleware('permission:wastage.log');
         Route::post('wastage', [WastageController::class, 'store'])->name('wastage.store')->middleware('permission:wastage.log');
+        Route::put('wastage/{wastage}', [WastageController::class, 'update'])->name('wastage.update')->middleware('permission:wastage.log');
         Route::delete('wastage/{wastage}', [WastageController::class, 'destroy'])->name('wastage.destroy')->middleware('permission:wastage.log');
 
         Route::get('stock-counts', [StockCountController::class, 'index'])->name('stock-counts.index')->middleware('permission:inventory.view');

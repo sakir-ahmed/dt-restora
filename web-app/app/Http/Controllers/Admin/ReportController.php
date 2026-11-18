@@ -150,14 +150,16 @@ class ReportController extends Controller
         $rows = Wastage::query()
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
             ->whereBetween('created_at', [$from->startOfDay(), $to->endOfDay()])
-            ->with(['ingredient:id,name', 'unit:id,symbol', 'user:id,name'])
+            ->with(['ingredient:id,name', 'unit:id,symbol', 'user:id,name', 'menuItem:id,name'])
             ->latest()
             ->limit(1000)
             ->get()
             ->map(fn ($wastage) => [
                 'date' => $wastage->created_at->toDateString(),
-                'ingredient' => $wastage->ingredient->name ?? '',
-                'qty' => trim((string) $wastage->qty.' '.($wastage->unit->symbol ?? '')),
+                'ingredient' => $wastage->menuItem->name ?? $wastage->ingredient->name ?? '',
+                'qty' => $wastage->isMenuItemWastage()
+                    ? trim((string) $wastage->qty.' '.__('inventory.portions'))
+                    : trim((string) $wastage->qty.' '.($wastage->unit->symbol ?? '')),
                 'reason' => __('reasons.'.$wastage->reason_code),
                 'user' => $wastage->user->name ?? '',
                 'cost' => (string) $wastage->cost,

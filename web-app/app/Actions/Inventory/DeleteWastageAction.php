@@ -24,19 +24,39 @@ class DeleteWastageAction
     {
         return DB::transaction(function () use ($wastage, $user, $reason, $note): Wastage {
             $wastage = Wastage::query()->whereKey($wastage->id)->lockForUpdate()->firstOrFail();
-            $wastage->loadMissing('unit');
 
-            $baseQty = $wastage->unit->toBase((string) $wastage->qty);
+            if ($wastage->isMenuItemWastage()) {
+                // A dish wastage put back every frozen recipe line, not one unit conversion.
+                $wastage->loadMissing('lines');
 
-            $this->stock->adjust(
-                branchId: $wastage->branch_id,
-                ingredientId: $wastage->ingredient_id,
-                baseQtyDelta: $baseQty,
-                movementType: 'wastage',
-                reference: $wastage,
-                unitCost: $baseQty > 0 ? round((float) $wastage->cost / $baseQty, 4) : null,
-                userId: $user?->id,
-            );
+                foreach ($wastage->lines as $line) {
+                    $baseQty = (float) $line->base_qty;
+
+                    $this->stock->adjust(
+                        branchId: $wastage->branch_id,
+                        ingredientId: $line->ingredient_id,
+                        baseQtyDelta: $baseQty,
+                        movementType: 'wastage',
+                        reference: $wastage,
+                        unitCost: $baseQty > 0 ? round((float) $line->cost / $baseQty, 4) : null,
+                        userId: $user?->id,
+                    );
+                }
+            } else {
+                $wastage->loadMissing('unit');
+
+                $baseQty = $wastage->unit->toBase((string) $wastage->qty);
+
+                $this->stock->adjust(
+                    branchId: $wastage->branch_id,
+                    ingredientId: $wastage->ingredient_id,
+                    baseQtyDelta: $baseQty,
+                    movementType: 'wastage',
+                    reference: $wastage,
+                    unitCost: $baseQty > 0 ? round((float) $wastage->cost / $baseQty, 4) : null,
+                    userId: $user?->id,
+                );
+            }
 
             $this->reverseJournalsFor($wastage, $user, __('inventory.wastage_delete_journal_note', ['id' => $wastage->id]));
 

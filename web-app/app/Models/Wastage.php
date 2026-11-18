@@ -9,6 +9,7 @@ use App\Models\Concerns\SafeDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Wastage extends Model
 {
@@ -20,7 +21,7 @@ class Wastage extends Model
     ];
 
     protected $fillable = [
-        'branch_id', 'ingredient_id', 'unit_id', 'qty', 'reason_code',
+        'branch_id', 'menu_item_id', 'ingredient_id', 'unit_id', 'qty', 'reason_code',
         'note', 'cost', 'user_id',
     ];
 
@@ -35,10 +36,32 @@ class Wastage extends Model
         return $this->belongsTo(Branch::class);
     }
 
+    /** @return BelongsTo<MenuItem, $this> */
+    public function menuItem(): BelongsTo
+    {
+        return $this->belongsTo(MenuItem::class);
+    }
+
     /** @return BelongsTo<Ingredient, $this> */
     public function ingredient(): BelongsTo
     {
         return $this->belongsTo(Ingredient::class);
+    }
+
+    /**
+     * The ingredients deducted for a menu item wastage, one row per
+     * recipe line, frozen at wastage time.
+     *
+     * @return HasMany<WastageItem, $this>
+     */
+    public function lines(): HasMany
+    {
+        return $this->hasMany(WastageItem::class);
+    }
+
+    public function isMenuItemWastage(): bool
+    {
+        return $this->menu_item_id !== null;
     }
 
     /** @return BelongsTo<Unit, $this> */
