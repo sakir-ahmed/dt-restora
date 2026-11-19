@@ -626,6 +626,24 @@ it('lists every other kitchen step for an order, paid or not, and none for a del
                 && ! isset(collect($orders)->firstWhere('id', $deleted->id)['next_statuses'][0])));
 });
 
+it('names the payment methods alongside the orders so the payment column can badge each one', function (): void {
+    $order = createPosOrder($this);
+
+    $payments = app(PayOrderAction::class)->executeSplit($order, [
+        ['method' => 'cash', 'amount' => 200],
+        ['method' => 'bkash', 'amount' => (float) $order->total - 200, 'reference' => 'TRX-8'],
+    ], $this->cashier);
+
+    app(PayOrderAction::class)->approveManual($payments[1], $this->manager);
+
+    $this->actingAs($this->manager, 'staff')
+        ->get(route('admin.orders.index'))
+        ->assertInertia(fn ($page) => $page
+            ->where('methods', fn ($methods) => collect($methods)->contains(fn ($entry) => $entry['method'] === 'cash' && $entry['name'] === 'Cash')
+                && collect($methods)->contains(fn ($entry) => $entry['method'] === 'bkash' && $entry['name_bn'] === 'বিকাশ'))
+            ->where('orders', fn ($orders) => collect(collect($orders)->firstWhere('id', $order->id)['payments'])->pluck('method')->sort()->values()->all() === ['bkash', 'cash']));
+});
+
 it('keeps the kitchen status of an order when its items are edited', function (): void {
     $order = createPosOrder($this);
     $order->update(['status' => OrderStatus::Served->value]);

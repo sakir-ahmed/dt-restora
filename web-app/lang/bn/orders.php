@@ -258,6 +258,7 @@ return [
     'details_title' => 'অর্ডার :invoice',
     'payments_heading' => 'পেমেন্ট',
     'no_payments' => 'এখনও কোনো পেমেন্ট নেওয়া হয়নি।',
+    'payment_breakdown' => 'পেমেন্ট পদ্ধতি অনুযায়ী পরিশোধিত',
     'delivery_fee' => 'ডেলিভারি ফি',
     'created_at' => 'তৈরি',
     'due_collection' => 'বাকি আদায়',

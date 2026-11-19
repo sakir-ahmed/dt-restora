@@ -258,6 +258,7 @@ return [
     'details_title' => 'Order :invoice',
     'payments_heading' => 'Payments',
     'no_payments' => 'No payment received yet.',
+    'payment_breakdown' => 'Paid by payment method',
     'delivery_fee' => 'Delivery fee',
     'created_at' => 'Created',
     'due_collection' => 'Due collection',

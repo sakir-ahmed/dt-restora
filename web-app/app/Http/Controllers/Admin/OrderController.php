@@ -21,6 +21,7 @@ use App\Http\Requests\Admin\CreateOrderRequest;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Order;
+use App\Models\PaymentMethod;
 use App\Models\RestaurantTable;
 use App\Models\Setting;
 use App\Models\Shift;
@@ -80,6 +81,10 @@ class OrderController extends Controller
         return Inertia::render('admin/orders/Index', [
             'orders' => $orders,
             'filters' => $request->only(['status', 'search', 'kind', 'cashier', 'cook', 'waiter', 'table', 'channel', 'type', 'payment', 'from', 'to']),
+            // Every payment method, so the table can name what each order was paid with.
+            'methods' => PaymentMethod::query()->orderBy('sort_order')->orderBy('id')->get()
+                ->map(fn (PaymentMethod $method): array => ['method' => $method->code, 'name' => $method->name, 'name_bn' => $method->name_bn])
+                ->values(),
             // People and tables to filter by: the branch's staff (and head office), and its tables.
             'staffOptions' => User::query()
                 ->where(fn ($query) => $query->where('branch_id', $branch->id)->orWhereNull('branch_id'))

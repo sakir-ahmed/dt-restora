@@ -11,6 +11,7 @@ import StatusBadge from '@/components/ui-kit/StatusBadge.vue';
 import { useConfirm } from '@/components/ui-kit/useConfirm.js';
 import { t } from '@/lib/i18n';
 import { formatMoney } from '@/lib/format';
+import { localized } from '@/lib/site';
 import ChannelBadge from '@/components/ChannelBadge.vue';
 import { notify } from '@/lib/notify';
 import { shortInvoice } from '@/lib/invoice';
@@ -22,6 +23,7 @@ const props = defineProps({
     filters: { type: Object, default: () => ({}) },
     staffOptions: { type: Array, default: () => [] },
     tableOptions: { type: Array, default: () => [] },
+    methods: { type: Array, default: () => [] },
     canApproveOrders: { type: Boolean, default: false },
     canVoid: { type: Boolean, default: false },
     canApproveVoid: { type: Boolean, default: false },
@@ -68,7 +70,7 @@ const columns = computed(() => [
     { key: 'items_count', label: t('inventory.items_label'), type: 'number', minWidth: '64px' },
     { key: 'total_display', label: t('inventory.total'), type: 'money', sortable: true, minWidth: '96px' },
     { key: 'order_status', label: t('orders.order_status'), minWidth: '104px' },
-    { key: 'payment_status', label: t('orders.payment_status'), minWidth: '104px' },
+    { key: 'payment_status', label: t('orders.payment_status') },
     { key: 'actions', label: '', align: 'right', type: 'component' },
 ]);
 
@@ -109,10 +111,41 @@ function paymentStatusOf(order) {
     return receivedAmount(order) > 0 ? 'partial' : 'unpaid';
 }
 
+function methodLabel(code) {
+    const entry = props.methods.find((method) => method.method === code);
+
+    return entry ? localized(entry, 'name') : code;
+}
+
+// What came in per payment method, so the table can badge the money next to the status.
+function paidByMethod(order) {
+    const sums = new Map();
+
+    for (const payment of order.payments ?? []) {
+        if (payment.status !== 'completed') {
+            continue;
+        }
+
+        sums.set(payment.method, (sums.get(payment.method) ?? 0) + Number(payment.amount));
+    }
+
+    return [...sums.entries()].map(([method, amount]) => ({ method, label: methodLabel(method), amount }));
+}
+
+function remainingOf(order) {
+    if (order.status === 'void' || (order.status === 'paid' && ! order.is_due)) {
+        return 0;
+    }
+
+    return Math.max(0, Number(order.total) - receivedAmount(order));
+}
+
 const rows = computed(() => props.orders.map((order) => ({
     ...order,
     order_status: orderStatusOf(order),
     payment_status: paymentStatusOf(order),
+    paid_methods: order.status === 'void' ? [] : paidByMethod(order),
+    remaining: order.status === 'void' ? 0 : remainingOf(order),
     table_name: order.table?.name,
     items_count: order.items?.length ?? 0,
     total_display: formatMoney(order.total),
@@ -516,10 +549,24 @@ async function putOnDue(order) {
                 <StatusBadge :status="row.order_status" />
             </template>
             <template #cell(payment_status)="{ row }">
-                <div class="flex items-center gap-1">
-                    <StatusBadge :status="row.payment_status" />
+                <div class="flex flex-wrap items-center gap-1" :title="row.paid_methods.length ? t('orders.payment_breakdown') : undefined">
+                    <StatusBadge :status="row.payment_status" compact />
                     <span v-if="row.has_pending_void" class="text-warning" :title="t('orders.void_pending')">
                         <AppIcon name="triangle-exclamation" size="12" />
+                    </span>
+                    <span
+                        v-for="entry in row.paid_methods"
+                        :key="entry.method"
+                        class="inline-flex items-baseline gap-1 rounded bg-muted/50 px-1 py-0.5 text-[10px] leading-none"
+                    >
+                        <span class="text-muted">{{ entry.label }}</span>
+                        <span class="font-semibold text-foreground">{{ formatMoney(entry.amount) }}</span>
+                    </span>
+                    <span
+                        v-if="row.remaining > 0"
+                        class="inline-flex rounded bg-danger/10 px-1 py-0.5 text-[10px] font-semibold leading-none text-danger"
+                    >
+                        {{ t('dues.balance') }} {{ formatMoney(row.remaining) }}
                     </span>
                 </div>
             </template>
@@ -595,6 +642,7 @@ async function putOnDue(order) {
 
         <OrderDetailPanel
             :order="selected"
+            :methods="methods"
             :can-pay="canPay"
             :can-edit="canEdit"
             :can-delete="canVoid"

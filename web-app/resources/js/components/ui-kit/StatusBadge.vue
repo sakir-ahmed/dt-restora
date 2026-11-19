@@ -5,6 +5,7 @@ import AppIcon from '@/components/AppIcon.vue';
 
 const props = defineProps({
     status: { type: String, required: true },
+    compact: { type: Boolean, default: false },
 });
 
 /**
@@ -51,10 +52,10 @@ const label = computed(() => {
 
 <template>
     <span
-        class="inline-flex h-5 min-w-[104px] items-center justify-center gap-1 rounded-md px-2 text-[11px] font-medium"
-        :class="meta.classes"
+        class="inline-flex items-center justify-center rounded-md font-medium"
+        :class="[compact ? 'h-4.5 gap-0.5 px-1.5 text-[10px]' : 'h-5 min-w-[104px] gap-1 px-2 text-[11px]', meta.classes]"
     >
-        <AppIcon :name="meta.icon" size="10" />
+        <AppIcon :name="meta.icon" :size="compact ? 9 : 10" />
         {{ label }}
     </span>
 </template>
