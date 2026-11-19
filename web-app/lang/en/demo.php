@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 return [
     'gate_title' => 'Welcome to the live demo',
-    'gate_subtitle' => 'See how a restaurant runs on one system: website, ordering, kitchen, POS, stock and accounts. Enter your mobile number to start your demo journey.',
+    'gate_subtitle' => 'Please put your mobile number, we will contact you.',
     'mobile_label' => 'Your mobile number',
     'mobile_invalid' => 'Enter a valid Bangladesh mobile number, like 01712345678.',
     'consent' => 'I agree that Datatech BD Ltd. may contact me about this demo on this number.',

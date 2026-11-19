@@ -16,12 +16,6 @@ const busy = ref(false);
 const errors = ref({});
 const root = ref(null);
 
-const points = [
-    { icon: 'cash-register', key: 'pos' },
-    { icon: 'utensils', key: 'kds' },
-    { icon: 'chart-line', key: 'reports' },
-];
-
 watch(() => props.open, (open) => {
     if (open) {
         nextTick(() => root.value?.querySelector('input[type="tel"]')?.focus());
@@ -67,6 +61,7 @@ async function submit() {
                 v-if="open"
                 class="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm sm:items-center sm:p-4"
                 @keydown.esc="emit('skip')"
+                @click.self="emit('skip')"
             >
                 <div
                     ref="root"
@@ -101,13 +96,6 @@ async function submit() {
                             <p v-if="errors.consent" class="mt-1 text-xs text-danger" role="alert">{{ errors.consent[0] }}</p>
                         </div>
 
-                        <ul class="flex flex-col gap-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-[12px] text-muted">
-                            <li v-for="point in points" :key="point.key" class="flex items-center gap-1.5">
-                                <AppIcon :name="point.icon" size="12" class="text-accent" />
-                                {{ t(`demo.features.${point.key}.title`) }}
-                            </li>
-                        </ul>
-
                         <button
                             type="submit"
                             :disabled="busy"
@@ -124,8 +112,6 @@ async function submit() {
                         >
                             {{ t('demo.skip') }}
                         </button>
-
-                        <p class="text-center text-[11px] leading-snug text-muted">{{ t('demo.privacy_note') }}</p>
                     </form>
                 </div>
             </div>

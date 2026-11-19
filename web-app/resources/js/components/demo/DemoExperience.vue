@@ -268,16 +268,16 @@ onBeforeUnmount(() => {
                 @join="openGate"
             />
 
-            <div v-if="! launcherHidden" class="fixed right-3 z-[60] sm:right-4" style="bottom: var(--demo-fab, 1rem)">
+            <div v-if="! launcherHidden" class="fixed left-1/2 z-[60] -translate-x-1/2" style="bottom: var(--demo-fab, 0.75rem)">
                 <button
                     type="button"
-                    class="relative flex h-11 items-center gap-2 rounded-full bg-accent px-3.5 text-accent-foreground shadow-lg transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-accent"
+                    class="relative flex h-9 items-center gap-1.5 rounded-full bg-accent px-3.5 text-[12px] font-semibold text-accent-foreground shadow-lg transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-accent"
                     :aria-label="t('demo.launcher_open')"
                     :aria-expanded="guideOpen"
                     @click="toggleGuide"
                 >
-                    <AppIcon name="route" size="15" />
-                    <span class="hidden text-[13px] font-semibold sm:inline">{{ t('demo.launcher') }}</span>
+                    <AppIcon name="route" size="13" />
+                    {{ t('demo.launcher') }}
                 </button>
                 <span v-if="attention" class="pointer-events-none absolute -left-0.5 -top-0.5 flex h-3 w-3" aria-hidden="true">
                     <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger opacity-75" />
