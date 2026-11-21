@@ -128,6 +128,10 @@ const inputClass = 'h-7 w-full rounded-md border border-border bg-surface px-2 t
     <section>
         <h2 class="text-[13px] font-semibold text-foreground">{{ t('settings.section_payments') }}</h2>
         <p class="mb-2 text-xs text-muted">{{ t('settings.section_payments_helper') }}</p>
+        <div class="mb-3 rounded-md border border-border px-2.5 py-2">
+            <SwitchField v-model="pos.wallet_verification_enabled" :label="t('settings.wallet_verification')" />
+            <p class="mt-1 text-xs text-muted">{{ t('settings.wallet_verification_helper') }}</p>
+        </div>
         <ul class="divide-y divide-border rounded-md border border-border">
             <li v-for="(entry, index) in pos.payment_methods" :key="entry.method" class="flex items-center gap-2 px-2 py-1.5">
                 <input v-model="entry.enabled" type="checkbox" :class="checkboxClass" :aria-label="entry.name">

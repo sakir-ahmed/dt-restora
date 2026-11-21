@@ -17,6 +17,7 @@ const MAP = {
     paid: { classes: 'bg-success/10 text-success', icon: 'circle-check' },
     completed: { classes: 'bg-success/10 text-success', icon: 'circle-check' },
     unpaid: { classes: 'bg-warning/15 text-warning', icon: 'clock' },
+    verifying: { classes: 'bg-warning/15 text-warning', icon: 'hourglass-half' },
     partial: { classes: 'bg-accent/15 text-primary', icon: 'hand-holding-dollar' },
     due: { classes: 'bg-danger/10 text-danger', icon: 'hand-holding-dollar' },
     awaiting: { classes: 'bg-danger/10 text-danger', icon: 'bell' },

@@ -396,6 +396,9 @@ it('completes a bank POS payment at once and keeps a wallet payment pending', fu
     PaymentMethod::query()->create(['code' => 'ebl_pos', 'name' => 'EBL POS', 'type' => 'card', 'sort_order' => 8]);
     PaymentMethod::query()->create(['code' => 'rocket', 'name' => 'Rocket', 'type' => 'wallet', 'sort_order' => 9]);
 
+    // The wallet half of this test exercises the waiting state a branch opts into.
+    $this->branch->update(['pos_settings' => ['wallet_verification_enabled' => true]]);
+
     $single = posOrder($this);
 
     $this->actingAs($this->cashier, 'staff')->post(route('admin.payments.single', $single), ['method' => 'ebl_pos', 'reference' => 'SLIP-1'])->assertRedirect();

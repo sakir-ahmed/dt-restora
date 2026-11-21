@@ -94,6 +94,8 @@ final class PosSettings
             // Off until a branch wants to send invoices as a picture (copy, share) instead of only printing them.
             'invoice_share_image' => false,
             'invoice_footer' => true,
+            // A wallet payment typed by the cashier is trusted at once. A branch can ask for a manager's check instead.
+            'wallet_verification_enabled' => false,
             // A pre-order or reservation meal goes to the kitchen board this many minutes before its time.
             'preorder_release_minutes' => 45,
             'invoice_pattern' => self::DEFAULT_PATTERN,
@@ -126,6 +128,14 @@ final class PosSettings
     public static function invoiceShareImageEnabled(?Branch $branch): bool
     {
         return (bool) ($branch?->pos_settings['invoice_share_image'] ?? false);
+    }
+
+    /**
+     * Whether a manual wallet payment waits for a manager's verification. Off unless the branch switched it on.
+     */
+    public static function walletVerificationEnabled(?Branch $branch): bool
+    {
+        return (bool) ($branch?->pos_settings['wallet_verification_enabled'] ?? false);
     }
 
     /**
@@ -205,6 +215,7 @@ final class PosSettings
         $settings['invoice_logo'] = (bool) $settings['invoice_logo'];
         $settings['invoice_share_image'] = (bool) $settings['invoice_share_image'];
         $settings['invoice_footer'] = (bool) $settings['invoice_footer'];
+        $settings['wallet_verification_enabled'] = (bool) $settings['wallet_verification_enabled'];
         $settings['preorder_release_minutes'] = max(0, (int) $settings['preorder_release_minutes']);
         $settings['sounds'] = self::soundsFor($branch);
         $settings['cash_suggestions'] = is_array($suggestions)
@@ -351,6 +362,7 @@ final class PosSettings
             'pos.invoice_logo' => ['sometimes', 'boolean'],
             'pos.invoice_share_image' => ['sometimes', 'boolean'],
             'pos.invoice_footer' => ['sometimes', 'boolean'],
+            'pos.wallet_verification_enabled' => ['sometimes', 'boolean'],
             'pos.invoice_pattern' => ['required_with:pos', 'string', 'max:60', function (string $attribute, mixed $value, Closure $fail): void {
                 if (! is_string($value) || ! self::patternIsValid($value)) {
                     $fail(__('settings.invoice_pattern_invalid'));
@@ -405,6 +417,7 @@ final class PosSettings
             'invoice_logo' => (bool) ($pos['invoice_logo'] ?? false),
             'invoice_share_image' => (bool) ($pos['invoice_share_image'] ?? false),
             'invoice_footer' => (bool) ($pos['invoice_footer'] ?? true),
+            'wallet_verification_enabled' => (bool) ($pos['wallet_verification_enabled'] ?? false),
             'preorder_release_minutes' => (int) ($pos['preorder_release_minutes'] ?? 45),
             'invoice_pattern' => $pos['invoice_pattern'],
             'invoice_seq_digits' => (int) $pos['invoice_seq_digits'],

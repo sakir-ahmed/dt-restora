@@ -9,9 +9,11 @@ use App\Actions\Sales\StartGatewayPaymentAction;
 use App\Enums\OrderStatus;
 use App\Enums\OrderType;
 use App\Models\Branch;
+use App\Models\Journal;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Payment;
+use App\Models\PaymentMethod;
 use App\Models\User;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Database\Seeders\RoleSeeder;
@@ -27,6 +29,9 @@ beforeEach(function (): void {
         'services.bkash.base_url' => 'https://tokenized.pay.bka.sh/v1.2.0-beta']);
 
     $this->branch = Branch::factory()->create(['code' => 'BR01']);
+    // Most of this file exercises the manager-verification workflow, which a
+    // branch now opts into (it is off by default).
+    $this->branch->update(['pos_settings' => ['wallet_verification_enabled' => true]]);
     $this->cashier = User::factory()->role('cashier', $this->branch->id)->create();
     $this->manager = User::factory()->role('branch-manager', $this->branch->id)->create();
 
@@ -255,4 +260,134 @@ it('offers the branch pay methods on the orders page', function (): void {
     $disabled = $this->actingAs($this->cashier, 'staff')->get('/admin/orders')->inertiaProps();
 
     expect(array_column($disabled['payMethods'], 'method'))->not->toContain('card');
+});
+
+it('rejects a manual wallet amount above the balance', function (): void {
+    $this->actingAs($this->cashier, 'staff')
+        ->post("/admin/orders/{$this->order->id}/manual-payment", [
+            'method' => 'bkash',
+            'amount' => (string) ((float) $this->order->total + 100),
+            'reference' => null,
+        ])
+        ->assertSessionHasErrors();
+
+    expect(Payment::query()->where('order_id', $this->order->id)->count())->toBe(0);
+});
+
+it('posts the journal when a verified wallet payment closes the bill', function (): void {
+    app(PayOrderAction::class)->recordManualWallet($this->order, PaymentMethod::findByCode('bkash'), (float) $this->order->total, 'TRX-V', $this->cashier);
+
+    $payment = Payment::query()->where('order_id', $this->order->id)->firstOrFail();
+
+    app(PayOrderAction::class)->approveManual($payment, $this->manager);
+
+    expect($this->order->fresh()->status)->toBe(OrderStatus::Paid)
+        ->and(Journal::query()
+            ->where('source_type', $this->order->getMorphClass())
+            ->where('source_id', $this->order->id)
+            ->where('status', Journal::STATUS_POSTED)
+            ->exists())->toBeTrue();
+});
+
+it('posts the journal for a split that completes at once', function (): void {
+    app(PayOrderAction::class)->executeSplit($this->order, [
+        ['method' => 'cash', 'amount' => 200],
+        ['method' => 'card', 'amount' => (float) $this->order->total - 200],
+    ], $this->cashier);
+
+    expect($this->order->fresh()->status)->toBe(OrderStatus::Paid)
+        ->and(Journal::query()
+            ->where('source_type', $this->order->getMorphClass())
+            ->where('source_id', $this->order->id)
+            ->where('status', Journal::STATUS_POSTED)
+            ->exists())->toBeTrue();
+});
+
+it('lets a manager reject a pending wallet payment and the order stays payable', function (): void {
+    $payment = app(PayOrderAction::class)->recordManualWallet($this->order, PaymentMethod::findByCode('bkash'), 100, null, $this->cashier);
+
+    $this->actingAs($this->cashier, 'staff')
+        ->post("/admin/payments/{$payment->id}/reject")
+        ->assertForbidden();
+
+    $this->actingAs($this->manager, 'staff')
+        ->post("/admin/payments/{$payment->id}/reject")
+        ->assertRedirect();
+
+    expect($payment->fresh()->status)->toBe(Payment::STATUS_CANCELLED)
+        ->and($this->order->fresh()->status)->not->toBe(OrderStatus::Paid);
+
+    // Cash still settles the order normally afterwards.
+    app(PayOrderAction::class)->executeCash($this->order, (float) $this->order->total, $this->cashier);
+
+    expect($this->order->fresh()->status)->toBe(OrderStatus::Paid);
+});
+
+it('cancels pending wallet payments when the order is settled by another path', function (): void {
+    $payment = app(PayOrderAction::class)->recordManualWallet($this->order, PaymentMethod::findByCode('bkash'), (float) $this->order->total, null, $this->cashier);
+
+    app(PayOrderAction::class)->executeCash($this->order, (float) $this->order->total, $this->cashier);
+
+    expect($payment->fresh()->status)->toBe(Payment::STATUS_CANCELLED)
+        ->and($this->order->fresh()->status)->toBe(OrderStatus::Paid);
+
+    // Approving the cancelled record no longer moves money into a settled bill.
+    expect(fn () => app(PayOrderAction::class)->approveManual($payment->fresh(), $this->manager))->toThrow(ValidationException::class);
+});
+
+it('filters orders waiting for payment verification', function (): void {
+    app(PayOrderAction::class)->recordManualWallet($this->order, PaymentMethod::findByCode('bkash'), (float) $this->order->total, null, $this->cashier);
+
+    $verifying = $this->actingAs($this->cashier, 'staff')->get('/admin/orders?payment=verifying')->inertiaProps();
+
+    expect(collect($verifying['orders'])->pluck('id'))->toContain($this->order->id);
+
+    $paid = $this->actingAs($this->cashier, 'staff')->get('/admin/orders?payment=paid')->inertiaProps();
+
+    expect(collect($paid['orders'])->pluck('id'))->not->toContain($this->order->id);
+});
+
+it('completes a manual wallet payment at once when the branch switched verification off', function (): void {
+    $this->branch->update(['pos_settings' => ['wallet_verification_enabled' => false]]);
+
+    $this->actingAs($this->cashier, 'staff')
+        ->post("/admin/orders/{$this->order->id}/manual-payment", [
+            'method' => 'bkash',
+            'amount' => (string) $this->order->total,
+            'reference' => null,
+        ])
+        ->assertRedirect();
+
+    $payment = Payment::query()->where('order_id', $this->order->id)->firstOrFail();
+
+    expect($payment->status)->toBe(Payment::STATUS_COMPLETED)
+        ->and($payment->verified_at)->not->toBeNull()
+        ->and($this->order->fresh()->status)->toBe(OrderStatus::Paid)
+        ->and(Journal::query()
+            ->where('source_type', $this->order->getMorphClass())
+            ->where('source_id', $this->order->id)
+            ->where('status', Journal::STATUS_POSTED)
+            ->exists())->toBeTrue();
+});
+
+it('completes a split wallet line at once when verification is off', function (): void {
+    $this->branch->update(['pos_settings' => ['wallet_verification_enabled' => false]]);
+
+    $payments = app(PayOrderAction::class)->executeSplit($this->order, [
+        ['method' => 'cash', 'amount' => 200],
+        ['method' => 'bkash', 'amount' => (float) $this->order->total - 200],
+    ], $this->cashier);
+
+    expect($payments[1]->status)->toBe(Payment::STATUS_COMPLETED)
+        ->and($this->order->fresh()->status)->toBe(OrderStatus::Paid);
+});
+
+it('keeps a true balance for a partial wallet payment taken without verification', function (): void {
+    $this->branch->update(['pos_settings' => ['wallet_verification_enabled' => false]]);
+
+    $payment = app(PayOrderAction::class)->recordManualWallet($this->order, PaymentMethod::findByCode('bkash'), 100, null, $this->cashier);
+
+    expect($payment->status)->toBe(Payment::STATUS_COMPLETED)
+        ->and($this->order->fresh()->status)->not->toBe(OrderStatus::Paid)
+        ->and((float) $this->order->fresh()->balanceDue())->toBe((float) $this->order->total - 100);
 });

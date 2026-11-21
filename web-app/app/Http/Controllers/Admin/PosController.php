@@ -65,16 +65,20 @@ class PosController extends Controller
             'openOrders' => Order::query()
                 ->where('branch_id', $branch->id)
                 ->whereIn('status', array_map(fn (OrderStatus $status): string => $status->value, array_filter(OrderStatus::cases(), fn (OrderStatus $status): bool => $status->isKitchenActive())))
-                // Booking money on an order is not a payment that settles it: the order stays open.
-                ->whereDoesntHave('payments', fn (Builder $payments) => $payments->where('is_advance', false))
+                // An order stays in the lane until it is truly settled: part payments and
+                // wallet money waiting for verification keep it here, so nothing is orphaned.
                 ->withSum(['payments as advance_paid' => fn (Builder $payments) => $payments->where('is_advance', true)->where('status', 'completed')], 'amount')
+                ->withSum(['payments as received_paid' => fn (Builder $payments) => $payments->where('is_advance', false)->where('status', 'completed')], 'amount')
+                ->withSum(['payments as verifying_paid' => fn (Builder $payments) => $payments->where('status', 'pending_verification')], 'amount')
                 ->with(['items:id,order_id,menu_item_id,variant_id,name,quantity,add_ons', 'customer:id,mobile'])
                 ->latest()
                 ->limit(60)
                 ->get(['id', 'invoice_no', 'order_type', 'restaurant_table_id', 'customer_id', 'status', 'discount_type', 'discount_value', 'total', 'created_at'])
                 ->map(fn (Order $order): array => $order->toArray() + [
                     'advance' => (float) ($order->advance_paid ?? 0),
-                    'balance' => max(0, round((float) $order->total - (float) ($order->advance_paid ?? 0), 2)),
+                    'paid' => (float) ($order->received_paid ?? 0),
+                    'pending' => (float) ($order->verifying_paid ?? 0),
+                    'balance' => max(0, round((float) $order->total - (float) ($order->advance_paid ?? 0) - (float) ($order->received_paid ?? 0), 2)),
                 ])
                 ->values(),
             'editTarget' => $this->orderForEdit($request, $branch),
@@ -88,6 +92,7 @@ class PosController extends Controller
             'canOverrideDiscount' => $user->can('discounts.override'),
             'canVoid' => $user->can('orders.void'),
             'canCreateOrders' => $user->can('orders.create'),
+            'canVerifyPayments' => $user->can('payments.manage'),
             'canManageShifts' => $user->can('shifts.manage'),
             'posPinMinutes' => Setting::current()->pos_pin_minutes,
             'posLockEnabled' => (bool) Setting::current()->pos_lock_enabled,

@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Actions\Sales\PayOrderAction;
 use App\Actions\Sales\StartGatewayPaymentAction;
+use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Payment;
@@ -57,12 +58,19 @@ class PaymentController extends Controller
         ]);
 
         try {
-            $action->executeSplit($order, $validated['lines'], $request->user('staff'));
+            $payments = $action->executeSplit($order, $validated['lines'], $request->user('staff'));
         } catch (ValidationException $exception) {
             return back()->with('error', $exception->getMessage());
         }
 
-        return back()->with('success', __('payments.split_completed'));
+        return back()
+            ->with('success', __('payments.split_completed'))
+            ->with('payment', [
+                'order_id' => $order->id,
+                'invoice_no' => $order->invoice_no,
+                'change_due' => 0,
+            ])
+            ->with('pending_payments', $this->pendingSummary($payments));
     }
 
     /**
@@ -106,7 +114,7 @@ class PaymentController extends Controller
 
         abort_unless($method->isWallet(), 422);
 
-        $action->recordManualWallet(
+        $payment = $action->recordManualWallet(
             $order,
             $method,
             (float) $validated['amount'],
@@ -114,7 +122,19 @@ class PaymentController extends Controller
             $request->user('staff'),
         );
 
-        return back()->with('success', __('payments.manual_recorded'));
+        // With verification switched off the money is in at once, so the toast says so.
+        $message = $payment->status === Payment::STATUS_PENDING_VERIFICATION
+            ? __('payments.manual_recorded')
+            : __('payments.single_recorded', ['method' => $method->name]);
+
+        return back()
+            ->with('success', $message)
+            ->with('payment', [
+                'order_id' => $order->id,
+                'invoice_no' => $order->invoice_no,
+                'change_due' => 0,
+            ])
+            ->with('pending_payments', $this->pendingSummary([$payment]));
     }
 
     public function approveManual(Request $request, Payment $payment, PayOrderAction $action): RedirectResponse
@@ -125,6 +145,46 @@ class PaymentController extends Controller
 
         $action->approveManual($payment, $request->user('staff'));
 
-        return back()->with('success', __('payments.manual_approved'));
+        // The POS finishes the ticket with the paid fanfare only when the verified
+        // money really closed the bill.
+        return back()
+            ->with('success', __('payments.manual_approved'))
+            ->with('order_paid', Order::query()->whereKey($payment->order_id)->value('status') === OrderStatus::Paid->value);
+    }
+
+    /**
+     * The other side of verification: a wrong amount or a transfer that never
+     * arrived is cancelled so the order can be paid the normal way again.
+     */
+    public function rejectManual(Request $request, Payment $payment, PayOrderAction $action): RedirectResponse
+    {
+        $this->authorize('payments.manage');
+
+        abort_unless($request->user('staff')->canAccessBranch($payment->order->branch_id), 404);
+
+        $action->rejectManual($payment, $request->user('staff'));
+
+        return back()->with('success', __('payments.rejected'));
+    }
+
+    /**
+     * What the POS ticket needs to show an honest amber state: the manual
+     * wallet payments now waiting for a manager, with their ids so a manager
+     * can verify them right from the ticket.
+     *
+     * @param  array<int, Payment>  $payments
+     * @return array<int, array{id: int, method: string, amount: float}>
+     */
+    private function pendingSummary(array $payments): array
+    {
+        return collect($payments)
+            ->filter(fn (Payment $payment): bool => $payment->status === Payment::STATUS_PENDING_VERIFICATION)
+            ->map(fn (Payment $payment): array => [
+                'id' => $payment->id,
+                'method' => $payment->method,
+                'amount' => (float) $payment->amount,
+            ])
+            ->values()
+            ->all();
     }
 }

@@ -73,7 +73,7 @@ All branch routes are prefixed `/api/v1/branches/{branch}`.
 | PATCH  | `/orders/{order}/status`           | `pending → preparing → ready → served` (KDS uses this)                                          |
 | POST   | `/orders/{order}/approve`          | `orders.approve`: a guest order (table QR, website, online menu) with `approval_status` `awaiting` is approved and reaches the kitchen. Otherwise 422. |
 | POST   | `/orders/{order}/release`          | `orders.approve`: hand an approved pre-order or reservation meal (`kind` not `regular`) to the kitchen before its time. Otherwise 422. |
-| POST   | `/orders/{order}/payments`         | One or many payment lines. Needs `Idempotency-Key`.                                             |
+| POST   | `/orders/{order}/payments`         | One or many payment lines. Needs `Idempotency-Key`. Wallet lines complete at once; they wait for manager verification only when the branch switched it on (`pos_settings.wallet_verification_enabled`, off by default). |
 | POST   | `/orders/{order}/void-requests`    | Cashier requests a void with reason                                                             |
 | POST   | `/void-requests/{request}/approve` | Manager approval                                                                                |
 | GET    | `/orders?filter[search]=&filter[due]=1&filter[order_type]=&filter[date_to]=` | Extra filters: invoice, customer name or mobile; due sales only; type; end date |

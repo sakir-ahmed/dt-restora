@@ -12,7 +12,7 @@ The dashboard shows sales, food cost, wastage, salary, expenses, and net profit.
 
 ## Cashier
 
-Open a shift and count the opening cash. Take orders from the POS, hold a ticket if the guest is still deciding, then take cash or a recorded wallet payment. After a few idle minutes the POS locks and asks for your staff PIN. The open ticket stays on the screen. If the network drops, the order is saved on the device and syncs when the connection returns. Close the shift by counting the drawer. The screen shows the expected cash and the difference.
+Open a shift and count the opening cash. Take orders from the POS, hold a ticket if the guest is still deciding, then take cash or a recorded wallet payment. A wallet payment completes at once; a branch can instead ask for a manager's verification in Settings. After a few idle minutes the POS locks and asks for your staff PIN. The open ticket stays on the screen. If the network drops, the order is saved on the device and syncs when the connection returns. Close the shift by counting the drawer. The screen shows the expected cash and the difference.
 
 ## Kitchen
 

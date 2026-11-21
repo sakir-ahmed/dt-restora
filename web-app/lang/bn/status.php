@@ -28,6 +28,7 @@ return [
     'reserved' => 'সংরক্ষিত',
     'deleted' => 'মুছে ফেলা',
     'unpaid' => 'অপরিশোধিত',
+    'verifying' => 'যাচাই চলছে',
     'partial' => 'আংশিক পরিশোধ',
     'due' => 'বাকি',
     'completed' => 'সম্পন্ন',

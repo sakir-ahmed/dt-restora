@@ -185,9 +185,6 @@ class _PaymentFormState extends State<_PaymentForm> {
       if (_amountOf(l) <= 0) {
         return 'Every payment line needs an amount.';
       }
-      if (_needsReference(l.method) && l.reference.text.trim().isEmpty) {
-        return 'Add the transaction ID for the ${titleCase(l.method)} payment.';
-      }
     }
     final first = _lines.first;
     if (_lines.length == 1 && first.method == 'cash' && _amountOf(first) < widget.total - 0.009) {
@@ -407,7 +404,7 @@ class _PaymentFormState extends State<_PaymentForm> {
           if (!cash)
             field(
               line.reference,
-              _needsReference(line.method) ? 'Transaction ID (TrxID)' : 'Reference (optional)',
+              _needsReference(line.method) ? 'Transaction ID (TrxID, optional)' : 'Reference (optional)',
               type: TextInputType.text,
             ),
         ]),

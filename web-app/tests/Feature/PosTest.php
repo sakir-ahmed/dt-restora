@@ -20,6 +20,7 @@ use App\Models\IngredientStock;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Models\PaymentMethod;
 use App\Models\Recipe;
 use App\Models\RestaurantTable;
 use App\Models\Setting;
@@ -430,6 +431,25 @@ it('lists unpaid orders on the POS screen so they can be edited', function (): v
         ->assertInertia(fn ($page) => $page->has('openOrders', 1)->where('openOrders.0.id', $order->id));
 });
 
+it('keeps wallet-verifying orders in the open lane with the money they wait on', function (): void {
+    $this->branch->update(['pos_settings' => ['wallet_verification_enabled' => true]]);
+
+    $order = createPosOrder($this);
+
+    app(PayOrderAction::class)->recordManualWallet($order, PaymentMethod::findByCode('bkash'), (float) $order->total, null, $this->cashier);
+
+    $this->actingAs($this->manager, 'staff')->get('/admin/pos')
+        ->assertInertia(fn ($page) => $page
+            ->has('openOrders', 1)
+            ->where('openOrders.0.id', $order->id)
+            ->where('openOrders.0.pending', fn ($pending) => abs($pending - (float) $order->total) < 0.01)
+            ->where('openOrders.0.balance', fn ($balance) => abs($balance - (float) $order->total) < 0.01)
+            ->where('canVerifyPayments', true));
+
+    $this->actingAs($this->cashier, 'staff')->get('/admin/pos')
+        ->assertInertia(fn ($page) => $page->where('canVerifyPayments', false));
+});
+
 it('rejects POS access for roles without the permission', function (): void {
     $rider = User::factory()->role('rider', $this->branch->id)->create();
 
@@ -627,6 +647,8 @@ it('lists every other kitchen step for an order, paid or not, and none for a del
 });
 
 it('names the payment methods alongside the orders so the payment column can badge each one', function (): void {
+    $this->branch->update(['pos_settings' => ['wallet_verification_enabled' => true]]);
+
     $order = createPosOrder($this);
 
     $payments = app(PayOrderAction::class)->executeSplit($order, [

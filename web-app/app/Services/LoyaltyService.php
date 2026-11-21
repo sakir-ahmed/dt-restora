@@ -45,6 +45,18 @@ class LoyaltyService
             return null;
         }
 
+        // One earn per settled bill, whichever payment path completed it. A revision
+        // takes the points back first as an adjustment, so the net figure for the
+        // order says whether this completion already earned.
+        $netEarned = (int) LoyaltyEntry::query()
+            ->where('order_id', $order->id)
+            ->whereIn('type', [LoyaltyEntry::TYPE_EARNED, LoyaltyEntry::TYPE_ADJUSTED])
+            ->sum('points');
+
+        if ($netEarned > 0) {
+            return null;
+        }
+
         $settings = $this->settings->current();
 
         $eligible = (float) $order->subtotal - (float) $order->discount_amount;

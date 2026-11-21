@@ -20,6 +20,8 @@ class Payment extends Model
 
     public const STATUS_PENDING_VERIFICATION = 'pending_verification';
 
+    public const STATUS_CANCELLED = 'cancelled';
+
     use HasFactory;
 
     protected $fillable = [

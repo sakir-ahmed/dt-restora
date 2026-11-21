@@ -21,6 +21,7 @@ use App\Http\Requests\Admin\CreateOrderRequest;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\PaymentMethod;
 use App\Models\RestaurantTable;
 use App\Models\Setting;
@@ -60,6 +61,10 @@ class OrderController extends Controller
             ->when($request->string('payment')->toString(), fn ($query, $payment) => match ($payment) {
                 'paid' => $query->where('status', OrderStatus::Paid->value)->where('is_due', false),
                 'due' => $query->where('is_due', true),
+                'verifying' => $query
+                    ->whereNotIn('status', [OrderStatus::Paid->value, OrderStatus::Void->value])
+                    ->where('is_due', false)
+                    ->whereHas('payments', fn ($payments) => $payments->where('status', Payment::STATUS_PENDING_VERIFICATION)),
                 'unpaid' => $query->whereNotIn('status', [OrderStatus::Paid->value, OrderStatus::Void->value])->where('is_due', false),
                 default => $query,
             })
@@ -91,6 +96,8 @@ class OrderController extends Controller
                 ->map(fn (array $entry): array => ['method' => $entry['method'], 'name' => $entry['name'], 'name_bn' => $entry['name_bn'], 'type' => $entry['type']])
                 ->values()
                 ->all(),
+            // Whether wallet money waits for a manager here, so the verifying filter and labels show only when it does.
+            'walletVerificationEnabled' => PosSettings::walletVerificationEnabled($branch),
             // People and tables to filter by: the branch's staff (and head office), and its tables.
             'staffOptions' => User::query()
                 ->where(fn ($query) => $query->where('branch_id', $branch->id)->orWhereNull('branch_id'))

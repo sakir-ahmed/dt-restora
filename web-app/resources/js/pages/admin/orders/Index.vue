@@ -34,6 +34,7 @@ const props = defineProps({
     canEdit: { type: Boolean, default: false },
     canPos: { type: Boolean, default: false },
     shareImage: { type: Boolean, default: false },
+    walletVerificationEnabled: { type: Boolean, default: false },
 });
 
 const selectedId = ref(null);
@@ -82,6 +83,13 @@ function receivedAmount(order) {
         .reduce((sum, payment) => sum + Number(payment.amount), 0);
 }
 
+// Wallet money recorded but not verified: on its way in, not in yet.
+function pendingAmount(order) {
+    return (order.payments ?? [])
+        .filter((payment) => payment.status === 'pending_verification')
+        .reduce((sum, payment) => sum + Number(payment.amount), 0);
+}
+
 // Where the kitchen has the order. It is kept apart from payment, so an order paid first still shows its kitchen step.
 function orderStatusOf(order) {
     if (order.status === 'void') {
@@ -96,7 +104,8 @@ function orderStatusOf(order) {
     return order.kitchen_status ?? (order.status === 'paid' ? 'served' : order.status);
 }
 
-// Whether the money is in: deleted, due (balance to collect), paid, part paid by booking money, or unpaid.
+// Whether the money is in: deleted, due (balance to collect), paid, part paid, verifying
+// (wallet money recorded, waiting for a manager) or unpaid.
 function paymentStatusOf(order) {
     if (order.status === 'void') {
         return 'deleted';
@@ -110,7 +119,11 @@ function paymentStatusOf(order) {
         return 'paid';
     }
 
-    return receivedAmount(order) > 0 ? 'partial' : 'unpaid';
+    if (receivedAmount(order) > 0) {
+        return 'partial';
+    }
+
+    return pendingAmount(order) > 0 ? 'verifying' : 'unpaid';
 }
 
 function methodLabel(code) {
@@ -225,7 +238,8 @@ const personFilters = computed(() => [
         { value: 'aggregator', label: t('orders.channel_aggregator') },
     ] },
     { key: 'type', label: t('orders.type_label'), options: ['dine_in', 'takeaway', 'delivery'].map((type) => ({ value: type, label: t('orders.type.' + type) })) },
-    { key: 'payment', label: t('orders.payment_status'), options: ['paid', 'unpaid', 'due'].map((value) => ({ value, label: t('status.' + value) })) },
+    // The verifying filter matters only while wallet money can wait for a manager.
+    { key: 'payment', label: t('orders.payment_status'), options: ['paid', ...(props.walletVerificationEnabled ? ['verifying'] : []), 'unpaid', 'due'].map((value) => ({ value, label: t('status.' + value) })) },
 ]);
 
 const FILTER_KEYS = ['status', 'kind', 'cashier', 'cook', 'waiter', 'table', 'channel', 'type', 'payment', 'from', 'to', 'search'];
@@ -321,6 +335,27 @@ function approvePayment(payment) {
     router.post(route('admin.payments.approve', payment.id), {}, {
         preserveState: true,
         onSuccess: () => notify.success(t('payments.manual_approved')),
+    });
+}
+
+// The other side of verification: a wrong amount or a transfer that never
+// arrived is cancelled, and the order stays payable the normal way.
+async function rejectPayment(payment) {
+    const result = await confirm({
+        variant: 'warning',
+        level: 'simple',
+        title: t('payments.reject_title'),
+        message: t('payments.reject_message', { amount: formatMoney(payment.amount) }),
+        confirmText: t('payments.reject'),
+    });
+
+    if (! result.confirmed) {
+        return;
+    }
+
+    router.post(route('admin.payments.reject', payment.id), {}, {
+        preserveState: true,
+        onSuccess: () => notify.success(t('payments.rejected')),
     });
 }
 
@@ -683,6 +718,16 @@ async function putOnDue(order) {
                         {{ t('payments.verify') }}
                     </button>
                     <button
+                        v-if="canApprovePayments && (row.payments ?? []).some((p) => p.status === 'pending_verification')"
+                        type="button"
+                        class="flex h-6 items-center gap-1 rounded border border-danger/60 px-1.5 text-[11px] text-danger hover:bg-danger/10"
+                        :title="t('payments.reject_title')"
+                        @click.stop="rejectPayment((row.payments ?? []).find((p) => p.status === 'pending_verification'))"
+                    >
+                        <AppIcon name="circle-xmark" size="10" />
+                        {{ t('payments.reject') }}
+                    </button>
+                    <button
                         v-if="canVoid && row.raw_status !== 'void'"
                         type="button"
                         class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-danger/10 hover:text-danger"
@@ -722,6 +767,7 @@ async function putOnDue(order) {
             :order="payingOrder"
             :pay-methods="payMethods"
             :methods="methods"
+            :verification-enabled="walletVerificationEnabled"
             @close="payingOrder = null"
             @confirm="submitPay"
         />

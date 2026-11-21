@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Sales;
 
 use App\Enums\OrderStatus;
+use App\Models\Branch;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
@@ -12,6 +13,7 @@ use App\Models\Reservation;
 use App\Models\User;
 use App\Services\Accounting\AccountingService;
 use App\Services\LoyaltyService;
+use App\Services\PosSettings;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -64,6 +66,8 @@ class PayOrderAction
                 'paid_via_payment_id' => $payment->id,
                 'cashier_id' => $user->id ?? $order->cashier_id,
             ]);
+
+            $this->cancelPendingPayments($order, $user);
 
             app(AccountingService::class)->postOrderPaid($order->fresh(), $user);
             app(LoyaltyService::class)->earnForOrder($order);
@@ -121,6 +125,8 @@ class PayOrderAction
                 'cashier_id' => $user->id ?? $order->cashier_id,
             ]);
 
+            $this->cancelPendingPayments($order, $user);
+
             app(AccountingService::class)->postOrderPaid($order->fresh(), $user);
             app(LoyaltyService::class)->earnForOrder($order);
 
@@ -166,6 +172,7 @@ class PayOrderAction
             }
 
             $payments = [];
+            $verifyWallets = PosSettings::walletVerificationEnabled($order->branch);
 
             foreach ($lines as $line) {
                 $method = PaymentMethod::findByCode((string) $line['method']);
@@ -181,7 +188,7 @@ class PayOrderAction
                     'method' => $method->code,
                     'amount' => (string) $line['amount'],
                     'reference' => $line['reference'] ?? null,
-                    'status' => $method->isWallet()
+                    'status' => $method->isWallet() && $verifyWallets
                         ? Payment::STATUS_PENDING_VERIFICATION
                         : Payment::STATUS_COMPLETED,
                     'user_id' => $user->id ?? $order->cashier_id,
@@ -197,6 +204,10 @@ class PayOrderAction
                     'paid_via_payment_id' => $payments[0]->id,
                 ]);
 
+                $this->cancelPendingPayments($order, $user);
+
+                app(AccountingService::class)->postOrderPaid($order->fresh(), $user);
+                app(LoyaltyService::class)->earnForOrder($order);
             }
 
             activity()->performedOn($order)->causedBy($user)->log('order.paid_split');
@@ -266,6 +277,8 @@ class PayOrderAction
                 'cashier_id' => $user->id ?? $order->cashier_id,
             ]);
 
+            $this->cancelPendingPayments($order, $user);
+
             app(AccountingService::class)->postOrderPaid($order->fresh(), $user);
 
             activity()
@@ -324,6 +337,8 @@ class PayOrderAction
                     'paid_via_payment_id' => $payment->id,
                 ]);
 
+                $this->cancelPendingPayments($order, $user);
+
                 app(AccountingService::class)->postOrderPaid($order->fresh(), $user);
                 app(LoyaltyService::class)->earnForOrder($order);
             }
@@ -335,8 +350,10 @@ class PayOrderAction
     }
 
     /**
-     * Record a manual mobile-wallet payment for later manager verification.
-     * The TrxID typed by the cashier is helpful for the check, not required.
+     * Record a manual mobile-wallet payment. The TrxID typed by the cashier is
+     * helpful for the check, not required. Unless the branch switched
+     * verification off, the payment waits for a manager; with it off the money
+     * is in at once and settles the bill like any other payment.
      */
     public function recordManualWallet(Order $order, PaymentMethod $method, float $amount, ?string $trxId = null, ?User $user = null): Payment
     {
@@ -349,19 +366,49 @@ class PayOrderAction
                 ]);
             }
 
-            return Payment::query()->create([
+            // More than the bill can never be verified into place: it would leave the order
+            // unpaid forever with money already handed over.
+            if ($amount <= 0 || round($amount, 2) > round($order->balanceDue(), 2)) {
+                throw ValidationException::withMessages([
+                    'amount' => __('payments.amount_exceeds_balance'),
+                ]);
+            }
+
+            $verify = PosSettings::walletVerificationEnabled($order->branch);
+
+            $payment = Payment::query()->create([
                 'order_id' => $order->id,
                 'method' => $method->code,
                 'amount' => (string) $amount,
                 'reference' => trim((string) $trxId) ?: null,
-                'status' => Payment::STATUS_PENDING_VERIFICATION,
+                'status' => $verify ? Payment::STATUS_PENDING_VERIFICATION : Payment::STATUS_COMPLETED,
+                'verified_at' => $verify ? null : now(),
                 'user_id' => $user->id ?? $order->cashier_id,
             ]);
+
+            if (! $verify && $order->balanceDue() <= 0.001) {
+                $order->update([
+                    'status' => OrderStatus::Paid->value,
+                    'paid_at' => now(),
+                    'paid_via_payment_id' => $payment->id,
+                ]);
+
+                $this->cancelPendingPayments($order, $user);
+
+                app(AccountingService::class)->postOrderPaid($order->fresh(), $user);
+                app(LoyaltyService::class)->earnForOrder($order);
+
+                activity()->performedOn($order)->causedBy($user)->log('order.paid_'.$method->code);
+            }
+
+            return $payment;
         });
     }
 
     /**
-     * Manager approves a manually recorded wallet payment.
+     * Manager approves a manually recorded wallet payment. When the money now
+     * covers the bill, the order is settled exactly like any other payment:
+     * journal posted, loyalty earned, sibling manual payments cancelled.
      */
     public function approveManual(Payment $payment, User $manager): Payment
     {
@@ -393,11 +440,82 @@ class PayOrderAction
                     'paid_via_payment_id' => $payment->id,
                 ]);
 
+                $this->cancelPendingPayments($order, $manager);
+
+                app(AccountingService::class)->postOrderPaid($order->fresh(), $manager);
+                app(LoyaltyService::class)->earnForOrder($order);
             }
 
             activity()->performedOn($payment)->causedBy($manager)->log('payment.manual_approved');
 
             return $payment;
         });
+    }
+
+    /**
+     * Manager rejects a manually recorded wallet payment: a wrong amount or a
+     * transfer that never arrived. The payment is cancelled, no money moved,
+     * and the order stays payable the normal way.
+     */
+    public function rejectManual(Payment $payment, User $manager): Payment
+    {
+        return DB::transaction(function () use ($payment, $manager): Payment {
+            $payment = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
+
+            if ($payment->status !== Payment::STATUS_PENDING_VERIFICATION) {
+                throw ValidationException::withMessages([
+                    'payment' => __('payments.not_pending'),
+                ]);
+            }
+
+            $payment->update(['status' => Payment::STATUS_CANCELLED]);
+
+            activity()->performedOn($payment)->causedBy($manager)->log('payment.manual_rejected');
+
+            return $payment;
+        });
+    }
+
+    /**
+     * Verification switched off for a branch: every manual wallet payment still
+     * waiting is approved by the manager who saved the setting, so nothing is
+     * left pending in a workflow that no longer exists.
+     */
+    public function approvePendingForBranch(Branch $branch, User $manager): int
+    {
+        $pending = Payment::query()
+            ->where('status', Payment::STATUS_PENDING_VERIFICATION)
+            ->whereHas('order', fn ($orders) => $orders->where('branch_id', $branch->id))
+            ->get();
+
+        foreach ($pending as $payment) {
+            $this->approveManual($payment, $manager);
+        }
+
+        return $pending->count();
+    }
+
+    /**
+     * An order that has been settled has no use for manual wallet payments still
+     * waiting for a manager: they could never be approved into money that is
+     * already in, so they are cancelled instead of lingering as false dues.
+     */
+    private function cancelPendingPayments(Order $order, ?User $user): void
+    {
+        $pendingIds = $order->payments()
+            ->where('status', Payment::STATUS_PENDING_VERIFICATION)
+            ->pluck('id');
+
+        if ($pendingIds->isEmpty()) {
+            return;
+        }
+
+        Payment::query()->whereKey($pendingIds)->update(['status' => Payment::STATUS_CANCELLED]);
+
+        activity()
+            ->performedOn($order)
+            ->causedBy($user)
+            ->withProperties(['payments' => $pendingIds->all()])
+            ->log('payment.pending_cancelled');
     }
 }

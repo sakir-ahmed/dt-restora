@@ -2,12 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Actions\Sales\CreateOrderAction;
+use App\Actions\Sales\PayOrderAction;
+use App\Enums\OrderStatus;
+use App\Enums\OrderType;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\DeliveryZone;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Models\Payment;
+use App\Models\PaymentMethod;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\PosSettings;
@@ -297,4 +303,52 @@ it('lets a branch turn on sharing the invoice as an image, off by default, and t
     $save(false);
 
     expect(PosSettings::invoiceShareImageEnabled($this->branch->fresh()))->toBeFalse();
+});
+
+it('lets a branch switch wallet payment verification on, off by default, and tells the order screens', function (): void {
+    $owner = User::factory()->role('owner')->create(['branch_id' => $this->branch->id]);
+
+    expect(PosSettings::for($this->branch)['wallet_verification_enabled'])->toBeFalse()
+        ->and(PosSettings::walletVerificationEnabled($this->branch))->toBeFalse();
+
+    $this->actingAs($owner, 'staff')->get(route('admin.orders.index'))
+        ->assertInertia(fn ($page) => $page->where('walletVerificationEnabled', false));
+
+    $this->actingAs($owner, 'staff')->put(route('admin.settings.branch-pos'), [
+        'pos' => [...PosSettings::for($this->branch->fresh()), 'wallet_verification_enabled' => true],
+        'vat_percent' => '5.00',
+        'service_charge_percent' => '0.00',
+    ])->assertSessionHasNoErrors();
+
+    expect(PosSettings::walletVerificationEnabled($this->branch->fresh()))->toBeTrue();
+
+    $this->actingAs($owner, 'staff')->get(route('admin.orders.index'))
+        ->assertInertia(fn ($page) => $page->where('walletVerificationEnabled', true));
+    $this->actingAs($owner, 'staff')->get(route('admin.pos.index'))
+        ->assertInertia(fn ($page) => $page->where('branch.pos_settings.wallet_verification_enabled', true));
+});
+
+it('approves wallet payments still waiting when verification is switched off', function (): void {
+    $owner = User::factory()->role('owner')->create(['branch_id' => $this->branch->id]);
+    $this->branch->update(['pos_settings' => ['wallet_verification_enabled' => true]]);
+
+    $order = app(CreateOrderAction::class)->execute(
+        branch: $this->branch,
+        type: OrderType::Takeaway,
+        lines: [['menu_item_id' => $this->item->id, 'quantity' => 1]],
+        cashier: $owner,
+    );
+
+    $payment = app(PayOrderAction::class)->recordManualWallet($order, PaymentMethod::findByCode('bkash'), (float) $order->total, 'TRX-1', $owner);
+
+    expect($payment->status)->toBe(Payment::STATUS_PENDING_VERIFICATION);
+
+    $this->actingAs($owner, 'staff')->put(route('admin.settings.branch-pos'), [
+        'pos' => [...PosSettings::for($this->branch->fresh()), 'wallet_verification_enabled' => false],
+        'vat_percent' => '5.00',
+        'service_charge_percent' => '0.00',
+    ])->assertSessionHasNoErrors();
+
+    expect($payment->fresh()->status)->toBe(Payment::STATUS_COMPLETED)
+        ->and($order->fresh()->status)->toBe(OrderStatus::Paid);
 });

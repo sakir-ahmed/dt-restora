@@ -88,6 +88,10 @@ class HandleInertiaRequests extends Middleware
                 'error' => $request->session()->get('error'),
                 'order' => $request->session()->get('order'),
                 'payment' => $request->session()->get('payment'),
+                // Manual wallet money waiting for a manager, so the POS shows the honest amber state.
+                'pending_payments' => $request->session()->get('pending_payments'),
+                // Whether a verification closed the bill, so the paid finish plays only then.
+                'order_paid' => $request->session()->get('order_paid'),
                 'placed' => $request->session()->get('placed_order'),
                 'device_token' => $request->session()->get('device_token'),
                 'device_name' => $request->session()->get('device_name'),

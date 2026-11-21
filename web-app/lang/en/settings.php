@@ -134,6 +134,8 @@ return [
     'reset_pattern' => 'Use default',
     'section_payments' => 'Payment methods',
     'section_payments_helper' => 'Choose which methods the POS offers and the order they appear in.',
+    'wallet_verification' => 'Verify wallet payments',
+    'wallet_verification_helper' => 'On: a wallet payment typed by the cashier waits for a manager check. Off: it completes at once, and any payment waiting now is approved when you save.',
     'payment_methods_none' => 'Keep at least one payment method turned on.',
     'move_up' => 'Move up',
     'move_down' => 'Move down',

@@ -28,6 +28,7 @@ return [
     'reserved' => 'Reserved',
     'deleted' => 'Deleted',
     'unpaid' => 'Unpaid',
+    'verifying' => 'Verifying',
     'partial' => 'Part paid',
     'due' => 'Due',
     'completed' => 'Completed',

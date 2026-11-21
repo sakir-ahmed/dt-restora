@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
+use App\Actions\Sales\PayOrderAction;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\DeliveryZone;
@@ -417,6 +418,8 @@ class SettingController extends Controller
             'online_ordering_enabled' => ['boolean'],
         ]);
 
+        $wasVerifying = PosSettings::walletVerificationEnabled($branch);
+
         $branch->update([
             'allow_negative_stock' => (bool) ($validated['allow_negative_stock'] ?? false),
             'vat_percent' => $validated['vat_percent'],
@@ -425,6 +428,11 @@ class SettingController extends Controller
             'online_ordering_enabled' => (bool) ($validated['online_ordering_enabled'] ?? false),
             ...(isset($validated['pos']) ? ['pos_settings' => PosSettings::fromInput($validated['pos'])] : []),
         ]);
+
+        // Verification switched off: whatever still waited for a manager is approved by the person who saved.
+        if ($wasVerifying && ! PosSettings::walletVerificationEnabled($branch)) {
+            app(PayOrderAction::class)->approvePendingForBranch($branch, $request->user('staff'));
+        }
 
         activity()->causedBy($request->user('staff'))->performedOn($branch)->log('branch.pos_settings_updated');
 

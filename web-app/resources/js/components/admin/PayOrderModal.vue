@@ -14,6 +14,7 @@ const props = defineProps({
     order: { type: Object, default: null },
     payMethods: { type: Array, default: () => [] },
     methods: { type: Array, default: () => [] },
+    verificationEnabled: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['close', 'confirm']);
@@ -128,8 +129,24 @@ const receivedByMethod = computed(() => {
     return [...sums.entries()].map(([method, amount]) => ({ method, label: methodLabel(method), amount }));
 });
 
+// Wallet money already recorded on this order and waiting for a manager: shown
+// apart, because it is on its way in but does not cover the balance yet.
+const verifyingByMethod = computed(() => {
+    const sums = new Map();
+
+    for (const payment of props.order?.payments ?? []) {
+        if (payment.status !== 'pending_verification') {
+            continue;
+        }
+
+        sums.set(payment.method, (sums.get(payment.method) ?? 0) + Number(payment.amount));
+    }
+
+    return [...sums.entries()].map(([method, amount]) => ({ method, label: methodLabel(method), amount }));
+});
+
 const confirmLabel = computed(() => {
-    if (lines.value.length === 1 && methodType(lines.value[0].method) === 'wallet') {
+    if (lines.value.length === 1 && methodType(lines.value[0].method) === 'wallet' && props.verificationEnabled) {
         return t('payments.record_manual');
     }
 
@@ -175,7 +192,7 @@ function submit() {
                 </div>
             </dl>
 
-            <div v-if="receivedByMethod.length" class="flex flex-wrap items-center gap-1">
+            <div v-if="receivedByMethod.length || verifyingByMethod.length" class="flex flex-wrap items-center gap-1">
                 <span
                     v-for="entry in receivedByMethod"
                     :key="entry.method"
@@ -183,6 +200,15 @@ function submit() {
                 >
                     <span class="text-muted">{{ entry.label }}</span>
                     <span class="font-semibold text-foreground">{{ formatMoney(entry.amount) }}</span>
+                </span>
+                <span
+                    v-for="entry in verifyingByMethod"
+                    :key="entry.method + '-verifying'"
+                    class="inline-flex items-baseline gap-1 rounded border border-dashed border-warning/70 px-1 py-0.5 text-[10px] leading-none text-warning"
+                    :title="t('payments.verifying')"
+                >
+                    <span>{{ entry.label }}</span>
+                    <span class="font-semibold">{{ formatMoney(entry.amount) }}</span>
                 </span>
             </div>
 

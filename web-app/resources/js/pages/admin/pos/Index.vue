@@ -31,6 +31,7 @@ const props = defineProps({
     canOverrideDiscount: { type: Boolean, default: false },
     canVoid: { type: Boolean, default: false },
     canCreateOrders: { type: Boolean, default: false },
+    canVerifyPayments: { type: Boolean, default: false },
     canManageShifts: { type: Boolean, default: false },
     posPinMinutes: { type: Number, default: 5 },
     posLockEnabled: { type: Boolean, default: false },
@@ -169,6 +170,8 @@ const payMode = computed(() => {
 
     return { cash: 'cash', wallet: 'wallet' }[methodType(payMethod.value)] ?? 'single';
 });
+// Whether a wallet payment waits for a manager here; off means the money is in at once.
+const walletVerification = computed(() => branch.value?.pos_settings?.wallet_verification_enabled ?? false);
 const shiftDialogOpen = ref(false);
 const tablePickerOpen = ref(false);
 const heldListOpen = ref(false);
@@ -181,12 +184,15 @@ const pin = ref('');
 const pinError = ref('');
 let idleTimer = null;
 const lastPayment = ref(savedTicket?.lastPayment ?? null);
+// Manual wallet money recorded but not settled: the ticket says so and stays
+// open instead of pretending the order is paid.
+const pendingPayments = ref(savedTicket?.pendingPayments ?? null);
 
 const TERMINAL = localStorage.getItem('pos-terminal') ?? 'T01';
 const latestOrder = ref(savedTicket?.latestOrder ?? null);
 
 watch(
-    [cart, discount, orderType, tableId, customerMobile, customerName, payLines, latestOrder, lastPayment],
+    [cart, discount, orderType, tableId, customerMobile, customerName, payLines, latestOrder, lastPayment, pendingPayments],
     () => {
         if (cart.value.length === 0 && ! latestOrder.value) {
             sessionStorage.removeItem(TICKET_KEY);
@@ -204,6 +210,7 @@ watch(
             payLines: payLines.value,
             latestOrder: latestOrder.value,
             lastPayment: lastPayment.value,
+            pendingPayments: pendingPayments.value,
         }));
     },
     { deep: true },
@@ -1391,6 +1398,7 @@ function startNewOrder() {
     discount.value = { type: 'percent', value: 0 };
     latestOrder.value = null;
     lastPayment.value = null;
+    pendingPayments.value = null;
     payLines.value = [blankPayLine()];
     menuNumberInput.value = '';
     itemEditor.value = null;
@@ -2215,10 +2223,6 @@ function orderDue() {
     return Number(latestOrder.value?.balance ?? latestOrder.value?.total ?? total.value);
 }
 
-function needsReference(method) {
-    return methodType(method) === 'wallet';
-}
-
 // A single non-cash payment always covers the whole bill, so its amount box shows the total.
 function syncSingleAmount() {
     const line = payLines.value[0];
@@ -2312,6 +2316,17 @@ function paySplit() {
                 order_id: order.id,
                 change_due: 0,
             };
+
+            // A wallet line waits for a manager: honest amber, no paid fanfare.
+            const pending = page.props.flash?.pending_payments ?? [];
+
+            if (pending.length > 0) {
+                pendingPayments.value = pending;
+                notify.info(t('payments.split_pending'));
+
+                return;
+            }
+
             notify.success(t('payments.split_completed'));
             playSound('order_paid');
             printAfter('confirm_payment', order);
@@ -2344,6 +2359,15 @@ function payWalletManual() {
                 invoice_no: order.invoice_no,
             };
             notify.info(t('sync.queued'));
+
+            if (walletVerification.value) {
+                // Offline the record only queues: the amber state carries it, no paid fanfare.
+                pendingPayments.value = [{ method: payMethod.value, amount: orderDue() }];
+
+                return;
+            }
+
+            // Verification off: the sync completes it, so the ticket finishes paid.
             playSound('order_paid');
             printAfter('confirm_payment', order);
         });
@@ -2363,11 +2387,65 @@ function payWalletManual() {
                 order_id: order.id,
                 change_due: 0,
             };
-            notify.success(t('payments.manual_recorded'));
+
+            const pending = page.props.flash?.pending_payments ?? [];
+
+            if (pending.length > 0) {
+                // The money waits for a manager: no paid sound, no receipt, ticket stays open.
+                pendingPayments.value = pending;
+                notify.info(t('payments.manual_recorded'));
+
+                return;
+            }
+
+            // Verification off: the wallet money is in at once, the normal paid finish plays.
+            notify.success(String(page.props.flash?.success ?? t('orders.paid_success')));
             playSound('order_paid');
             printAfter('confirm_payment', order);
         },
         onError: (errors) => notify.error(Object.values(errors)[0] ?? t('common.error_occurred')),
+    });
+}
+
+function pendingLabel(method) {
+    const entry = payMethodList.value.find((item) => item.method === method);
+
+    return entry ? localized(entry, 'name') : method;
+}
+
+// The first payment that can be verified from the ticket; offline records have no id yet.
+const firstVerifiable = computed(() => (pendingPayments.value ?? []).find((entry) => entry.id) ?? null);
+const verifyBusy = ref(false);
+
+// A manager on the POS can settle the record on the spot: the normal paid finish
+// plays only when the verified money really closes the bill.
+function verifyPendingPayment(entry) {
+    if (verifyBusy.value) {
+        return;
+    }
+
+    verifyBusy.value = true;
+
+    router.post(route('admin.payments.approve', entry.id), {}, {
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: (page) => {
+            const rest = (pendingPayments.value ?? []).filter((item) => item.id !== entry.id);
+
+            pendingPayments.value = rest.length > 0 ? rest : null;
+
+            if (page.props.flash?.order_paid) {
+                notify.success(t('payments.manual_approved'));
+                playSound('order_paid');
+                printAfter('confirm_payment', latestOrder.value);
+            } else {
+                notify.info(t('payments.manual_approved'));
+            }
+        },
+        onError: () => notify.error(t('common.error_occurred')),
+        onFinish: () => {
+            verifyBusy.value = false;
+        },
     });
 }
 
@@ -2595,11 +2673,9 @@ function confirmPayment() {
     }
 }
 
+// A wallet TrxID helps the manager's check but never gates the payment: the
+// server takes the record without one. Only the sums have to make sense.
 const payLinesReady = computed(() => {
-    if (payLines.value.some((line) => needsReference(line.method) && ! line.reference)) {
-        return false;
-    }
-
     if (payLines.value.length === 1) {
         const line = payLines.value[0];
 
@@ -2609,7 +2685,20 @@ const payLinesReady = computed(() => {
     return Math.abs(payLinesTotal() - orderDue()) < 0.01;
 });
 const canConfirmPayment = computed(() => props.canCreateOrders && !! latestOrder.value && ! lastPayment.value && payLinesReady.value);
-const confirmPaymentLabel = computed(() => (payMode.value === 'wallet' ? t('payments.record_manual') : t('orders.confirm_payment')));
+const confirmPaymentLabel = computed(() => (payMode.value === 'wallet' && walletVerification.value ? t('payments.record_manual') : t('orders.confirm_payment')));
+
+// A disabled confirm button always says why, so the cashier is never left guessing.
+const confirmHint = computed(() => {
+    if (! props.canCreateOrders || canConfirmPayment.value || pendingPayments.value) {
+        return '';
+    }
+
+    if (! latestOrder.value) {
+        return t('orders.pay_after_kitchen_hint');
+    }
+
+    return t('payments.lines_must_match');
+});
 const laneLocked = computed(() => !! lastPayment.value);
 const discountAllTotal = computed(() => itemDiscountTotal.value + billDiscountAmount.value);
 const changeShown = computed(() => (lastPayment.value ? Number(lastPayment.value.change_due ?? 0) : changeDue.value));
@@ -2959,6 +3048,42 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                     <span class="font-semibold">{{ t('orders.balance_due') }} <span class="tabular-nums">{{ formatMoney(orderDue()) }}</span></span>
                 </div>
 
+                <!-- Wallet money recorded but not settled: the ticket says so and stays open -->
+                <div v-if="pendingPayments" class="flex flex-wrap items-center justify-between gap-1.5 rounded-md border border-warning/60 bg-warning/10 px-2.5 py-1.5 text-[13px]">
+                    <span class="flex min-w-0 flex-wrap items-center gap-1 text-foreground">
+                        <AppIcon name="hourglass-half" size="12" class="shrink-0 text-warning" />
+                        <span class="font-semibold">{{ t('payments.verifying') }}</span>
+                        <span
+                            v-for="entry in pendingPayments"
+                            :key="entry.id ?? entry.method"
+                            class="inline-flex items-baseline gap-1 rounded border border-dashed border-warning/70 px-1 py-0.5 text-[11px] leading-none text-warning"
+                        >
+                            <span>{{ pendingLabel(entry.method) }}</span>
+                            <span class="font-semibold">{{ formatMoney(entry.amount) }}</span>
+                        </span>
+                    </span>
+                    <span class="flex shrink-0 items-center gap-1">
+                        <button
+                            v-if="canVerifyPayments && firstVerifiable"
+                            type="button"
+                            :disabled="verifyBusy"
+                            class="flex h-6 items-center gap-1 rounded-md border border-warning/60 bg-warning/15 px-2 text-[11px] font-semibold text-foreground hover:bg-warning/25 disabled:cursor-not-allowed disabled:opacity-50"
+                            @click="verifyPendingPayment(firstVerifiable)"
+                        >
+                            <AppIcon name="user-shield" size="10" />
+                            {{ t('payments.verify') }}
+                        </button>
+                        <button
+                            type="button"
+                            class="flex h-6 items-center gap-1 rounded-md border border-border bg-surface px-2 text-[11px] font-medium text-foreground hover:border-accent"
+                            @click="startNewOrder"
+                        >
+                            <AppIcon name="plus" size="10" />
+                            {{ t('orders.new_order') }}
+                        </button>
+                    </span>
+                </div>
+
                 <!-- Total and change -->
                 <div class="flex items-stretch gap-1">
                     <div
@@ -3014,7 +3139,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                             v-model="line.reference"
                             type="text"
                             :disabled="laneLocked"
-                            :placeholder="needsReference(line.method) ? t('payments.ref_short') : t('payments.ref_optional')"
+                            :placeholder="t('payments.ref_any')"
                             :aria-label="t('payments.trxid')"
                             class="h-6 w-full min-w-0 flex-1 rounded-md border border-border bg-surface px-1.5 text-[13px] text-foreground outline-none placeholder:text-[11px] placeholder:text-muted/70 focus:border-accent disabled:opacity-50"
                         >
@@ -3134,6 +3259,12 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         {{ t('orders.new_order') }}
                     </button>
                 </div>
+
+                <!-- Why the confirm button is off, so the cashier is never stuck guessing -->
+                <p v-if="! dueEditing && posActions.confirm_payment.enabled && confirmHint" class="flex items-center gap-1 px-0.5 text-[11px] text-muted">
+                    <AppIcon name="circle-info" size="10" />
+                    {{ confirmHint }}
+                </p>
             </footer>
 
         </section>
@@ -3548,6 +3679,9 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                                     <button type="button" class="min-w-0 flex-1 text-left" @click="editOrder(order)">
                                         <span class="flex items-baseline gap-2">
                                             <span class="text-sm font-bold tabular-nums text-foreground">{{ formatMoney(order.total) }}</span>
+                                            <span v-if="Number(order.pending) > 0" class="inline-flex items-baseline gap-1 rounded border border-dashed border-warning/70 px-1 py-0.5 text-[10px] leading-none text-warning" :title="t('payments.verifying')">
+                                                {{ t('payments.verifying_short') }} <span class="font-semibold">{{ formatMoney(order.pending) }}</span>
+                                            </span>
                                             <span class="text-xs text-muted">{{ t(`orders.type.${order.order_type}`) }}</span>
                                         </span>
                                         <span class="block truncate font-mono text-[11px] text-muted" :title="order.invoice_no">{{ shortInvoice(order.invoice_no) }}</span>
