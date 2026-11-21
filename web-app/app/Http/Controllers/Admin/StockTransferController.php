@@ -35,7 +35,7 @@ class StockTransferController extends Controller
                 $branchId = $user->branch_id ?? (int) session('branch_id', 0);
                 $query->where('from_branch_id', $branchId)->orWhere('to_branch_id', $branchId);
             })
-            ->with(['fromBranch:id,name,code', 'toBranch:id,name,code', 'items.ingredient:id,name', 'items.unit:id,symbol'])
+            ->with(['fromBranch:id,name,code', 'toBranch:id,name,code', 'items.ingredient' => fn ($query) => $query->select('id', 'name')->withTrashed(), 'items.unit:id,symbol'])
             ->latest()
             ->limit(50)
             ->get();

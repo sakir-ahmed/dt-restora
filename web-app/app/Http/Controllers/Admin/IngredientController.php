@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
+use App\Actions\Inventory\DeleteIngredientAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\IngredientRequest;
 use App\Import\CsvFile;
@@ -12,9 +13,11 @@ use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\IngredientCategory;
 use App\Models\Unit;
+use App\Support\DeleteReasons;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -28,8 +31,10 @@ class IngredientController extends Controller
         $branch = $this->currentBranch($request);
 
         $ingredients = Ingredient::query()
+            ->visible()
             ->with(['unit', 'category:id,name,name_bn'])
             ->withStockFor($branch->id)
+            ->withCount('recipeItems as recipes_count')
             ->search($request->string('search')->toString())
             ->orderBy('name')
             ->get();
@@ -92,13 +97,25 @@ class IngredientController extends Controller
         return back()->with('success', __('inventory.ingredient_updated'));
     }
 
-    public function destroy(Request $request, Ingredient $ingredient): RedirectResponse
+    /**
+     * Delete an ingredient entered by mistake. The row is kept marked deleted; a
+     * recipe that still uses it is edited by the delete, so that case demands a note.
+     */
+    public function destroy(Request $request, Ingredient $ingredient, DeleteIngredientAction $action): RedirectResponse
     {
         $this->authorize('inventory.manage');
 
-        $ingredient->update(['is_active' => false]);
+        $reason = DeleteReasons::validate($request);
 
-        return back()->with('success', __('inventory.ingredient_deactivated'));
+        if ($ingredient->recipeItems()->exists() && blank($reason['note'])) {
+            throw ValidationException::withMessages([
+                'note' => __('inventory.ingredient_delete_note_required'),
+            ]);
+        }
+
+        $action->execute($ingredient, $request->user('staff'), $reason['reason'], $reason['note']);
+
+        return back()->with('success', __('inventory.ingredient_deleted'));
     }
 
     private function currentBranch(Request $request): Branch

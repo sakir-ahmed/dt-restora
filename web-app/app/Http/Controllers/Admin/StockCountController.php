@@ -38,7 +38,7 @@ class StockCountController extends Controller
         $openCount = StockCount::query()
             ->where('branch_id', $branch->id)
             ->where('status', StockCount::STATUS_OPEN)
-            ->with(['items.ingredient.unit'])
+            ->with(['items.ingredient' => fn ($query) => $query->withTrashed()->with('unit')])
             ->first();
 
         return Inertia::render('admin/stock-counts/Index', [

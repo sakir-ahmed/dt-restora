@@ -19,6 +19,7 @@ function onConfirm(payload) {
         :facts="state.options?.facts ?? []"
         :confirm-text="state.options?.confirmText"
         :reasons="state.options?.reasons ?? []"
+        :require-note="state.options?.requireNote ?? false"
         :typed-word="state.options?.typedWord ?? 'CONFIRM'"
         :busy="state.options?.busy ?? false"
         :hide-cancel="state.options?.hideCancel ?? false"

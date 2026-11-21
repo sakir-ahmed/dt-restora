@@ -331,6 +331,7 @@ class MetricsService
                 fn ($query) => $query->join('ingredient_stocks', 'ingredient_stocks.ingredient_id', '=', 'ingredients.id'),
             )
             ->where('ingredients.is_active', true)
+            ->whereNull('ingredients.deleted_at')
             ->where('ingredients.reorder_level', '>', 0)
             ->whereRaw('COALESCE(ingredient_stocks.stock_qty, 0) <= ingredients.reorder_level * units.factor')
             ->orderBy('ingredients.name')

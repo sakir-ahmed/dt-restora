@@ -56,7 +56,8 @@ class Unit extends Model
     public function usage(): array
     {
         return [
-            'ingredients' => DB::table('ingredients')->where('unit_id', $this->id)->count(),
+            // A deleted ingredient no longer pins its unit: the row is kept only for the audit trail.
+            'ingredients' => DB::table('ingredients')->where('unit_id', $this->id)->whereNull('deleted_at')->count(),
             'purchases' => DB::table('purchase_items')->where('unit_id', $this->id)->count(),
             'wastages' => DB::table('wastages')->where('unit_id', $this->id)->count(),
             'transfers' => DB::table('stock_transfer_items')->where('unit_id', $this->id)->count(),

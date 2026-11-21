@@ -35,7 +35,14 @@ class WastageController extends Controller
         $wastages = Wastage::query()
             ->visible()
             ->where('branch_id', $branch->id)
-            ->with(['ingredient:id,name', 'unit:id,symbol', 'user:id,name', 'menuItem:id,name', 'lines.ingredient:id,name', 'lines.unit:id,symbol'])
+            ->with([
+                'ingredient' => fn ($query) => $query->select('id', 'name')->withTrashed(),
+                'unit:id,symbol',
+                'user:id,name',
+                'menuItem:id,name',
+                'lines.ingredient' => fn ($query) => $query->select('id', 'name')->withTrashed(),
+                'lines.unit:id,symbol',
+            ])
             ->latest()
             ->limit(200)
             ->get();

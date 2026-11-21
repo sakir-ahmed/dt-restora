@@ -37,7 +37,7 @@ class PurchaseController extends Controller
         $purchases = Purchase::query()
             ->visible()
             ->where('branch_id', $branch->id)
-            ->with(['supplier:id,name', 'items.ingredient:id,name', 'items.unit:id,symbol'])
+            ->with(['supplier:id,name', 'items.ingredient' => fn ($query) => $query->select('id', 'name')->withTrashed(), 'items.unit:id,symbol'])
             ->latest('purchased_at')
             ->limit(100)
             ->get();

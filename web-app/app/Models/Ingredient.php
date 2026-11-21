@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\SafeDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Ingredient extends Model
 {
-    use HasFactory;
+    use HasFactory, SafeDeletes;
 
     protected $fillable = [
         'name', 'name_bn', 'unit_id', 'ingredient_category_id', 'reorder_level', 'is_active',
@@ -46,6 +47,12 @@ class Ingredient extends Model
     public function stocks(): HasMany
     {
         return $this->hasMany(IngredientStock::class);
+    }
+
+    /** @return HasMany<RecipeItem, $this> */
+    public function recipeItems(): HasMany
+    {
+        return $this->hasMany(RecipeItem::class);
     }
 
     public function stockFor(int $branchId): IngredientStock

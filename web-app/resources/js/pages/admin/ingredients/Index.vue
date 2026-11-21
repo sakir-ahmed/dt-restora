@@ -9,6 +9,8 @@ import FormField from '@/components/ui-kit/FormField.vue';
 import PageHeader from '@/components/ui-kit/PageHeader.vue';
 import SlideOver from '@/components/ui-kit/SlideOver.vue';
 import StatusBadge from '@/components/ui-kit/StatusBadge.vue';
+import SwitchField from '@/components/ui-kit/SwitchField.vue';
+import { useSafeDelete } from '@/lib/safeDelete';
 import { t } from '@/lib/i18n';
 import { unitLabel } from '@/lib/units';
 import { notify } from '@/lib/notify';
@@ -62,6 +64,7 @@ const columns = computed(() => [
     { key: 'stock_display', label: t('inventory.stock'), type: 'number', sortable: true, minWidth: '96px' },
     { key: 'reorder_display', label: t('inventory.reorder_level'), type: 'number', minWidth: '96px' },
     { key: 'is_active', label: t('common.status'), minWidth: '104px' },
+    { key: 'actions', label: '', align: 'right', type: 'component', width: '64px' },
 ]);
 
 // '' shows every ingredient, 'none' the uncategorised ones, otherwise a category id
@@ -94,6 +97,7 @@ const allRows = computed(() => visibleIngredients.value.map((ingredient) => {
         sort_stock: Number(stock?.stock_qty ?? 0),
         low_stock: Number(ingredient.reorder_level) > 0 && Number(displayQty.toFixed(3)) <= Number(ingredient.reorder_level),
         reorder_display: Number(ingredient.reorder_level).toString(),
+        is_deleted: Boolean(ingredient.deleted_at),
     };
 }));
 
@@ -139,6 +143,29 @@ function save() {
             },
         });
     }
+}
+
+const safeDelete = useSafeDelete();
+
+// A recipe that still uses the ingredient is edited by the delete, so that case
+// warns about it and demands a note; the server checks the same rule again.
+function remove(row) {
+    const usedInRecipes = Number(row.recipes_count ?? 0) > 0;
+
+    safeDelete({
+        url: route('admin.ingredients.destroy', row.id),
+        title: t('inventory.ingredient_delete_title'),
+        message: usedInRecipes
+            ? t('inventory.ingredient_delete_recipe_message', { count: Number(row.recipes_count) })
+            : t('inventory.ingredient_delete_message'),
+        facts: [
+            { label: t('inventory.ingredient'), value: row.name },
+            { label: t('inventory.stock'), value: row.stock_display },
+            { label: t('inventory.recipes_used_in'), value: String(Number(row.recipes_count ?? 0)) },
+        ],
+        requireNote: usedInRecipes,
+        success: t('inventory.ingredient_deleted'),
+    });
 }
 </script>
 
@@ -215,7 +242,7 @@ function save() {
             :empty-title="t('inventory.no_ingredients')"
             :empty-description="t('inventory.no_ingredients_hint')"
             :empty-action="canManage ? t('inventory.add_ingredient') : ''"
-            @row-click="canManage && openEdit($event)"
+            @row-click="canManage && ! $event.is_deleted && openEdit($event)"
             @empty-action="openCreate"
         >
             <template #cell(name)="{ row }">
@@ -233,8 +260,21 @@ function save() {
                 </span>
                 <span v-else>{{ value }}</span>
             </template>
-            <template #cell(is_active)="{ value }">
-                <StatusBadge :status="value ? 'active' : 'inactive'" />
+            <template #cell(is_active)="{ row, value }">
+                <StatusBadge v-if="row.is_deleted" status="deleted" />
+                <StatusBadge v-else :status="value ? 'active' : 'inactive'" />
+            </template>
+            <template #cell(actions)="{ row }">
+                <button
+                    v-if="canManage && ! row.is_deleted"
+                    type="button"
+                    class="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-danger/10 hover:text-danger"
+                    :aria-label="t('common.delete')"
+                    :title="t('common.delete')"
+                    @click.stop="remove(row)"
+                >
+                    <AppIcon name="trash" size="12" />
+                </button>
             </template>
         </DataTable>
 
@@ -277,6 +317,8 @@ function save() {
                         </template>
                     </FormField>
                 </div>
+
+                <SwitchField v-model="form.is_active" :label="t('status.active')" />
             </form>
 
             <template #footer>

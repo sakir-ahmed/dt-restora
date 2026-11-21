@@ -15,7 +15,7 @@ export const DELETE_REASONS = ['entry_mistake', 'duplicate_entry', 'wrong_amount
 export function useSafeDelete() {
     const confirm = useConfirm();
 
-    return async function safeDelete({ url, title, message, facts = [], success, reasons = DELETE_REASONS, method = 'delete' }) {
+    return async function safeDelete({ url, title, message, facts = [], success, reasons = DELETE_REASONS, requireNote = false, method = 'delete' }) {
         const result = await confirm({
             variant: 'danger',
             level: 'reason',
@@ -24,6 +24,7 @@ export function useSafeDelete() {
             confirmText: t('common.delete'),
             reasons,
             facts,
+            requireNote,
         });
 
         if (! result.confirmed) {

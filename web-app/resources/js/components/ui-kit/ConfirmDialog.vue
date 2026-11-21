@@ -14,6 +14,7 @@ const props = defineProps({
     confirmText: { type: String, default: null },
     cancelText: { type: String, default: null },
     reasons: { type: Array, default: () => [] }, // reason codes
+    requireNote: { type: Boolean, default: false }, // the note becomes mandatory (deletes that edit other records)
     typedWord: { type: String, default: 'CONFIRM' },
     busy: { type: Boolean, default: false },
     hideCancel: { type: Boolean, default: false }, // a notice with a single button
@@ -79,7 +80,7 @@ const canConfirm = computed(() => {
     }
 
     if (props.level === 'reason') {
-        return reason.value.trim() !== '';
+        return reason.value.trim() !== '' && (! props.requireNote || note.value.trim() !== '');
     }
 
     if (props.level === 'approval') {
@@ -196,7 +197,9 @@ function submit() {
 
                         <div>
                             <label class="mb-1 block text-xs font-medium text-foreground" for="confirm-note">
-                                {{ t('common.note') }} <span class="text-muted">({{ t('common.optional') }})</span>
+                                {{ t('common.note') }}
+                                <span v-if="requireNote" class="text-danger">*</span>
+                                <span v-else class="text-muted">({{ t('common.optional') }})</span>
                             </label>
                             <textarea
                                 id="confirm-note"
