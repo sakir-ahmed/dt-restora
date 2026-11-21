@@ -85,6 +85,12 @@ class OrderController extends Controller
             'methods' => PaymentMethod::query()->orderBy('sort_order')->orderBy('id')->get()
                 ->map(fn (PaymentMethod $method): array => ['method' => $method->code, 'name' => $method->name, 'name_bn' => $method->name_bn])
                 ->values(),
+            // The payment methods this branch accepts, so the pay modal offers what the POS offers.
+            'payMethods' => collect(PosSettings::for($branch)['payment_methods'])
+                ->filter(fn (array $entry): bool => $entry['enabled'])
+                ->map(fn (array $entry): array => ['method' => $entry['method'], 'name' => $entry['name'], 'name_bn' => $entry['name_bn'], 'type' => $entry['type']])
+                ->values()
+                ->all(),
             // People and tables to filter by: the branch's staff (and head office), and its tables.
             'staffOptions' => User::query()
                 ->where(fn ($query) => $query->where('branch_id', $branch->id)->orWhereNull('branch_id'))

@@ -3,6 +3,7 @@ import { router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
 import OrderDetailPanel from '@/components/admin/OrderDetailPanel.vue';
+import PayOrderModal from '@/components/admin/PayOrderModal.vue';
 import DataTable from '@/components/ui-kit/DataTable.vue';
 import DateText from '@/components/ui-kit/DateText.vue';
 import MoneyText from '@/components/ui-kit/MoneyText.vue';
@@ -24,6 +25,7 @@ const props = defineProps({
     staffOptions: { type: Array, default: () => [] },
     tableOptions: { type: Array, default: () => [] },
     methods: { type: Array, default: () => [] },
+    payMethods: { type: Array, default: () => [] },
     canApproveOrders: { type: Boolean, default: false },
     canVoid: { type: Boolean, default: false },
     canApproveVoid: { type: Boolean, default: false },
@@ -132,6 +134,22 @@ function paidByMethod(order) {
     return [...sums.entries()].map(([method, amount]) => ({ method, label: methodLabel(method), amount }));
 }
 
+// Wallet payments typed at the pay modal wait for a manager. They badge beside
+// the completed sums as money on its way in, without counting towards the due.
+function pendingByMethod(order) {
+    const sums = new Map();
+
+    for (const payment of order.payments ?? []) {
+        if (payment.status !== 'pending_verification') {
+            continue;
+        }
+
+        sums.set(payment.method, (sums.get(payment.method) ?? 0) + Number(payment.amount));
+    }
+
+    return [...sums.entries()].map(([method, amount]) => ({ method, label: methodLabel(method), amount }));
+}
+
 function remainingOf(order) {
     if (order.status === 'void' || (order.status === 'paid' && ! order.is_due)) {
         return 0;
@@ -145,6 +163,7 @@ const rows = computed(() => props.orders.map((order) => ({
     order_status: orderStatusOf(order),
     payment_status: paymentStatusOf(order),
     paid_methods: order.status === 'void' ? [] : paidByMethod(order),
+    pending_methods: order.status === 'void' ? [] : pendingByMethod(order),
     remaining: order.status === 'void' ? 0 : remainingOf(order),
     table_name: order.table?.name,
     items_count: order.items?.length ?? 0,
@@ -358,35 +377,63 @@ function editOrder(order) {
     router.get(route('admin.pos.index'), { edit: order.id });
 }
 
-async function pay(order) {
-    const result = await confirm({
-        variant: 'info',
-        level: 'simple',
-        title: t('orders.pay_confirm_title', { invoice: order.invoice_no }),
-        message: t('orders.pay_confirm_message'),
-        confirmText: t('orders.pay'),
-        facts: [
-            { label: t('inventory.invoice_no'), value: order.invoice_no },
-            { label: t('inventory.total'), value: formatMoney(order.total) },
-        ],
-    });
+// The pay action opens the payment modal: every method the branch accepts, one
+// row per payment, so an order can be collected from several sources at once.
+const payingOrder = ref(null);
 
-    if (! result.confirmed) {
+function pay(order) {
+    payingOrder.value = {
+        id: order.id,
+        invoice_no: order.invoice_no,
+        total: order.total,
+        paid: receivedAmount(order),
+        balance: remainingOf(order),
+        payments: order.payments ?? [],
+    };
+}
+
+function payMethodType(code) {
+    return props.payMethods.find((entry) => entry.method === code)?.type ?? 'other';
+}
+
+// The same routing the POS payment lane uses: one line goes through its own
+// endpoint, two or more lines make a split.
+function submitPay({ lines }) {
+    const order = payingOrder.value;
+
+    if (! order) {
         return;
     }
 
-    router.post(route('admin.orders.pay', order.id), {
-        tendered: order.total,
-    }, {
+    let url;
+    let data;
+
+    if (lines.length > 1) {
+        url = route('admin.payments.split', order.id);
+        data = { lines };
+    } else if (payMethodType(lines[0].method) === 'cash') {
+        url = route('admin.orders.pay', order.id);
+        data = { tendered: lines[0].amount };
+    } else if (payMethodType(lines[0].method) === 'wallet') {
+        url = route('admin.payments.manual', order.id);
+        data = lines[0];
+    } else {
+        url = route('admin.payments.single', order.id);
+        data = lines[0];
+    }
+
+    router.post(url, data, {
         preserveState: true,
         onSuccess: (page) => {
+            payingOrder.value = null;
+
             if (page.props.flash?.error) {
                 notify.error(String(page.props.flash.error));
 
                 return;
             }
 
-            notify.success(t('orders.paid_success'));
+            notify.success(String(page.props.flash?.success ?? t('orders.paid_success')));
         },
         onError: (errors) => notify.error(String(Object.values(errors)[0] ?? t('common.error_occurred'))),
     });
@@ -563,6 +610,15 @@ async function putOnDue(order) {
                         <span class="font-semibold text-foreground">{{ formatMoney(entry.amount) }}</span>
                     </span>
                     <span
+                        v-for="entry in row.pending_methods"
+                        :key="entry.method + '-pending'"
+                        class="inline-flex items-baseline gap-1 rounded border border-dashed border-warning/70 px-1 py-0.5 text-[10px] leading-none text-warning"
+                        :title="t('payments.verifying')"
+                    >
+                        <span>{{ entry.label }}</span>
+                        <span class="font-semibold">{{ formatMoney(entry.amount) }}</span>
+                    </span>
+                    <span
                         v-if="row.remaining > 0"
                         class="inline-flex rounded bg-danger/10 px-1 py-0.5 text-[10px] font-semibold leading-none text-danger"
                     >
@@ -660,6 +716,14 @@ async function putOnDue(order) {
             @approve="approvePayment"
             @status="changeStatus"
             @due="putOnDue"
+        />
+
+        <PayOrderModal
+            :order="payingOrder"
+            :pay-methods="payMethods"
+            :methods="methods"
+            @close="payingOrder = null"
+            @confirm="submitPay"
         />
     </div>
 </template>

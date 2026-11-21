@@ -99,7 +99,7 @@ class PaymentController extends Controller
         $validated = $request->validate([
             'method' => ['required', Rule::in(PosSettings::enabledMethods($order->branch))],
             'amount' => ['required', 'numeric', 'gt:0'],
-            'reference' => ['required', 'string', 'max:100'],
+            'reference' => ['nullable', 'string', 'max:100'],
         ]);
 
         $method = PaymentMethod::query()->where('code', $validated['method'])->firstOrFail();

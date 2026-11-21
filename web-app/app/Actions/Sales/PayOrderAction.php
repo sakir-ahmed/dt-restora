@@ -335,10 +335,10 @@ class PayOrderAction
     }
 
     /**
-     * Record a manual mobile-wallet payment (TrxID typed by the
-     * cashier) for later manager verification.
+     * Record a manual mobile-wallet payment for later manager verification.
+     * The TrxID typed by the cashier is helpful for the check, not required.
      */
-    public function recordManualWallet(Order $order, PaymentMethod $method, float $amount, string $trxId, ?User $user = null): Payment
+    public function recordManualWallet(Order $order, PaymentMethod $method, float $amount, ?string $trxId = null, ?User $user = null): Payment
     {
         return DB::transaction(function () use ($order, $method, $amount, $trxId, $user): Payment {
             $order = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
@@ -353,7 +353,7 @@ class PayOrderAction
                 'order_id' => $order->id,
                 'method' => $method->code,
                 'amount' => (string) $amount,
-                'reference' => $trxId,
+                'reference' => trim((string) $trxId) ?: null,
                 'status' => Payment::STATUS_PENDING_VERIFICATION,
                 'user_id' => $user->id ?? $order->cashier_id,
             ]);

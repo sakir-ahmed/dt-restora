@@ -20,6 +20,7 @@ return [
     'lines_must_match' => 'The payments must add up to the order total.',
     'single_recorded' => ':method payment recorded.',
     'ref_optional' => 'Slip ref (optional)',
+    'ref_any' => 'TrxID / ref (optional)',
     'wallet' => 'Wallet',
     'wallet_type' => 'Wallet',
     'trxid' => 'TrxID',
@@ -30,5 +31,6 @@ return [
     'manual_approved' => 'Wallet payment verified.',
     'already_verified' => 'This payment was already verified.',
     'verify' => 'Verify',
+    'verifying' => 'Waiting for verification',
     'invalid_payment' => 'Invalid payment reference.',
 ];

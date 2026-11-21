@@ -189,6 +189,21 @@ it('records a manual wallet payment through the controller and a manager approve
         ->and($this->order->fresh()->status)->toBe(OrderStatus::Paid);
 });
 
+it('records a manual wallet payment without a reference', function (): void {
+    $this->actingAs($this->cashier, 'staff')
+        ->post("/admin/orders/{$this->order->id}/manual-payment", [
+            'method' => 'bkash',
+            'amount' => (string) $this->order->total,
+            'reference' => null,
+        ])
+        ->assertRedirect();
+
+    $payment = Payment::query()->where('order_id', $this->order->id)->firstOrFail();
+
+    expect($payment->status)->toBe(Payment::STATUS_PENDING_VERIFICATION)
+        ->and($payment->reference)->toBeNull();
+});
+
 it('renders the bkash callback page for duplicates without new side effects', function (): void {
     $payment = Payment::query()->create([
         'order_id' => $this->order->id,
@@ -224,4 +239,20 @@ it('keeps payment away from a role that can only view orders', function (): void
         ->assertForbidden();
 
     expect($this->order->fresh()->status)->not->toBe(OrderStatus::Paid);
+});
+
+it('offers the branch pay methods on the orders page', function (): void {
+    $props = $this->actingAs($this->cashier, 'staff')->get('/admin/orders')->inertiaProps();
+
+    $methods = array_column($props['payMethods'], 'method');
+
+    expect($methods)->toContain('cash', 'bkash')
+        ->and($props['payMethods'][0])->toHaveKeys(['method', 'name', 'name_bn', 'type']);
+
+    // A method the branch switched off is not offered, exactly like the POS lane.
+    $this->branch->update(['pos_settings' => ['payment_methods' => [['method' => 'card', 'enabled' => false]]]]);
+
+    $disabled = $this->actingAs($this->cashier, 'staff')->get('/admin/orders')->inertiaProps();
+
+    expect(array_column($disabled['payMethods'], 'method'))->not->toContain('card');
 });

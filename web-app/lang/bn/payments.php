@@ -20,6 +20,7 @@ return [
     'lines_must_match' => 'পেমেন্টের যোগফল অর্ডারের মোটের সমান হতে হবে।',
     'single_recorded' => ':method পেমেন্ট নথিভুক্ত হয়েছে।',
     'ref_optional' => 'স্লিপ রেফ (ঐচ্ছিক)',
+    'ref_any' => 'TrxID / রেফ (ঐচ্ছিক)',
     'wallet' => 'ওয়ালেট',
     'wallet_type' => 'ওয়ালেট',
     'trxid' => 'TrxID',
@@ -30,5 +31,6 @@ return [
     'manual_approved' => 'ওয়ালেট পরিশোধ যাচাই হয়েছে।',
     'already_verified' => 'এই পরিশোধ আগেই যাচাই হয়েছে।',
     'verify' => 'যাচাই',
+    'verifying' => 'যাচাইয়ের অপেক্ষায়',
     'invalid_payment' => 'পরিশোধের রেফারেন্স সঠিক নয়।',
 ];
