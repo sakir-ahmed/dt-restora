@@ -73,7 +73,8 @@ All branch routes are prefixed `/api/v1/branches/{branch}`.
 | PATCH  | `/orders/{order}/status`           | `pending → preparing → ready → served` (KDS uses this)                                          |
 | POST   | `/orders/{order}/approve`          | `orders.approve`: a guest order (table QR, website, online menu) with `approval_status` `awaiting` is approved and reaches the kitchen. Otherwise 422. |
 | POST   | `/orders/{order}/release`          | `orders.approve`: hand an approved pre-order or reservation meal (`kind` not `regular`) to the kitchen before its time. Otherwise 422. |
-| POST   | `/orders/{order}/payments`         | One or many payment lines. Needs `Idempotency-Key`. Wallet lines complete at once; they wait for manager verification only when the branch switched it on (`pos_settings.wallet_verification_enabled`, off by default). |
+| POST   | `/orders/{order}/payments`         | One or many payment lines. Needs `Idempotency-Key`. A single line behaves like the web lane: cash pays with change, a wallet completes at once (or waits for manager verification when the branch switched `pos_settings.wallet_verification_enabled` on), anything else settles the whole bill. Order payments in the payload carry `id`, `status` and `reference` so the app can show what still waits. |
+| POST   | `/payments/{payment}/approve`, `/payments/{payment}/reject` | `payments.manage`. Manager verifies a waiting wallet payment, or rejects a wrong record so the order stays payable. Returns the refreshed order. `/branches/{branch}/reference` now also carries `wallet_verification` (bool). |
 | POST   | `/orders/{order}/void-requests`    | Cashier requests a void with reason                                                             |
 | POST   | `/void-requests/{request}/approve` | Manager approval                                                                                |
 | GET    | `/orders?filter[search]=&filter[due]=1&filter[order_type]=&filter[date_to]=` | Extra filters: invoice, customer name or mobile; due sales only; type; end date |
@@ -136,7 +137,7 @@ Deletes are `POST .../delete` with `reason_code` (`entry_mistake`, `duplicate_en
 | POST | `/stock-counts/{count}/close`, `/stock-counts/{count}/delete` | `inventory.manage` | |
 | GET | `/stock-transfers` | `transfers.manage` | Transfers sent or received by the branch |
 | POST | `/api/v1/stock-transfers/{transfer}/delete` | `transfers.manage` | |
-| DELETE | `/api/v1/ingredients/{ingredient}` | `inventory.manage` | Switches the ingredient off |
+| DELETE | `/api/v1/ingredients/{ingredient}` | `inventory.manage` | Safe delete like the web: `reason_code` + `note` (note required when a recipe still uses the ingredient; the recipe line is removed and the recipe re-cost). The row is kept marked deleted; deactivation stays on the update endpoint |
 | GET / POST / PUT / DELETE | `/api/v1/ingredient-categories[/{category}]` | `inventory.view` / `inventory.manage` | Delete is refused while ingredients use the category |
 | GET / POST / PUT / DELETE | `/menu-categories[/{category}]` | `menu.view` / `menu.manage` | Includes switched-off categories with `items_count`; delete refused while dishes use one |
 | DELETE | `/menu-items/{item}` | `menu.manage` | |
@@ -184,7 +185,7 @@ The sync `order_edit` item now also revises a paid order in place (payments kept
 | Method | Path                                                   | Notes                                                                             |
 | ------ | ------------------------------------------------------ | --------------------------------------------------------------------------------- |
 | GET    | `/inventory/stock`                                     | Current stock per ingredient                                                      |
-| POST   | `/inventory/wastage`                                   | Mandatory `reason_code`; cost is calculated by the server                         |
+| POST   | `/inventory/wastage`                                   | Mandatory `reason_code`; cost is calculated by the server. Either an `ingredient_id` + `unit_id` + `qty`, or a `menu_item_id` + `qty` in portions whose recipe is deducted like a sale |
 | GET    | `/recipes` / `POST /recipes` / `PUT /recipes/{recipe}` | Recipe builder                                                                    |
 | GET    | `/recipes/{recipe}/cost`                               | Current food cost and food-cost %                                                 |
 | POST   | `/purchases` / `GET /purchases`                        | Purchase orders and receipts                                                      |

@@ -113,9 +113,13 @@ it('manages ingredient categories and protects one that is in use', function ():
     expect(IngredientCategory::query()->count())->toBe(0);
 });
 
-it('deactivates an ingredient', function (): void {
-    $this->withToken($this->token)->deleteJson('/api/v1/ingredients/'.$this->rice->id)->assertOk();
-    expect($this->rice->fresh()->is_active)->toBeFalse();
+it('safe deletes an ingredient through the API, keeping the row marked deleted', function (): void {
+    $this->withToken($this->token)
+        ->deleteJson('/api/v1/ingredients/'.$this->rice->id, ['reason_code' => 'entry_mistake'])
+        ->assertOk();
+
+    expect($this->rice->fresh()->trashed())->toBeTrue()
+        ->and($this->rice->fresh()->is_active)->toBeTrue();
 });
 
 it('keeps inventory actions to permitted roles', function (): void {

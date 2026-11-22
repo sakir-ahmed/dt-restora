@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1\Staff;
 
+use App\Actions\Sales\PayOrderAction;
 use App\Http\Controllers\Api\Concerns\InteractsWithApi;
 use App\Http\Controllers\Api\Controller;
 use App\Models\AggregatorChannel;
@@ -12,6 +13,7 @@ use App\Models\Branch;
 use App\Models\FiscalYear;
 use App\Models\Journal;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\User;
 use App\Services\Aggregators\Foodpanda\FoodpandaClient;
 use App\Services\Aggregators\PartnerCatalog;
@@ -100,6 +102,33 @@ class AdminApiController extends Controller
         activity()->performedOn($user)->causedBy($user)->log('staff.password_changed');
 
         return $this->success(null, __('profile.password_changed'));
+    }
+
+    /**
+     * The other side of a wallet payment a cashier recorded: a manager verifies the
+     * money arrived, or rejects a wrong record so the order stays payable. The same
+     * actions the web orders screen offers, for the app.
+     */
+    public function approvePayment(Request $request, Payment $payment, PayOrderAction $action): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'payments.manage');
+        abort_unless($user->canAccessBranch($payment->order->branch_id), 404, __('api.not_found'));
+
+        $action->approveManual($payment, $user);
+
+        return $this->success($this->orderPayload($payment->order->fresh()), __('payments.manual_approved'));
+    }
+
+    public function rejectPayment(Request $request, Payment $payment, PayOrderAction $action): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'payments.manage');
+        abort_unless($user->canAccessBranch($payment->order->branch_id), 404, __('api.not_found'));
+
+        $action->rejectManual($payment, $user);
+
+        return $this->success($this->orderPayload($payment->order->fresh()), __('payments.rejected'));
     }
 
     /**

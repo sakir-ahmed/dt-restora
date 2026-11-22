@@ -2319,6 +2319,16 @@ const Map<String, String> bnStrings = {
   'Wallet': 'ওয়ালেট',
   'Wallet payment recorded. Waiting for manager verification.': 'ওয়ালেট পরিশোধ লিপিবদ্ধ। ম্যানেজারের যাচাইয়ের অপেক্ষায়।',
   'Wallet payment verified.': 'ওয়ালেট পরিশোধ যাচাই হয়েছে।',
+  'Wallet payment rejected.': 'ওয়ালেট পরিশোধ বাতিল হয়েছে।',
+  'Waiting for verification': 'যাচাইয়ের অপেক্ষায়',
+  'Record payment (manager verifies)': 'পরিশোধ লিপিবদ্ধ করুন (ম্যানেজার যাচাই করবেন)',
+  "Wallet payments on this branch wait for a manager's verification. The order completes after approval.":
+      'এই ব্রাঞ্চে ওয়ালেট পরিশোধ ম্যানেজারের যাচাইয়ের অপেক্ষায় থাকে। অনুমোদনের পর অর্ডার সম্পন্ন হয়।',
+  'Wasted portions': 'অপচয়িত পোর্শন',
+  'Menu-item wastage logged. The recipe was taken out of stock.': 'মেনু আইটেমের অপচয় লিপিবদ্ধ। রেসিপির উপকরণ স্টক থেকে বাদ দেওয়া হয়েছে।',
+  'A finished dish, in portions. Its recipe is taken out of stock exactly like a sale.':
+      'তৈরি খাবার, পোর্শনে। বিক্রির মতোই এর রেসিপির উপকরণ স্টক থেকে বাদ যায়।',
+  'Choose a menu item and enter the wasted portions.': 'একটি মেনু আইটেম বেছে নিন এবং অপচয়িত পোর্শন লিখুন।',
   'Want this for your restaurant?': 'আপনার রেস্টুরেন্টের জন্য চান?',
   'Want this software for your business? Call': 'আপনার ব্যবসার জন্য এই সফটওয়্যারটি চান? কল করুন',
   'Warm hospitality': 'আন্তরিক আপ্যায়ন',

@@ -300,6 +300,19 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
+  /// A manager settles a wallet payment a cashier recorded: verify the money
+  /// arrived, or reject a wrong record so the order stays payable.
+  Future<void> _verifyPayment(Map p, String action) async {
+    final app = AppScope.read(context);
+    final ok = await guarded(context, () async {
+      await app.api.post('/payments/${p['id']}/$action');
+      await _refresh();
+    });
+    if (ok && mounted) {
+      snack(context, action == 'approve' ? tr('Wallet payment verified.') : 'Wallet payment rejected.');
+    }
+  }
+
   /// A manager approves a guest order or hands a pre-order to the kitchen early.
   Future<void> _handToKitchen(String step) async {
     final app = AppScope.read(context);
@@ -715,7 +728,27 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     dense: true,
                     leading: const Icon(Icons.payments_outlined),
                     title: Text(titleCase('${p['method']}')),
-                    trailing: Text(fmtMoney(p['amount']), style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: p['status'] == 'pending_verification'
+                        ? Text(tr('Waiting for verification'), style: TextStyle(color: context.warnFg, fontSize: 12))
+                        : ('${p['reference'] ?? ''}'.isNotEmpty ? Text('${p['reference']}', style: const TextStyle(fontSize: 12)) : null),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(fmtMoney(p['amount']), style: const TextStyle(fontWeight: FontWeight.w600)),
+                      if (p['status'] == 'pending_verification' && app.can('payments.manage')) ...[
+                        const SizedBox(width: 4),
+                        IconButton(
+                          tooltip: tr('Verify'),
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(Icons.verified_outlined, size: 20, color: Brand.success),
+                          onPressed: () => _verifyPayment(p, 'approve'),
+                        ),
+                        IconButton(
+                          tooltip: tr('Reject'),
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(Icons.cancel_outlined, size: 20, color: Brand.danger),
+                          onPressed: () => _verifyPayment(p, 'reject'),
+                        ),
+                      ],
+                    ]),
                   ),
               ]),
             ),

@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1\Staff;
 
 use App\Actions\Inventory\CloseStockCountAction;
 use App\Actions\Inventory\CorrectReceivedPurchaseAction;
+use App\Actions\Inventory\DeleteIngredientAction;
 use App\Actions\Inventory\DeletePurchaseAction;
 use App\Actions\Inventory\DeleteStockCountAction;
 use App\Actions\Inventory\DeleteStockTransferAction;
@@ -350,14 +351,28 @@ class InventoryApiController extends Controller
         return $this->success(null, __('inventory.transfer_deleted'));
     }
 
-    public function deactivateIngredient(Request $request, Ingredient $ingredient): JsonResponse
+    /**
+     * Delete an ingredient entered by mistake (a double import, a typo): the row is kept
+     * marked deleted and every history still names it. A recipe that still uses it is
+     * edited by the delete, so that case demands a note. Deactivation stays available
+     * through the ordinary update endpoint.
+     */
+    public function destroyIngredient(Request $request, Ingredient $ingredient, DeleteIngredientAction $action): JsonResponse
     {
         $user = $this->staffUser($request);
         $this->permit($user, 'inventory.manage');
 
-        $ingredient->update(['is_active' => false]);
+        $reason = DeleteReasons::validate($request);
 
-        return $this->success(null, __('inventory.ingredient_deactivated'));
+        if ($ingredient->recipeItems()->exists() && blank($reason['note'])) {
+            throw ValidationException::withMessages([
+                'note' => __('inventory.ingredient_delete_note_required'),
+            ]);
+        }
+
+        $action->execute($ingredient, $user, $reason['reason'], $reason['note']);
+
+        return $this->success(null, __('inventory.ingredient_deleted'));
     }
 
     public function categories(Request $request): JsonResponse

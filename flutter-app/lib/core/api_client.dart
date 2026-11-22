@@ -121,7 +121,7 @@ class ApiClient {
   Future<dynamic> patch(String path, {Map<String, dynamic>? body}) async =>
       (await send('PATCH', path, body: body)).data;
 
-  Future<dynamic> delete(String path) async => (await send('DELETE', path)).data;
+  Future<dynamic> delete(String path, {Map<String, dynamic>? body}) async => (await send('DELETE', path, body: body)).data;
 
   /// Sends files as a multipart form, e.g. photos for the media gallery.
   /// [files] maps a form field name such as `images[]` to local paths.

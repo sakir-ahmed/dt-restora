@@ -97,8 +97,15 @@ class _RefLoader extends StatelessWidget {
 
 // ---------------------------------------------------------------- stock
 
-class StockScreen extends StatelessWidget {
+class StockScreen extends StatefulWidget {
   const StockScreen({super.key});
+
+  @override
+  State<StockScreen> createState() => _StockScreenState();
+}
+
+class _StockScreenState extends State<StockScreen> {
+  bool _lowOnly = false;
 
   /// Create or edit an ingredient (name, unit, reorder level, active).
   Future<void> _editIngredient(BuildContext context, Map<String, dynamic> ref,
@@ -228,53 +235,84 @@ class StockScreen extends StatelessWidget {
           return DataView<List<Map<String, dynamic>>>(
             path: '/branches/${app.branchId}/inventory/stock',
             transform: asRows,
-            builder: (context, rows, raw, reload) => ListView.separated(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(12),
-              itemCount: rows.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, i) {
-                final r = rows[i];
-                final id = (r['ingredient_id'] as num).toInt();
-                final meta = ingredients[id];
-                // Stock is kept in the base unit (g, l, pcs); show and compare it in the ingredient's own unit.
+            builder: (context, rows, raw, reload) {
+              // The low-stock rule mirrors the server: the quantity shown in the
+              // ingredient's own unit against its alert level.
+              bool isLow(Map r) {
+                final meta = ingredients[(r['ingredient_id'] as num).toInt()];
                 final shown = stockInUnit(toNum(r['stock_qty']), toNum(meta?['unit_factor']));
-                final low = meta != null && shown <= toNum(meta['reorder_level']);
-                return Card(
-                  child: ListTile(
-                    leading: Icon(low ? Icons.warning_amber : Icons.inventory_2,
-                        color: low ? Brand.warning : context.brand),
-                    title: Text('${r['name']}'),
-                    subtitle: Text('Avg cost ${fmtMoney(toNum(r['avg_cost']) * (toNum(meta?['unit_factor']) == 0 ? 1 : toNum(meta?['unit_factor'])))} / ${meta?['unit_symbol'] ?? 'unit'}${low ? '  -  Low stock' : ''}'),
-                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text('${formatQuantity(shown)} ${meta?['unit_symbol'] ?? ''}',
-                          style: const TextStyle(fontWeight: FontWeight.w700)),
-                      if (app.can('inventory.manage'))
-                        PopupMenuButton<String>(
-                          tooltip: 'Ingredient actions',
-                          onSelected: (v) async {
-                            if (v == 'edit') {
-                              await _editIngredient(context, ref, ingredient: meta);
-                            } else if (await confirm(context, 'Switch off ${r['name']}?', body: 'It stays in old records but is hidden from new purchases and recipes.', action: 'Switch off')) {
-                              if (!context.mounted) {
-                                return;
-                              }
-                              final ok = await guarded(context, () async => app.api.delete('/ingredients/$id'));
-                              if (ok) {
-                                await reload();
-                              }
-                            }
-                          },
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'edit', child: Text('Edit')),
-                            PopupMenuItem(value: 'off', child: Text('Switch off')),
-                          ],
-                        ),
-                    ]),
+                return meta != null && shown <= toNum(meta['reorder_level']);
+              }
+
+              final visible = _lowOnly ? rows.where(isLow).toList() : rows;
+              return Column(children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilterChip(
+                      label: Text(tr('Show low stock only')),
+                      selected: _lowOnly,
+                      onSelected: (v) => setState(() => _lowOnly = v),
+                      avatar: Icon(_lowOnly ? Icons.warning_amber : null, size: 16, color: Brand.warning),
+                    ),
                   ),
-                );
-              },
-            ),
+                ),
+                Expanded(
+                  child: visible.isEmpty
+                      ? ListView(children: const [SizedBox(height: 160), EmptyState('Nothing here.')])
+                      : ListView.separated(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(12),
+                          itemCount: visible.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (context, i) {
+                            final r = visible[i];
+                            final id = (r['ingredient_id'] as num).toInt();
+                            final meta = ingredients[id];
+                            // Stock is kept in the base unit (g, l, pcs); show and compare it in the ingredient's own unit.
+                            final shown = stockInUnit(toNum(r['stock_qty']), toNum(meta?['unit_factor']));
+                            final low = isLow(r);
+                            return Card(
+                              child: ListTile(
+                                leading: Icon(low ? Icons.warning_amber : Icons.inventory_2,
+                                    color: low ? Brand.warning : context.brand),
+                                title: Text('${r['name']}'),
+                                subtitle: Text('Avg cost ${fmtMoney(toNum(r['avg_cost']) * (toNum(meta?['unit_factor']) == 0 ? 1 : toNum(meta?['unit_factor'])))} / ${meta?['unit_symbol'] ?? 'unit'}${low ? '  -  Low stock' : ''}'),
+                                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                                  Text('${formatQuantity(shown)} ${meta?['unit_symbol'] ?? ''}',
+                                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                                  if (app.can('inventory.manage'))
+                                    PopupMenuButton<String>(
+                                      tooltip: 'Ingredient actions',
+                                      onSelected: (v) async {
+                                        if (v == 'edit') {
+                                          await _editIngredient(context, ref, ingredient: meta);
+                                        } else if (v == 'delete') {
+                                          final body = await askDeleteReason(context, 'Delete ${r['name']}?');
+                                          if (body == null || !context.mounted) {
+                                            return;
+                                          }
+                                          final ok = await guarded(context,
+                                              () async => app.api.delete('/ingredients/$id', body: body));
+                                          if (ok) {
+                                            await reload();
+                                          }
+                                        }
+                                      },
+                                      itemBuilder: (_) => const [
+                                        PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                        PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                      ],
+                                    ),
+                                ]),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ]);
+            },
           );
         },
       ),
@@ -504,6 +542,12 @@ class _LogWastageViewState extends State<_LogWastageView> {
   final _note = TextEditingController();
   bool _busy = false;
 
+  /// Menu-item mode: a finished dish leaves stock in portions, its recipe
+  /// deducted like a sale (needs a connection; the recipe lives on the server).
+  bool _menuMode = false;
+  int? _menuItem;
+  List<Map<String, dynamic>> _menuItems = const [];
+
   @override
   void initState() {
     super.initState();
@@ -515,6 +559,54 @@ class _LogWastageViewState extends State<_LogWastageView> {
     _qty.dispose();
     _note.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadMenu() async {
+    if (_menuItems.isNotEmpty) {
+      return;
+    }
+    final app = AppScope.read(context);
+    try {
+      final menu = await app.cachedGet('/branches/${app.branchId}/menu');
+      final items = [
+        for (final c in asRows(menu.data))
+          for (final i in asRows(c['items']))
+            if (i['id'] != null) {'id': i['id'], 'name': i['name']},
+      ];
+      if (mounted) {
+        setState(() => _menuItems = items);
+      }
+    } on ApiException {
+      // The picker stays empty; the sheet explains a connection is needed.
+    }
+  }
+
+  Future<void> _submitMenuItem() async {
+    final app = AppScope.read(context);
+    final item = _menuItems.where((i) => i['id'] == _menuItem).firstOrNull;
+    final qty = double.tryParse(_qty.text);
+    if (item == null || qty == null || qty <= 0) {
+      snack(context, tr('Choose a menu item and enter the wasted portions.'), error: true);
+      return;
+    }
+    setState(() => _busy = true);
+    final ok = await guarded(context, () async {
+      await app.api.post('/branches/${app.branchId}/inventory/wastage', body: {
+        'menu_item_id': item['id'],
+        'qty': qty,
+        'reason_code': _reason,
+        if (_note.text.isNotEmpty) 'note': _note.text,
+      });
+    });
+    if (!mounted) {
+      return;
+    }
+    setState(() => _busy = false);
+    if (ok) {
+      _qty.clear();
+      _note.clear();
+      snack(context, tr('Menu-item wastage logged. The recipe was taken out of stock.'));
+    }
   }
 
   Future<void> _submit(Map<String, dynamic> ref) async {
@@ -555,28 +647,60 @@ class _LogWastageViewState extends State<_LogWastageView> {
         builder: (context, ref) {
           final ingredients = asRows(ref['ingredients']);
           return ListView(padding: const EdgeInsets.all(16), children: [
-            DropdownButtonFormField<int>(
-              initialValue: _ingredient,
-              isExpanded: true,
-              decoration: InputDecoration(labelText: tr('Ingredient')),
-              items: [
-                for (final i in ingredients)
-                  DropdownMenuItem(value: (i['id'] as num).toInt(), child: Text('${i['name']} (${i['unit_symbol'] ?? ''})')),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, icon: Icon(Icons.inventory_2_outlined), label: Text('Ingredient')),
+                ButtonSegment(value: true, icon: Icon(Icons.restaurant_outlined), label: Text('Menu item')),
               ],
-              onChanged: (v) => setState(() {
-                _ingredient = v;
-                _unitId = null;
-              }),
+              selected: {_menuMode},
+              onSelectionChanged: (s) {
+                setState(() => _menuMode = s.first);
+                if (_menuMode) {
+                  _loadMenu();
+                }
+              },
             ),
             const SizedBox(height: 12),
-            field(_qty, 'Quantity', type: const TextInputType.numberWithOptions(decimal: true)),
-            _unitPicker(
-              ref: ref,
-              ingredient: ingredients.where((i) => i['id'] == _ingredient).firstOrNull,
-              unitId: _unitId,
-              qty: double.tryParse(_qty.text) ?? 0,
-              onChanged: (v) => setState(() => _unitId = v),
-            ),
+            if (_menuMode) ...[
+              Text(tr('A finished dish, in portions. Its recipe is taken out of stock exactly like a sale.'),
+                  style: TextStyle(color: context.muted, fontSize: 12)),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<int>(
+                initialValue: _menuItem,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Menu item'),
+                items: [
+                  for (final i in _menuItems)
+                    DropdownMenuItem(value: (i['id'] as num).toInt(), child: Text('${i['name']}', overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (v) => setState(() => _menuItem = v),
+              ),
+              const SizedBox(height: 12),
+              field(_qty, tr('Wasted portions'), type: const TextInputType.numberWithOptions(decimal: true)),
+            ] else ...[
+              DropdownButtonFormField<int>(
+                initialValue: _ingredient,
+                isExpanded: true,
+                decoration: InputDecoration(labelText: tr('Ingredient')),
+                items: [
+                  for (final i in ingredients)
+                    DropdownMenuItem(value: (i['id'] as num).toInt(), child: Text('${i['name']} (${i['unit_symbol'] ?? ''})')),
+                ],
+                onChanged: (v) => setState(() {
+                  _ingredient = v;
+                  _unitId = null;
+                }),
+              ),
+              const SizedBox(height: 12),
+              field(_qty, 'Quantity', type: const TextInputType.numberWithOptions(decimal: true)),
+              _unitPicker(
+                ref: ref,
+                ingredient: ingredients.where((i) => i['id'] == _ingredient).firstOrNull,
+                unitId: _unitId,
+                qty: double.tryParse(_qty.text) ?? 0,
+                onChanged: (v) => setState(() => _unitId = v),
+              ),
+            ],
             DropdownButtonFormField<String>(
               initialValue: _reason,
               decoration: InputDecoration(labelText: tr('Reason')),
@@ -585,7 +709,10 @@ class _LogWastageViewState extends State<_LogWastageView> {
             ),
             const SizedBox(height: 12),
             field(_note, 'Note (optional)'),
-            FilledButton(onPressed: _busy ? null : () => _submit(ref), child: const Text('Log wastage')),
+            FilledButton(
+              onPressed: _busy ? null : () => _menuMode ? _submitMenuItem() : _submit(ref),
+              child: Text(_busy ? 'Saving...' : 'Log wastage'),
+            ),
           ]);
         },
     );

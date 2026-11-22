@@ -103,7 +103,7 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::post('/settings/sms/test', [SettingsApiController::class, 'testSms'])->middleware('throttle:5,1,sms-test')->name('settings.sms.test');
         Route::get('/sms/history', [SettingsApiController::class, 'smsHistory'])->name('sms.history');
         Route::post('/sms/promotion', [SettingsApiController::class, 'sendPromotion'])->middleware('throttle:3,1,sms-promo')->name('sms.promotion');
-        Route::delete('/ingredients/{ingredient}', [InventoryApiController::class, 'deactivateIngredient'])->name('ingredients.deactivate');
+        Route::delete('/ingredients/{ingredient}', [InventoryApiController::class, 'destroyIngredient'])->name('ingredients.destroy');
         Route::get('/ingredient-categories', [InventoryApiController::class, 'categories'])->name('ingredient-categories.index');
         Route::post('/ingredient-categories', [InventoryApiController::class, 'storeCategory'])->name('ingredient-categories.store');
         Route::put('/ingredient-categories/{category}', [InventoryApiController::class, 'updateCategory'])->name('ingredient-categories.update');
@@ -126,6 +126,8 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::get('/profile', [AdminApiController::class, 'profile'])->name('profile.show');
         Route::post('/profile', [AdminApiController::class, 'updateProfile'])->name('profile.update');
         Route::put('/profile/password', [AdminApiController::class, 'updatePassword'])->name('profile.password');
+        Route::post('/payments/{payment}/approve', [AdminApiController::class, 'approvePayment'])->name('payments.approve');
+        Route::post('/payments/{payment}/reject', [AdminApiController::class, 'rejectPayment'])->name('payments.reject');
         Route::get('/accounting/fiscal-years', [AdminApiController::class, 'fiscalYears'])->name('fiscal-years.index');
         Route::post('/accounting/fiscal-years/{year}/lock', [AdminApiController::class, 'lockFiscalYear'])->name('fiscal-years.lock');
         Route::get('/accounting/bank-statements', [AdminApiController::class, 'bankStatements'])->name('bank-statements.index');

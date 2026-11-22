@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' hide Text;
 
 import '../../core/api_client.dart';
 import '../../core/app_state.dart';
+import '../../core/l10n.dart' show tr;
 import '../../core/sounds.dart';
 import '../../core/theme.dart';
 import '../../ui/widgets.dart';
@@ -64,6 +65,11 @@ class _PaymentFormState extends State<_PaymentForm> {
 
   /// Due mode: the customer pays later, so money received now is optional.
   bool _due = false;
+
+  /// Whether this branch makes a wallet payment wait for a manager's check
+  /// (off by default: the money is in at once, like the web POS shows).
+  bool _walletVerification = false;
+
   final _dueMobile = TextEditingController();
   final _dueName = TextEditingController();
   final _dueReceived = TextEditingController();
@@ -79,14 +85,18 @@ class _PaymentFormState extends State<_PaymentForm> {
     final app = AppScope.read(context);
     try {
       final res = await app.cachedGet('/branches/${app.branchId}/reference');
-      final list = ((res.data as Map)['payment_methods'] as List?)?.whereType<Map>().toList() ?? const [];
-      if (list.isNotEmpty && mounted) {
+      final data = res.data as Map;
+      final list = (data['payment_methods'] as List?)?.whereType<Map>().toList() ?? const [];
+      if (mounted) {
         setState(() {
-          _methods = [
-            for (final m in list) (code: '${m['method']}', name: localized(app, m), type: '${m['type']}'),
-          ];
-          if (!_methods.any((m) => m.code == _lines.first.method)) {
-            _lines.first.method = _methods.first.code;
+          _walletVerification = data['wallet_verification'] == true;
+          if (list.isNotEmpty) {
+            _methods = [
+              for (final m in list) (code: '${m['method']}', name: localized(app, m), type: '${m['type']}'),
+            ];
+            if (!_methods.any((m) => m.code == _lines.first.method)) {
+              _lines.first.method = _methods.first.code;
+            }
           }
         });
       }
@@ -95,8 +105,10 @@ class _PaymentFormState extends State<_PaymentForm> {
     }
   }
 
-  bool _needsReference(String method) =>
+  bool _isWallet(String method) =>
       _methods.any((m) => m.code == method && m.type == 'wallet') || method == 'bkash' || method == 'nagad';
+
+  bool _needsReference(String method) => _isWallet(method);
 
   Future<void> _putOnDue() async {
     final mobile = _dueMobile.text.trim();
@@ -235,11 +247,14 @@ class _PaymentFormState extends State<_PaymentForm> {
       SoundFx.play('order_paid');
       final change = result is Map ? result['change'] : null;
       final changeValue = toNum(change) > 0 ? toNum(change) : (isSingleCash ? max(0, _amountOf(first) - widget.total) : 0);
+      final walletWaits = _walletVerification && _lines.any((l) => _isWallet(l.method));
       message = changeValue > 0
           ? 'Paid. Change ${fmtMoney(changeValue)}'
-          : _lines.length > 1
-              ? 'Split payment recorded (${_lines.length} parts).'
-              : 'Payment recorded.';
+          : walletWaits
+              ? tr('Wallet payment recorded. Waiting for manager verification.')
+              : _lines.length > 1
+                  ? 'Split payment recorded (${_lines.length} parts).'
+                  : 'Payment recorded.';
     } on ApiException catch (e) {
       if (!e.isNetwork) {
         if (mounted) {
@@ -333,8 +348,19 @@ class _PaymentFormState extends State<_PaymentForm> {
             ? 'Saving...'
             : _lines.length > 1
                 ? 'Confirm split payment'
-                : 'Take payment'),
+                : _walletVerification && _isWallet(first.method)
+                    ? tr('Record payment (manager verifies)')
+                    : 'Take payment'),
       ),
+      if (_walletVerification && _lines.any((l) => _isWallet(l.method)))
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            tr("Wallet payments on this branch wait for a manager's verification. The order completes after approval."),
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Brand.warning, fontSize: 12),
+          ),
+        ),
       if (problem != null && _lines.any((l) => _amountOf(l) > 0))
         Padding(
           padding: const EdgeInsets.only(top: 8),

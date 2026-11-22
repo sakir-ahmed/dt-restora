@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1\Staff;
 use App\Actions\Attendance\RecordStaffAttendanceAction;
 use App\Actions\Delivery\AssignRiderAction;
 use App\Actions\Inventory\ApproveStockTransferAction;
+use App\Actions\Inventory\LogMenuItemWastageAction;
 use App\Actions\Inventory\LogWastageAction;
 use App\Actions\Inventory\ReceivePurchaseAction;
 use App\Actions\Inventory\ReceiveStockTransferAction;
@@ -41,6 +42,7 @@ use App\Models\IngredientStock;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\PaymentMethod;
 use App\Models\Preorder;
 use App\Models\Purchase;
@@ -386,21 +388,49 @@ class StaffApiController extends Controller
         $branchModel = $this->branchOrFail($request, $branch);
         abort_unless($order->branch_id === $branchModel->id, 404);
 
-        return $this->rememberIdempotent($request, 'staff-payment', function () use ($request, $order, $action, $user): JsonResponse {
+        return $this->rememberIdempotent($request, 'staff-payment', function () use ($request, $order, $action, $user, $branchModel): JsonResponse {
             $validated = $request->validate([
                 'tendered' => ['required_without:lines', 'numeric', 'min:0'],
                 'lines' => ['required_without:tendered', 'array', 'min:1'],
                 'lines.*.method' => ['required_with:lines', 'string'],
                 'lines.*.amount' => ['required_with:lines', 'numeric', 'gt:0'],
+                'lines.*.reference' => ['nullable', 'string', 'max:100'],
             ]);
 
-            if (isset($validated['lines'])) {
+            // One line behaves like the web payment lane: cash pays with change, a wallet
+            // records for verification (completing at once when the branch switched that
+            // off), anything else settles the whole bill. Two or more lines make a split.
+            $message = __('orders.paid_success');
+
+            if (isset($validated['lines']) && count($validated['lines']) === 1) {
+                $line = $validated['lines'][0];
+
+                abort_unless(in_array($line['method'], PosSettings::enabledMethods($branchModel), true), 422, __('payments.method_disabled'));
+
+                $method = PaymentMethod::findByCode((string) $line['method']);
+
+                if ($method === null) {
+                    throw ValidationException::withMessages(['lines.0.method' => __('payments.invalid_payment')]);
+                }
+
+                if ($method->isCash()) {
+                    $action->executeCash($order, (float) $line['amount'], $user);
+                } elseif ($method->isWallet()) {
+                    $payment = $action->recordManualWallet($order, $method, (float) $line['amount'], $line['reference'] ?? null, $user);
+
+                    $message = $payment->status === Payment::STATUS_COMPLETED
+                        ? __('payments.single_recorded', ['method' => $method->name])
+                        : __('payments.manual_recorded');
+                } else {
+                    $action->executeSingle($order, $method, $line['reference'] ?? null, $user);
+                }
+            } elseif (isset($validated['lines'])) {
                 $action->executeSplit($order, $validated['lines'], $user);
             } else {
                 $action->executeCash($order, (float) $validated['tendered'], $user);
             }
 
-            return $this->success($this->orderPayload($order->fresh(), kitchen: true), __('orders.paid_success'));
+            return $this->success($this->orderPayload($order->fresh(), kitchen: true), $message);
         });
     }
 
@@ -452,19 +482,38 @@ class StaffApiController extends Controller
         return $this->success($rows);
     }
 
-    public function wastage(Request $request, string $branch, LogWastageAction $action): JsonResponse
+    public function wastage(Request $request, string $branch, LogWastageAction $action, LogMenuItemWastageAction $menuItemAction): JsonResponse
     {
         $user = $this->staffUser($request);
         $this->permit($user, 'wastage.log');
         $branchModel = $this->branchOrFail($request, $branch);
 
+        // An ingredient leaves stock in its own unit; a finished menu item leaves in
+        // portions, its recipe exploding into ingredients exactly like a sale.
         $validated = $request->validate([
-            'ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
-            'unit_id' => ['required', 'integer', 'exists:units,id'],
+            'ingredient_id' => ['required_without:menu_item_id', 'integer', 'exists:ingredients,id'],
+            'unit_id' => ['required_with:ingredient_id', 'integer', 'exists:units,id'],
+            'menu_item_id' => ['required_without:ingredient_id', 'integer', 'exists:menu_items,id'],
             'qty' => ['required', 'numeric', 'gt:0'],
             'reason_code' => ['required', 'string'],
             'note' => ['nullable', 'string', 'max:500'],
         ]);
+
+        if (isset($validated['menu_item_id'])) {
+            $item = MenuItem::query()->findOrFail($validated['menu_item_id']);
+            abort_unless($item->branch_id === $branchModel->id, 404);
+
+            $wastage = $menuItemAction->execute(
+                branch: $branchModel,
+                item: $item,
+                portions: (float) $validated['qty'],
+                reasonCode: $validated['reason_code'],
+                note: $validated['note'] ?? null,
+                user: $user,
+            );
+
+            return $this->success(['id' => $wastage->id, 'cost' => (string) $wastage->cost], __('inventory.wastage_menu_logged', ['item' => $item->name, 'qty' => (string) $validated['qty']]), 201);
+        }
 
         $wastage = $action->execute(
             branch: $branchModel,
@@ -1584,6 +1633,8 @@ class StaffApiController extends Controller
                 ->filter(fn (array $entry): bool => $entry['enabled'])
                 ->values()
                 ->all();
+            // Whether wallet money waits for a manager here; off means it is in at once.
+            $data['wallet_verification'] = PosSettings::walletVerificationEnabled($branchModel);
             $data['void_reasons'] = VoidRequest::REASONS;
             $data['delete_reasons'] = DeleteReasons::CODES;
             $data['order_edit_enabled'] = PosSettings::orderEditEnabled($branchModel);

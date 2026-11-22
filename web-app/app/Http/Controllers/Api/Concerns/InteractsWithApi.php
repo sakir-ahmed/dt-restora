@@ -149,8 +149,12 @@ trait InteractsWithApi
                 'line_total' => (string) $item->line_total,
             ])->all(),
             'payments' => $order->payments->map(fn ($payment) => [
+                'id' => $payment->id,
                 'method' => $payment->method,
                 'amount' => (string) $payment->amount,
+                // The app shows what is in and what still waits for a manager.
+                'status' => $payment->status,
+                'reference' => $payment->reference,
                 'tendered' => $payment->tendered === null ? null : (string) $payment->tendered,
                 'change_due' => $payment->change_due === null ? null : (string) $payment->change_due,
             ])->all(),
