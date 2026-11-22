@@ -137,6 +137,12 @@ class MenuItem extends Model
     }
 
     /** @return HasOne<Recipe, $this> */
+    /** @return HasMany<OrderItem, $this> */
+    public function orderItems(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
     public function recipe()
     {
         return $this->hasOne(Recipe::class);

@@ -163,3 +163,41 @@ it('sends each dish with its variants and add-ons so the edit form can load them
             ->where('categories.0.items.0.add_ons.0.name', 'Extra cheese')
             ->has('categories.0.items.0.media_gallery'));
 });
+
+it('deletes a menu item that was never ordered', function (): void {
+    $item = MenuItem::factory()->create(['branch_id' => $this->branch->id, 'menu_category_id' => $this->category->id]);
+
+    $this->actingAs($this->manager, 'staff')->delete("/admin/menu/items/{$item->id}")
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect(MenuItem::query()->find($item->id))->toBeNull();
+});
+
+it('refuses to delete a menu item that already sits on an order instead of failing with a server error', function (): void {
+    $item = MenuItem::factory()->create(['branch_id' => $this->branch->id, 'menu_category_id' => $this->category->id]);
+
+    $order = \App\Models\Order::query()->create([
+        'branch_id' => $this->branch->id,
+        'invoice_no' => 'BR01-DEL-0001',
+        'order_type' => 'takeaway',
+        'channel' => 'pos',
+        'status' => 'completed',
+        'subtotal' => '100.00',
+        'total' => '100.00',
+    ]);
+    \App\Models\OrderItem::query()->create([
+        'order_id' => $order->id,
+        'menu_item_id' => $item->id,
+        'name' => $item->name,
+        'unit_price' => '100.00',
+        'quantity' => 1,
+        'line_total' => '100.00',
+    ]);
+
+    $this->actingAs($this->manager, 'staff')->delete("/admin/menu/items/{$item->id}")
+        ->assertRedirect()
+        ->assertSessionHas('error');
+
+    expect(MenuItem::query()->find($item->id))->not->toBeNull();
+});

@@ -1,7 +1,7 @@
 import '../css/app.css';
 import 'vue-sonner/style.css';
 
-import { createInertiaApp, usePage } from '@inertiajs/vue3';
+import { createInertiaApp, router, usePage } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, createSSRApp, defineAsyncComponent, defineComponent, h, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Toaster } from 'vue-sonner';
@@ -18,8 +18,25 @@ import { t } from './lib/i18n';
 import { notify } from './lib/notify';
 import { vNumeric } from './lib/numericInput';
 import { registerServiceWorker } from './lib/pwa';
+import { showRefusal } from './lib/refusal';
 import { pageTitle } from './lib/title';
 import { Ziggy } from './ziggy';
+
+// A delete the server refuses comes back as a normal redirect carrying an error flash. Show it as a
+// warning dialog for every page, and keep page callbacks from announcing a success that did not happen.
+let lastMethod = '';
+
+router.on('before', (event) => {
+    lastMethod = String(event.detail.visit.method ?? '').toLowerCase();
+});
+
+router.on('success', (event) => {
+    const error = event.detail.page.props?.flash?.error;
+
+    if (lastMethod === 'delete' && error) {
+        showRefusal(error);
+    }
+});
 
 createInertiaApp({
     title: pageTitle,

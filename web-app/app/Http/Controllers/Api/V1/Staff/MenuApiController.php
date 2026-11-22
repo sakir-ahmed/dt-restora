@@ -89,6 +89,12 @@ class MenuApiController extends Controller
         $branchModel = $this->branchOrFail($request, $branch);
         abort_unless($item->branch_id === $branchModel->id, 404);
 
+        $orderLines = $item->orderItems()->count();
+
+        if ($orderLines > 0) {
+            throw ValidationException::withMessages(['item' => __('menu.item_has_orders', ['name' => $item->name, 'count' => $orderLines])]);
+        }
+
         $item->delete();
         DataVersion::bump();
 

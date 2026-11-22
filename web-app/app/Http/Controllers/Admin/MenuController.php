@@ -252,6 +252,12 @@ class MenuController extends Controller
     {
         $this->authorize('menu.manage');
 
+        $orderLines = $item->orderItems()->count();
+
+        if ($orderLines > 0) {
+            return back()->with('error', __('menu.item_has_orders', ['name' => $item->name, 'count' => $orderLines]));
+        }
+
         $item->delete();
 
         activity()->performedOn($item)->causedBy($request->user('staff'))->log('menu.item_deleted');

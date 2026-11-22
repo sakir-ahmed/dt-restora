@@ -24,9 +24,17 @@ function isDuplicate(type, message) {
     return duplicate;
 }
 
+// A delete the server refused is reported by a warning dialog. For a moment after it, a success toast
+// from the page's own callback would tell the user the opposite, so it is dropped.
+let refusal = { message: '', at: 0 };
+
+export function markRefusal(message) {
+    refusal = { message: String(message), at: Date.now() };
+}
+
 export const notify = {
     success(message, detail = null) {
-        if (isDuplicate('success', message)) {
+        if (Date.now() - refusal.at < 2000 || isDuplicate('success', message)) {
             return;
         }
 
@@ -35,7 +43,7 @@ export const notify = {
     },
 
     error(message, detail = null, action = null) {
-        if (isDuplicate('error', message)) {
+        if ((String(message) === refusal.message && Date.now() - refusal.at < 2000) || isDuplicate('error', message)) {
             return;
         }
 

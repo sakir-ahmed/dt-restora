@@ -149,7 +149,15 @@ async function removeCategory(category) {
     }
 
     router.delete(route('admin.menu.categories.destroy', category.id), {
-        onSuccess: () => notify.success(t('menu.category_deleted')),
+        onSuccess: (page) => {
+            const flash = page.props.flash ?? {};
+
+            if (flash.error) {
+                return;
+            }
+
+            notify.success(t('menu.category_deleted'));
+        },
         onError: () => notify.error(t('menu.category_delete_not_empty')),
     });
 }
@@ -260,7 +268,16 @@ async function removeItem(item) {
     }
 
     router.delete(route('admin.menu.items.destroy', item.id), {
-        onSuccess: () => notify.success(t('menu.item_deleted')),
+        onSuccess: (page) => {
+            // A blocked delete redirects back with an error flash and is explained by the global warning dialog.
+            const flash = page.props.flash ?? {};
+
+            if (flash.error) {
+                return; // the warning dialog already explains why it was not deleted
+            }
+
+            notify.success(t('menu.item_deleted'));
+        },
     });
 }
 
