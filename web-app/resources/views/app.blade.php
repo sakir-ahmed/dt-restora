@@ -70,6 +70,9 @@
     @if (($brandCss = \App\Support\Brand::paletteCss()) !== '')
         <style id="brand-palette">{!! $brandCss !!}</style>
     @endif
+
+    @include('partials.tracking')
+
     @inertiaHead
 </head>
 <body>
