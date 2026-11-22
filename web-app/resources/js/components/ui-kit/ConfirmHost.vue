@@ -23,6 +23,7 @@ function onConfirm(payload) {
         :typed-word="state.options?.typedWord ?? 'CONFIRM'"
         :busy="state.options?.busy ?? false"
         :hide-cancel="state.options?.hideCancel ?? false"
+        :link="state.options?.link ?? null"
         @cancel="cancel"
         @confirm="onConfirm"
     />

@@ -1,5 +1,5 @@
 <script setup>
-import { usePage } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { t } from '@/lib/i18n';
 import AppIcon from '@/components/AppIcon.vue';
@@ -18,6 +18,7 @@ const props = defineProps({
     typedWord: { type: String, default: 'CONFIRM' },
     busy: { type: Boolean, default: false },
     hideCancel: { type: Boolean, default: false }, // a notice with a single button
+    link: { type: Object, default: null }, // {label, url}: an extra button that opens the related records
 });
 
 const emit = defineEmits(['cancel', 'confirm']);
@@ -249,6 +250,15 @@ function submit() {
                         >
                             {{ resolvedCancelText }}
                         </button>
+
+                        <Link
+                            v-if="link"
+                            :href="link.url"
+                            class="inline-flex h-7 items-center rounded-md border border-border bg-surface px-2.5 text-[13px] font-medium text-foreground hover:bg-background focus-visible:ring-2 focus-visible:ring-accent"
+                            @click="submit"
+                        >
+                            {{ link.label }}
+                        </Link>
 
                         <button
                             type="button"

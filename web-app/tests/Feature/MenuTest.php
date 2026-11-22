@@ -197,7 +197,11 @@ it('refuses to delete a menu item that already sits on an order instead of faili
 
     $this->actingAs($this->manager, 'staff')->delete("/admin/menu/items/{$item->id}")
         ->assertRedirect()
-        ->assertSessionHas('error');
+        ->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'BR01-DEL-0001') && str_contains($message, '1 past order'))
+        ->assertSessionHas('error_link.url', fn (string $url): bool => str_contains($url, '/admin/orders?search='));
 
     expect(MenuItem::query()->find($item->id))->not->toBeNull();
+
+    $this->actingAs($this->manager, 'staff')->get('/admin/orders?search='.urlencode($item->name))
+        ->assertInertia(fn ($page) => $page->has('orders', 1));
 });

@@ -74,7 +74,10 @@ class OrderController extends Controller
                 ? $query->where('approval_status', Order::APPROVAL_AWAITING)->where('status', '!=', OrderStatus::Void->value)
                 : $query->where('status', $status))
             ->when($request->string('search')->toString(), function ($query, $search): void {
-                $query->where('invoice_no', 'like', "%{$search}%");
+                // An invoice number, or a dish name on any line of the order.
+                $query->where(fn ($match) => $match
+                    ->where('invoice_no', 'like', "%{$search}%")
+                    ->orWhereHas('items', fn ($items) => $items->where('name', 'like', "%{$search}%")->orWhere('name_bn', 'like', "%{$search}%")));
             })
             ->when(! Setting::showsDeletedItems(), fn ($query) => $query->where('status', '!=', OrderStatus::Void->value))
             ->latest()

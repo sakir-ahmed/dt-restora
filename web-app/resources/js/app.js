@@ -31,10 +31,10 @@ router.on('before', (event) => {
 });
 
 router.on('success', (event) => {
-    const error = event.detail.page.props?.flash?.error;
+    const flash = event.detail.page.props?.flash ?? {};
 
-    if (lastMethod === 'delete' && error) {
-        showRefusal(error);
+    if (lastMethod === 'delete' && flash.error) {
+        showRefusal(flash.error, flash.error_link ?? null);
     }
 });
 

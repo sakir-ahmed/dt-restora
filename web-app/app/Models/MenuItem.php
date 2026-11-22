@@ -143,6 +143,21 @@ class MenuItem extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    /**
+     * How many past orders carry this dish and the newest invoice numbers, for refusing a delete in words people know.
+     *
+     * @return array{orders: int, invoices: string}
+     */
+    public function orderUsage(int $sample = 5): array
+    {
+        $orders = Order::query()->whereHas('items', fn ($query) => $query->where('menu_item_id', $this->id));
+
+        return [
+            'orders' => (clone $orders)->count(),
+            'invoices' => (clone $orders)->latest()->limit($sample)->pluck('invoice_no')->implode(', '),
+        ];
+    }
+
     public function recipe()
     {
         return $this->hasOne(Recipe::class);

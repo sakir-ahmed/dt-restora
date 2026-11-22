@@ -252,10 +252,15 @@ class MenuController extends Controller
     {
         $this->authorize('menu.manage');
 
-        $orderLines = $item->orderItems()->count();
+        $usage = $item->orderUsage();
 
-        if ($orderLines > 0) {
-            return back()->with('error', __('menu.item_has_orders', ['name' => $item->name, 'count' => $orderLines]));
+        if ($usage['orders'] > 0) {
+            return back()
+                ->with('error', __('menu.item_has_orders', ['name' => $item->name, ...$usage]))
+                ->with('error_link', [
+                    'label' => __('menu.view_orders'),
+                    'url' => route('admin.orders.index', ['search' => $item->name]),
+                ]);
         }
 
         $item->delete();

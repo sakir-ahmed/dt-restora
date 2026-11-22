@@ -86,6 +86,7 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'success' => $request->session()->get('success'),
                 'error' => $request->session()->get('error'),
+                'error_link' => $request->session()->get('error_link'),
                 'order' => $request->session()->get('order'),
                 'payment' => $request->session()->get('payment'),
                 // Manual wallet money waiting for a manager, so the POS shows the honest amber state.
