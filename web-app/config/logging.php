@@ -1,5 +1,6 @@
 <?php
 
+use App\Logging\TelegramLogger;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -54,7 +55,11 @@ return [
 
         'stack' => [
             'driver' => 'stack',
-            'channels' => explode(',', (string) env('LOG_STACK', 'single')),
+            'channels' => array_values(array_unique([
+                ...explode(',', (string) env('LOG_STACK', 'single')),
+                // Every warning and error also goes to Telegram when alerts are switched on.
+                ...(env('TELEGRAM_NOTIFY_ERRORS', false) && env('TELEGRAM_BOT_TOKEN') && env('TELEGRAM_CHAT_ID') ? ['telegram'] : []),
+            ])),
             'ignore_exceptions' => false,
         ],
 
@@ -79,6 +84,12 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'max_files' => 3,
             'replace_placeholders' => true,
+        ],
+
+        'telegram' => [
+            'driver' => 'custom',
+            'via' => TelegramLogger::class,
+            'level' => env('TELEGRAM_LOG_LEVEL', 'warning'),
         ],
 
         'slack' => [

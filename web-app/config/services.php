@@ -81,4 +81,12 @@ return [
         'secret_key' => env('TURNSTILE_SECRET_KEY'),
     ],
 
+    'telegram' => [
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'chat_id' => env('TELEGRAM_CHAT_ID'),
+        'notify_errors' => (bool) env('TELEGRAM_NOTIFY_ERRORS', false),
+        'level' => env('TELEGRAM_LOG_LEVEL', 'warning'),
+        'throttle_seconds' => (int) env('TELEGRAM_THROTTLE_SECONDS', 300),
+    ],
+
 ];

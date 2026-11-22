@@ -165,6 +165,8 @@ Log::error('Payment failed.', ['order_id' => $id, 'error' => $e->getMessage()]);
 
 Do not log the stack trace in every message; the exception handler already does it. Log with `'exception' => $e` only when needed.
 
+**Telegram alerts.** When `TELEGRAM_NOTIFY_ERRORS=true` and `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set, a `telegram` channel is added to the log stack (`app/Logging/TelegramHandler.php`). Every record at `TELEGRAM_LOG_LEVEL` (default `warning`) or above, including unhandled exceptions, is sent to the chat with the app name, environment, server, request or command, user, exception, file and line, and the app-code call path. The same problem is sent once per `TELEGRAM_THROTTLE_SECONDS` (default 300) with a count of repeats. The handler swallows its own failures so an alert can never break a request. Run `php artisan telegram:test` to check the setup. The alert text uses emojis by the owner's explicit request; this is the only place they are allowed.
+
 ---
 
 ## 7. Activity Log & Backup
