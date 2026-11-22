@@ -470,6 +470,9 @@ class StaffApiController extends Controller
 
         $rows = IngredientStock::query()
             ->where('branch_id', $branchModel->id)
+            // A deleted ingredient keeps its stock rows for the audit trail, but the
+            // stock list shows what can be bought and cooked, not ghosts.
+            ->whereHas('ingredient')
             ->with('ingredient:id,name,unit_id')
             ->get()
             ->map(fn (IngredientStock $stock) => [
