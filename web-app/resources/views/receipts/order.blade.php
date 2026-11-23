@@ -11,9 +11,16 @@
     $paper = $paper ?? '80mm';
     $tabular = \App\Support\ReceiptStyle::isTabular($layout, $paper);
     $money = fn ($value): string => \Illuminate\Support\Number::format((float) $value, 2);
+    // Mushak-6.3 (Bangladesh tax invoice): heading, BIN and the invoice number as the challan number, when the branch asks.
+    $showMushak = $showMushak ?? \App\Services\PosSettings::mushakEnabled($order->branch);
+    $bin = $binText ?? \App\Services\PosSettings::binFor($order->branch);
 @endphp
 <body class="layout-{{ $layout }} paper-{{ $paper }}">
     <div class="brand center">
+    @if ($showMushak)
+        <div class="center bold">{{ __('receipt.mushak_form') }}</div>
+        <div class="center bold">{{ __('receipt.tax_invoice') }}</div>
+    @endif
     @if ($showLogo ?? false)
         <div class="center"><img src="{{ \App\Support\Brand::logo() }}" alt="" style="max-width: 14mm; max-height: 14mm; height: auto; margin: 0 auto 4px; display: block;"></div>
     @endif
@@ -24,8 +31,8 @@
     @if ($order->branch->address)
         <div class="center">{{ $order->branch->address }}</div>
     @endif
-    @if (\App\Models\Setting::current()->tax_registration_no)
-        <div class="center">{{ __('receipt.bin') }}: {{ \App\Models\Setting::current()->tax_registration_no }}</div>
+    @if ($bin)
+        <div class="center {{ $showMushak ? 'bold' : '' }}">{{ __('receipt.bin') }}: {{ $bin }}</div>
     @endif
     @if ($order->branch->phone)
         <div class="center">{{ __('receipt.phone') }}: {{ $order->branch->phone }}</div>
@@ -34,11 +41,14 @@
 
     <div class="hr"></div>
 
-    <div class="bold">{{ $order->invoice_no }}</div>
+    <div class="bold">{{ $showMushak ? __('receipt.challan_no').': ' : '' }}{{ $order->invoice_no }}</div>
     <div>{{ \Illuminate\Support\Carbon::parse($order->created_at)->format('d M Y, h:i A') }}</div>
     <div>{{ __('receipt.order_type.' . $order->order_type->value) }}
         @if ($order->table) - {{ __('receipt.table') }} {{ $order->table->name }} @endif
     </div>
+    @if ($showMushak && $order->customer)
+        <div>{{ __('receipt.customer') }}: {{ $order->customer->name }}@if ($order->customer->mobile), {{ $order->customer->mobile }}@endif</div>
+    @endif
     @if ($order->waiter)
         <div>{{ __('receipt.served_by') }}: {{ $order->waiter->name }}</div>
     @endif

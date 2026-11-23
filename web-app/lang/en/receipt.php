@@ -31,4 +31,8 @@ return [
         'delivery' => 'Delivery',
     ],
     'kitchen_round' => 'Added items - round :round',
+    'mushak_form' => 'Mushak-6.3',
+    'tax_invoice' => 'Tax Invoice',
+    'challan_no' => 'Challan No',
+    'customer' => 'Customer',
 ];

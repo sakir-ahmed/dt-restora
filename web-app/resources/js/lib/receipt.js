@@ -77,6 +77,13 @@ export function localReceiptHtml(receipt) {
         ? `<div class="center">${escapeHtml(branch.receipt_footer)}</div>`
         : '';
 
+    // Mushak-6.3 (Bangladesh tax invoice): heading, BIN and the invoice number as the challan number, when the branch asks.
+    const mushak = settings.invoice_mushak === true;
+    const mushakHeading = mushak
+        ? `<div class="center bold">${escapeHtml(t('receipt.mushak_form'))}</div><div class="center bold">${escapeHtml(t('receipt.tax_invoice'))}</div>`
+        : '';
+    const invoiceLabel = mushak ? `${escapeHtml(t('receipt.challan_no'))}: ` : '';
+
     const change = Number(receipt.change) > 0
         ? row(t('receipt.received'), money(receipt.received)) + row(t('receipt.change'), money(receipt.change))
         : '';
@@ -89,13 +96,13 @@ export function localReceiptHtml(receipt) {
 <style>${receiptCss(receipt.layout, receipt.paper)}</style>
 </head>
 <body class="layout-${escapeHtml(receipt.layout ?? 'classic')} paper-${escapeHtml(receipt.paper ?? '80mm')}">
-<div class="brand center">${logo}<div class="bold large">${escapeHtml(branch.name ?? '')}</div>
+<div class="brand center">${mushakHeading}${logo}<div class="bold large">${escapeHtml(branch.name ?? '')}</div>
 ${branch.address ? `<div class="center">${escapeHtml(branch.address)}</div>` : ''}
-${branch.tax_registration_no ? `<div class="center">${escapeHtml(t('receipt.bin'))}: ${escapeHtml(branch.tax_registration_no)}</div>` : ''}
+${branch.tax_registration_no ? `<div class="center${mushak ? ' bold' : ''}">${escapeHtml(t('receipt.bin'))}: ${escapeHtml(branch.tax_registration_no)}</div>` : ''}
 ${branch.phone ? `<div class="center">${escapeHtml(t('receipt.phone'))}: ${escapeHtml(branch.phone)}</div>` : ''}
 </div>
 <div class="hr"></div>
-<div class="bold">${escapeHtml(receipt.invoiceNo)}</div>
+<div class="bold">${invoiceLabel}${escapeHtml(receipt.invoiceNo)}</div>
 <div>${escapeHtml(receipt.when ?? '')}</div>
 <div>${escapeHtml(receipt.orderType ?? '')}</div>
 <div class="hr"></div>

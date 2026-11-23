@@ -76,6 +76,9 @@ class SettingController extends Controller
                 'paper' => PosSettings::for($branch)['invoice_paper'],
                 'show_logo' => PosSettings::for($branch)['invoice_logo'],
                 'show_footer' => PosSettings::for($branch)['invoice_footer'],
+                'show_mushak' => PosSettings::for($branch)['invoice_mushak'],
+                'mushak_bin' => PosSettings::for($branch)['mushak_bin'],
+                'business_bin' => (string) Setting::current()->tax_registration_no,
                 'footer' => (string) $branch->receipt_footer,
             ] : null,
             'defaultPattern' => PosSettings::DEFAULT_PATTERN,
@@ -376,6 +379,8 @@ class SettingController extends Controller
             'paper' => ['required', Rule::in(PosSettings::PAPERS)],
             'show_logo' => ['sometimes', 'boolean'],
             'show_footer' => ['sometimes', 'boolean'],
+            'show_mushak' => ['sometimes', 'boolean'],
+            'mushak_bin' => ['nullable', 'string', 'max:40'],
             'footer' => ['nullable', 'string', 'max:255'],
         ]);
 
@@ -388,6 +393,8 @@ class SettingController extends Controller
                 'invoice_paper' => $validated['paper'],
                 'invoice_logo' => (bool) ($validated['show_logo'] ?? $current['invoice_logo']),
                 'invoice_footer' => (bool) ($validated['show_footer'] ?? $current['invoice_footer']),
+                'invoice_mushak' => (bool) ($validated['show_mushak'] ?? $current['invoice_mushak']),
+                'mushak_bin' => array_key_exists('mushak_bin', $validated) ? trim((string) $validated['mushak_bin']) : $current['mushak_bin'],
             ],
             'receipt_footer' => array_key_exists('footer', $validated) ? ($validated['footer'] ?: null) : $branch->receipt_footer,
         ]);

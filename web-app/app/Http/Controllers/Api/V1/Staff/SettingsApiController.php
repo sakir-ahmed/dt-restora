@@ -378,6 +378,8 @@ class SettingsApiController extends Controller
             'paper' => ['required', Rule::in(PosSettings::PAPERS)],
             'show_logo' => ['sometimes', 'boolean'],
             'show_footer' => ['sometimes', 'boolean'],
+            'show_mushak' => ['sometimes', 'boolean'],
+            'mushak_bin' => ['nullable', 'string', 'max:40'],
             'footer' => ['nullable', 'string', 'max:255'],
         ]);
 
@@ -390,6 +392,8 @@ class SettingsApiController extends Controller
                 'invoice_paper' => $validated['paper'],
                 'invoice_logo' => (bool) ($validated['show_logo'] ?? $current['invoice_logo']),
                 'invoice_footer' => (bool) ($validated['show_footer'] ?? $current['invoice_footer']),
+                'invoice_mushak' => (bool) ($validated['show_mushak'] ?? $current['invoice_mushak']),
+                'mushak_bin' => array_key_exists('mushak_bin', $validated) ? trim((string) $validated['mushak_bin']) : $current['mushak_bin'],
             ],
             'receipt_footer' => array_key_exists('footer', $validated) ? ($validated['footer'] ?: null) : $branchModel->receipt_footer,
         ]);

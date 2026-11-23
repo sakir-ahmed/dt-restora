@@ -117,7 +117,7 @@ All branch routes are prefixed `/api/v1/branches/{branch}`.
 | POST | `/api/v1/sms/promotion` | `message` (320), `audience` (all, recent, inactive); 3 per minute |
 | GET | `/branches/{branch}/settings` | Branch POS settings, tax and service charge, invoice layout and paper, delivery switch and `delivery_zones` |
 | PUT | `/branches/{branch}/settings/branch-pos` | `vat_percent`, `service_charge_percent`, `vat_inclusive`, `allow_negative_stock`, `online_ordering_enabled`, `pos` (same shape as read) |
-| PUT | `/branches/{branch}/settings/invoice-print` | `layout`, `paper` |
+| PUT | `/branches/{branch}/settings/invoice-print` | `layout`, `paper`, `show_logo`, `show_footer`, `footer`, `show_mushak`, `mushak_bin` (branch BIN, blank uses the business BIN) |
 | PUT | `/branches/{branch}/settings/delivery-enabled` | `enabled` |
 | POST / PUT / DELETE | `/branches/{branch}/settings/delivery-zones[/{zone}]` | `name`, `name_bn`, `fee`, `fee_type`, `min_order`, `eta_minutes`, `is_active` |
 

@@ -64,6 +64,8 @@ class ReceiptController extends Controller
             'paper' => ['required', Rule::in(ReceiptStyle::PAPERS)],
             'show_logo' => ['sometimes', 'boolean'],
             'show_footer' => ['sometimes', 'boolean'],
+            'show_mushak' => ['sometimes', 'boolean'],
+            'mushak_bin' => ['nullable', 'string', 'max:40'],
             'footer' => ['nullable', 'string', 'max:255'],
         ]);
 
@@ -100,6 +102,9 @@ class ReceiptController extends Controller
                 'paper' => $data['paper'],
                 'showLogo' => $request->boolean('show_logo'),
                 'showFooter' => $request->boolean('show_footer', true),
+                // The preview shows the Mushak switch and BIN being typed, before they are saved.
+                'showMushak' => $request->boolean('show_mushak'),
+                'binText' => $request->has('mushak_bin') && trim((string) $request->input('mushak_bin')) !== '' ? trim((string) $request->input('mushak_bin')) : PosSettings::binFor($branch),
                 // The preview shows the text being typed, before it is saved.
                 'footerText' => $request->has('footer') ? (string) ($data['footer'] ?? '') : $branch->receipt_footer,
             ])

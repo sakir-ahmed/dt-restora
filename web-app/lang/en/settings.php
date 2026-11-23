@@ -226,4 +226,8 @@ return [
     'col_share_image' => 'Share as image',
     'col_all' => 'All',
     'share_image_needs_switch' => 'Share as image works after "Let staff share the invoice as an image" is switched on above.',
+    'invoice_mushak' => 'Show Mushak number on invoices',
+    'invoice_mushak_helper' => 'For Bangladesh VAT. When on, every invoice of this branch is printed as a Mushak-6.3 tax invoice: the heading, the BIN and the invoice number as the challan number. Off by default.',
+    'mushak_bin' => 'BIN for this branch',
+    'mushak_bin_helper' => 'Leave empty to use the business BIN from General settings.',
 ];

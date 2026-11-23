@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\Branch;
 use App\Models\PaymentMethod;
+use App\Models\Setting;
 use App\Support\ReceiptStyle;
 use Closure;
 use Illuminate\Validation\Rule;
@@ -67,6 +68,8 @@ final class PosSettings
      *     invoice_logo: bool,
      *     invoice_share_image: bool,
      *     invoice_footer: bool,
+     *     invoice_mushak: bool,
+     *     mushak_bin: string,
      *     preorder_release_minutes: int,
      *     invoice_pattern: string,
      *     invoice_seq_digits: int,
@@ -94,6 +97,10 @@ final class PosSettings
             // Off until a branch wants to send invoices as a picture (copy, share) instead of only printing them.
             'invoice_share_image' => false,
             'invoice_footer' => true,
+            // Bangladesh VAT: when on, every invoice of the branch carries the Mushak-6.3 tax invoice heading, the BIN
+            // and the invoice number as the challan number. The BIN is the branch's own, or the business one if blank.
+            'invoice_mushak' => false,
+            'mushak_bin' => '',
             // A wallet payment typed by the cashier is trusted at once. A branch can ask for a manager's check instead.
             'wallet_verification_enabled' => false,
             // A pre-order or reservation meal goes to the kitchen board this many minutes before its time.
@@ -128,6 +135,24 @@ final class PosSettings
     public static function invoiceShareImageEnabled(?Branch $branch): bool
     {
         return (bool) ($branch?->pos_settings['invoice_share_image'] ?? false);
+    }
+
+    /**
+     * Whether the branch's invoices carry the Mushak-6.3 tax invoice heading. Off unless the branch turned it on.
+     */
+    public static function mushakEnabled(?Branch $branch): bool
+    {
+        return (bool) ($branch?->pos_settings['invoice_mushak'] ?? false);
+    }
+
+    /**
+     * The BIN printed on this branch's invoices: the branch's own when it has one, else the business BIN.
+     */
+    public static function binFor(?Branch $branch): ?string
+    {
+        $own = trim((string) ($branch?->pos_settings['mushak_bin'] ?? ''));
+
+        return $own !== '' ? $own : (Setting::current()->tax_registration_no ?: null);
     }
 
     /**
@@ -185,6 +210,8 @@ final class PosSettings
      *     invoice_logo: bool,
      *     invoice_share_image: bool,
      *     invoice_footer: bool,
+     *     invoice_mushak: bool,
+     *     mushak_bin: string,
      *     preorder_release_minutes: int,
      *     invoice_pattern: string,
      *     invoice_seq_digits: int,
@@ -215,6 +242,8 @@ final class PosSettings
         $settings['invoice_logo'] = (bool) $settings['invoice_logo'];
         $settings['invoice_share_image'] = (bool) $settings['invoice_share_image'];
         $settings['invoice_footer'] = (bool) $settings['invoice_footer'];
+        $settings['invoice_mushak'] = (bool) $settings['invoice_mushak'];
+        $settings['mushak_bin'] = trim((string) $settings['mushak_bin']);
         $settings['wallet_verification_enabled'] = (bool) $settings['wallet_verification_enabled'];
         $settings['preorder_release_minutes'] = max(0, (int) $settings['preorder_release_minutes']);
         $settings['sounds'] = self::soundsFor($branch);
@@ -363,6 +392,8 @@ final class PosSettings
             'pos.invoice_logo' => ['sometimes', 'boolean'],
             'pos.invoice_share_image' => ['sometimes', 'boolean'],
             'pos.invoice_footer' => ['sometimes', 'boolean'],
+            'pos.invoice_mushak' => ['sometimes', 'boolean'],
+            'pos.mushak_bin' => ['nullable', 'string', 'max:40'],
             'pos.wallet_verification_enabled' => ['sometimes', 'boolean'],
             'pos.invoice_pattern' => ['required_with:pos', 'string', 'max:60', function (string $attribute, mixed $value, Closure $fail): void {
                 if (! is_string($value) || ! self::patternIsValid($value)) {
@@ -418,6 +449,8 @@ final class PosSettings
             'invoice_logo' => (bool) ($pos['invoice_logo'] ?? false),
             'invoice_share_image' => (bool) ($pos['invoice_share_image'] ?? false),
             'invoice_footer' => (bool) ($pos['invoice_footer'] ?? true),
+            'invoice_mushak' => (bool) ($pos['invoice_mushak'] ?? false),
+            'mushak_bin' => trim((string) ($pos['mushak_bin'] ?? '')),
             'wallet_verification_enabled' => (bool) ($pos['wallet_verification_enabled'] ?? false),
             'preorder_release_minutes' => (int) ($pos['preorder_release_minutes'] ?? 45),
             'invoice_pattern' => $pos['invoice_pattern'],

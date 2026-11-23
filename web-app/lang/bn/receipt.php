@@ -31,4 +31,8 @@ return [
         'delivery' => 'ডেলিভারি',
     ],
     'kitchen_round' => 'যোগ করা আইটেম - রাউন্ড :round',
+    'mushak_form' => 'মূসক-৬.৩',
+    'tax_invoice' => 'কর চালানপত্র',
+    'challan_no' => 'চালান নং',
+    'customer' => 'ক্রেতা',
 ];

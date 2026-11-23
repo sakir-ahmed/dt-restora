@@ -22,6 +22,8 @@ const form = useForm({
     paper: props.invoicePrint.paper,
     show_logo: props.invoicePrint.show_logo,
     show_footer: props.invoicePrint.show_footer,
+    show_mushak: props.invoicePrint.show_mushak,
+    mushak_bin: props.invoicePrint.mushak_bin ?? '',
     footer: props.invoicePrint.footer ?? '',
 });
 
@@ -33,6 +35,8 @@ const previewUrl = computed(() => route('admin.settings.invoice-preview', {
     paper: form.paper,
     show_logo: form.show_logo ? 1 : 0,
     show_footer: form.show_footer ? 1 : 0,
+    show_mushak: form.show_mushak ? 1 : 0,
+    mushak_bin: form.mushak_bin ?? '',
     footer: form.footer ?? '',
 }));
 const previewWidth = computed(() => PAPER_WIDTH[form.paper] ?? 302);
@@ -92,6 +96,27 @@ const cardClass = (active) => [
                     {{ t('settings.invoice_show_logo') }}
                 </label>
                 <p class="text-xs text-muted">{{ t('settings.invoice_show_logo_helper') }}</p>
+            </div>
+
+            <div class="space-y-2">
+                <label class="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                    <input v-model="form.show_mushak" type="checkbox" class="accent-[var(--color-primary)]">
+                    {{ t('settings.invoice_mushak') }}
+                </label>
+                <p class="text-xs text-muted">{{ t('settings.invoice_mushak_helper') }}</p>
+                <FormField :label="t('settings.mushak_bin')" :helper="t('settings.mushak_bin_helper')" :error="form.errors.mushak_bin">
+                    <template #default="{ id }">
+                        <input
+                            :id="id"
+                            v-model="form.mushak_bin"
+                            type="text"
+                            maxlength="40"
+                            :disabled="! form.show_mushak"
+                            :placeholder="invoicePrint.business_bin"
+                            class="h-7 w-full rounded-md border border-border bg-background px-2 text-[13px] text-foreground outline-none focus:border-accent disabled:opacity-50"
+                        >
+                    </template>
+                </FormField>
             </div>
 
             <div class="space-y-2">
