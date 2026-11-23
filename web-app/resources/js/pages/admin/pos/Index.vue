@@ -1730,12 +1730,35 @@ function printAfter(action, order) {
         documents.push(orderId ? { url: route('admin.orders.kitchen-token', orderId) } : { html: localKitchenHtml(order) });
     }
 
+    // Share as image opens the invoice picture window for the customer. It is read before the clear below.
+    let imageWindow = null;
+
+    if (flags.share_image && shareImageEnabled.value && order?.invoice_no) {
+        const paidOrderId = orderId ?? lastPayment.value?.order_id ?? null;
+
+        imageWindow = paidOrderId
+            ? {
+                url: route('admin.orders.receipt', paidOrderId),
+                invoiceNo: order.invoice_no,
+                orderId: paidOrderId,
+                total: order.total ?? null,
+                mobile: customerMobile.value,
+                customerName: customerName.value,
+                hasCustomer: Boolean(customerMobile.value),
+            }
+            : { html: localInvoiceHtml(order), invoiceNo: order.invoice_no, total: order.total ?? total.value, mobile: customerMobile.value, customerName: customerName.value };
+    }
+
     if (flags.clear) {
         startNewOrder();
         mobileTab.value = 'menu';
     }
 
     printSequence(documents);
+
+    if (imageWindow) {
+        openInvoiceImage(imageWindow);
+    }
 }
 
 async function payNow(source = 'confirm_payment') {

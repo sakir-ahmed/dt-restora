@@ -778,3 +778,33 @@ it('switches any method off and on, cash included', function (): void {
     expect($cash->fresh()->is_active)->toBeTrue()
         ->and(in_array('cash', PosSettings::enabledMethods($this->branch)))->toBeTrue();
 });
+
+it('saves and returns every combination of the print, clear and share options on every button', function (): void {
+    $flags = ['print_invoice', 'print_kitchen', 'instant_print', 'clear', 'share_image'];
+
+    foreach (['send_to_kitchen', 'confirm_payment', 'quick_save', 'due_sale'] as $action) {
+        for ($mask = 0; $mask < 2 ** count($flags); $mask++) {
+            $row = ['enabled' => true];
+
+            foreach ($flags as $bit => $flag) {
+                $row[$flag] = (bool) ($mask & (1 << $bit));
+            }
+
+            $this->actingAs($this->owner, 'staff')->put(route('admin.branches.update', $this->branch), branchSettingsPayload([
+                'pos' => ['actions' => [$action => $row]],
+            ]))->assertRedirect();
+
+            $saved = PosSettings::for($this->branch->fresh())['actions'][$action];
+
+            foreach ($flags as $flag) {
+                expect($saved[$flag])->toBe($row[$flag], "{$action} {$flag} mask {$mask}");
+            }
+        }
+    }
+});
+
+it('leaves share as image off for buttons saved before it existed', function (): void {
+    $this->branch->update(['pos_settings' => ['actions' => ['confirm_payment' => ['enabled' => true]]]]);
+
+    expect(PosSettings::for($this->branch->fresh())['actions']['confirm_payment']['share_image'])->toBeFalse();
+});

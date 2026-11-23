@@ -32,6 +32,44 @@ const SOUND_GROUPS = [
     { key: 'kds', events: ['kds_new', 'kds_preparing', 'kds_ready', 'kds_served'] },
 ];
 
+// One checkbox in a column header switches that option for every button at once (for example the kitchen token
+// on all of them). Switching a print option on also switches instant print on, because it only works with it.
+const COLUMNS = [
+    { flag: 'enabled', label: 'settings.col_enabled' },
+    { flag: 'exact_amount', label: 'settings.col_exact', rows: ['confirm_payment'] },
+    { flag: 'print_invoice', label: 'settings.col_invoice' },
+    { flag: 'print_kitchen', label: 'settings.col_kitchen' },
+    { flag: 'instant_print', label: 'settings.col_instant_print' },
+    { flag: 'clear', label: 'settings.col_clear' },
+    { flag: 'share_image', label: 'settings.col_share_image', needsShare: true },
+];
+
+function columnRows(column) {
+    return ACTION_ROWS.filter((row) => ! column.rows || column.rows.includes(row.key));
+}
+
+function columnState(column) {
+    const values = columnRows(column).map((row) => Boolean(props.pos.actions[row.key][column.flag]));
+
+    if (values.length > 0 && values.every(Boolean)) {
+        return 'all';
+    }
+
+    return values.some(Boolean) ? 'some' : 'none';
+}
+
+function setColumn(column, value) {
+    for (const row of columnRows(column)) {
+        const entry = props.pos.actions[row.key];
+
+        entry[column.flag] = value;
+
+        if (value && (column.flag === 'print_invoice' || column.flag === 'print_kitchen')) {
+            entry.instant_print = true;
+        }
+    }
+}
+
 function moveMethod(index, step) {
     const methods = props.pos.payment_methods;
     const target = index + step;
@@ -90,17 +128,26 @@ const inputClass = 'h-7 w-full rounded-md border border-border bg-surface px-2 t
     <section>
         <h2 class="text-[13px] font-semibold text-foreground">{{ t('settings.section_buttons') }}</h2>
         <p class="mb-2 text-xs text-muted">{{ t('settings.section_buttons_helper') }}</p>
+        <p v-if="! pos.invoice_share_image" class="mb-2 text-xs text-muted">{{ t('settings.share_image_needs_switch') }}</p>
         <div class="overflow-x-auto rounded-md border border-border">
             <table class="w-full text-[13px]">
                 <thead class="bg-background text-xs text-muted">
                     <tr>
                         <th class="px-2 py-1.5 text-left font-medium">{{ t('settings.col_button') }}</th>
-                        <th class="px-2 py-1.5 text-center font-medium">{{ t('settings.col_enabled') }}</th>
-                        <th class="px-2 py-1.5 text-center font-medium">{{ t('settings.col_exact') }}</th>
-                        <th class="px-2 py-1.5 text-center font-medium">{{ t('settings.col_invoice') }}</th>
-                        <th class="px-2 py-1.5 text-center font-medium">{{ t('settings.col_kitchen') }}</th>
-                        <th class="px-2 py-1.5 text-center font-medium">{{ t('settings.col_instant_print') }}</th>
-                        <th class="px-2 py-1.5 text-center font-medium">{{ t('settings.col_clear') }}</th>
+                        <th v-for="column in COLUMNS" :key="column.flag" class="px-2 py-1.5 text-center font-medium">
+                            <span class="block">{{ t(column.label) }}</span>
+                            <label v-if="! (column.needsShare && ! pos.invoice_share_image)" class="mt-0.5 flex items-center justify-center gap-1 text-[11px] font-normal">
+                                <input
+                                    type="checkbox"
+                                    :class="checkboxClass"
+                                    :checked="columnState(column) === 'all'"
+                                    :indeterminate.prop="columnState(column) === 'some'"
+                                    :aria-label="`${t(column.label)} - ${t('settings.col_all')}`"
+                                    @change="setColumn(column, $event.target.checked)"
+                                >
+                                {{ t('settings.col_all') }}
+                            </label>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -119,6 +166,7 @@ const inputClass = 'h-7 w-full rounded-md border border-border bg-surface px-2 t
                         <td class="px-2 py-1.5 text-center"><input v-model="pos.actions[row.key].print_kitchen" type="checkbox" :disabled="! pos.actions[row.key].instant_print" :class="checkboxClass" :aria-label="`${t(`settings.action_${row.key}`)} - ${t('settings.col_kitchen')}`"></td>
                         <td class="px-2 py-1.5 text-center"><input v-model="pos.actions[row.key].instant_print" type="checkbox" :class="checkboxClass" :aria-label="`${t(`settings.action_${row.key}`)} - ${t('settings.col_instant_print')}`"></td>
                         <td class="px-2 py-1.5 text-center"><input v-model="pos.actions[row.key].clear" type="checkbox" :class="checkboxClass" :aria-label="`${t(`settings.action_${row.key}`)} - ${t('settings.col_clear')}`"></td>
+                        <td class="px-2 py-1.5 text-center"><input v-model="pos.actions[row.key].share_image" type="checkbox" :disabled="! pos.invoice_share_image" :class="checkboxClass" :aria-label="`${t(`settings.action_${row.key}`)} - ${t('settings.col_share_image')}`"></td>
                     </tr>
                 </tbody>
             </table>

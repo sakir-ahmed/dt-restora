@@ -23,7 +23,7 @@ final class PosSettings
 
     public const ACTIONS = ['send_to_kitchen', 'confirm_payment', 'quick_save', 'due_sale'];
 
-    public const FLAGS = ['enabled', 'exact_amount', 'print_invoice', 'print_kitchen', 'instant_print', 'clear'];
+    public const FLAGS = ['enabled', 'exact_amount', 'print_invoice', 'print_kitchen', 'instant_print', 'clear', 'share_image'];
 
     public const TOKENS = ['BRANCH', 'TERMINAL', 'YYYY', 'YY', 'MM', 'DD', 'TIME', 'RAND', 'SEQ'];
 
@@ -79,10 +79,10 @@ final class PosSettings
     {
         return [
             'actions' => [
-                'send_to_kitchen' => ['enabled' => true, 'exact_amount' => false, 'print_invoice' => false, 'print_kitchen' => false, 'instant_print' => false, 'clear' => false],
-                'confirm_payment' => ['enabled' => true, 'exact_amount' => false, 'print_invoice' => false, 'print_kitchen' => false, 'instant_print' => false, 'clear' => false],
-                'quick_save' => ['enabled' => false, 'exact_amount' => true, 'print_invoice' => true, 'print_kitchen' => false, 'instant_print' => true, 'clear' => true],
-                'due_sale' => ['enabled' => true, 'exact_amount' => false, 'print_invoice' => false, 'print_kitchen' => false, 'instant_print' => false, 'clear' => true],
+                'send_to_kitchen' => ['enabled' => true, 'exact_amount' => false, 'print_invoice' => false, 'print_kitchen' => false, 'instant_print' => false, 'clear' => false, 'share_image' => false],
+                'confirm_payment' => ['enabled' => true, 'exact_amount' => false, 'print_invoice' => false, 'print_kitchen' => false, 'instant_print' => false, 'clear' => false, 'share_image' => false],
+                'quick_save' => ['enabled' => false, 'exact_amount' => true, 'print_invoice' => true, 'print_kitchen' => false, 'instant_print' => true, 'clear' => true, 'share_image' => false],
+                'due_sale' => ['enabled' => true, 'exact_amount' => false, 'print_invoice' => false, 'print_kitchen' => false, 'instant_print' => false, 'clear' => true, 'share_image' => false],
             ],
             'review_before_save' => false,
             'order_edit_enabled' => true,
@@ -353,6 +353,7 @@ final class PosSettings
             'pos.actions.*.print_kitchen' => ['required', 'boolean'],
             'pos.actions.*.instant_print' => ['sometimes', 'boolean'],
             'pos.actions.*.clear' => ['sometimes', 'boolean'],
+            'pos.actions.*.share_image' => ['sometimes', 'boolean'],
             'pos.review_before_save' => ['sometimes', 'boolean'],
             'pos.order_edit_enabled' => ['sometimes', 'boolean'],
             'pos.order_delete_enabled' => ['sometimes', 'boolean'],
