@@ -16,6 +16,7 @@ import { cacheBootstrap, findOutbox, getCachedMenu, getDataVersion, getDeviceId,
 import { useIncomingOrders } from '@/lib/incomingOrders';
 import { notify } from '@/lib/notify';
 import { parseInvoiceSequence, shortInvoice } from '@/lib/invoice';
+import { allocateFixed, allocatePercent } from '@/lib/discount';
 import { openInvoiceImage } from '@/lib/invoiceImage';
 import { printHtml, printSequence, printUrl } from '@/lib/print';
 import { playSound } from '@/lib/sounds';
@@ -898,6 +899,22 @@ function roundMoney(amount) {
     return Math.round((Number(amount) + Number.EPSILON) * 100) / 100;
 }
 
+// The most this dish may be discounted in total (null: no limit, 0: never discounted). Set on the dish in Menu.
+function lineCeiling(line) {
+    const type = line.item?.max_discount_type;
+    const value = line.item?.max_discount_value;
+
+    if (! type || value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    const gross = lineGross(line);
+    const limit = Math.max(0, Number(value));
+    const ceiling = type === 'percent' ? gross * Math.min(limit, 100) / 100 : limit * line.quantity;
+
+    return roundMoney(Math.min(ceiling, gross));
+}
+
 function lineDiscountAmount(line) {
     const gross = lineGross(line);
     const value = Number(line.discount?.value || 0);
@@ -907,8 +924,9 @@ function lineDiscountAmount(line) {
     }
 
     const amount = line.discount?.type === 'fixed' ? value : gross * value / 100;
+    const ceiling = lineCeiling(line);
 
-    return roundMoney(Math.min(Math.max(amount, 0), gross));
+    return roundMoney(Math.min(Math.max(amount, 0), gross, ceiling ?? Infinity));
 }
 
 function lineExtra(line) {
@@ -1248,6 +1266,7 @@ function openItemEditor(line) {
         discountValue: Number(line.discount?.value || 0),
         vatPercent: line.vatPercent === null || line.vatPercent === undefined ? '' : line.vatPercent,
         extraCharge: Number(line.extraCharge || 0),
+        maxDiscount: lineCeiling(line),
     };
 }
 
@@ -1280,11 +1299,38 @@ const itemDiscountTotal = computed(() => cart.value.reduce((sum, line) => sum + 
 
 const subtotal = computed(() => grossSubtotal.value);
 
+// Whether any dish on the ticket has a maximum discount, so the bill discount is shared line by line.
+const hasDiscountLimits = computed(() => cart.value.some((line) => lineCeiling(line) !== null));
+
+// What the bill discount takes from each line when dishes have a maximum discount.
+const billShares = computed(() => {
+    const bases = cart.value.map((line) => Math.max(0, lineGross(line) - lineDiscountAmount(line)));
+    const caps = cart.value.map((line, index) => {
+        const ceiling = lineCeiling(line);
+
+        return ceiling === null ? bases[index] : Math.max(0, Math.min(ceiling - lineDiscountAmount(line), bases[index]));
+    });
+    const value = Number(discount.value.value);
+
+    if (value <= 0) {
+        return bases.map(() => 0);
+    }
+
+    return discount.value.type === 'percent' ? allocatePercent(value, bases, caps) : allocateFixed(value, bases, caps);
+});
+
+// Dishes that cannot take the full bill discount (a maximum of 0 skips the dish), for the hint under the total.
+const limitedDishCount = computed(() => cart.value.filter((line) => lineCeiling(line) !== null && lineCeiling(line) < lineGross(line)).length);
+
 const billDiscountAmount = computed(() => {
     const base = Math.max(0, grossSubtotal.value - itemDiscountTotal.value);
 
     if (discount.value.value <= 0 || base <= 0) {
         return 0;
+    }
+
+    if (hasDiscountLimits.value) {
+        return roundMoney(billShares.value.reduce((sum, share) => sum + share, 0));
     }
 
     const amount = discount.value.type === 'percent'
@@ -1314,8 +1360,8 @@ const vatAmount = computed(() => {
     }));
     const netTotal = nets.reduce((sum, line) => sum + line.net, 0);
     const bill = billDiscountAmount.value;
-    const lineVat = nets.reduce((sum, line) => {
-        const share = netTotal > 0 ? (line.net / netTotal) * bill : 0;
+    const lineVat = nets.reduce((sum, line, index) => {
+        const share = hasDiscountLimits.value ? (billShares.value[index] ?? 0) : (netTotal > 0 ? (line.net / netTotal) * bill : 0);
 
         return sum + vatOn(Math.max(0, line.net - share), line.rate);
     }, 0);
@@ -2941,6 +2987,8 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                             <p class="truncate text-[13px] font-medium text-foreground">{{ localized(line.item, 'name') }}</p>
                             <p v-if="line.variant" class="truncate text-xs text-muted">{{ localized(line.variant, 'name') }}</p>
                             <p v-if="(line.addOns ?? []).length" class="truncate text-xs text-muted">{{ line.addOns.map((addOn) => (addOn.qty > 1 ? `${addOn.qty}x ` : '+ ') + (addOn.name)).join(', ') }}</p>
+                            <p v-if="lineCeiling(line) === 0" class="text-xs font-medium text-warning">{{ t('orders.no_discount_item') }}</p>
+                            <p v-else-if="lineCeiling(line) !== null" class="text-xs text-warning">{{ t('orders.max_discount_item', { amount: formatMoney(lineCeiling(line)) }) }}</p>
                         </div>
                         <div class="flex items-center justify-between">
                             <button type="button" class="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-foreground disabled:opacity-50" :disabled="!!latestOrder" :aria-label="t('common.decrease')" @click.stop="setQuantity(line, line.quantity - 1)">
@@ -3170,6 +3218,8 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         </button>
                     </span>
                 </div>
+
+                <p v-if="limitedDishCount > 0" class="px-0.5 text-[11px] leading-tight text-muted">{{ t('orders.discount_limited_hint') }}</p>
 
                 <!-- Total and change -->
                 <div class="flex items-stretch gap-1">
@@ -3648,6 +3698,9 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                                 <button type="button" class="h-7 w-7 rounded-md border text-[13px] font-medium" :class="itemEditor.discountType === 'fixed' ? 'border-accent bg-accent/15 text-foreground' : 'border-border text-muted'" @click="itemEditor.discountType = 'fixed'">৳</button>
                                 <input v-model.number="itemEditor.discountValue" type="text" inputmode="decimal" v-numeric min="0" :aria-label="t('orders.item_discount')" class="h-7 w-14 rounded-md border border-border bg-background px-2 text-right text-[13px] tabular-nums text-foreground outline-none focus:border-accent">
                             </div>
+                            <p v-if="itemEditor.maxDiscount !== null" class="col-span-2 text-xs text-warning">
+                                {{ itemEditor.maxDiscount === 0 ? t('orders.no_discount_item_hint') : t('orders.max_discount_item_hint', { amount: formatMoney(itemEditor.maxDiscount) }) }}
+                            </p>
                         </div>
 
                         <label class="grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-2">

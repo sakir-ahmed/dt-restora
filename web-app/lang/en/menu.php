@@ -118,4 +118,10 @@ return [
     'import_barcode_exists' => 'Barcode :value is already used by an item in this branch.',
     'import_name_exists' => 'An item named :value already exists in this branch.',
     'import_category_name_exists' => 'A category named :value already exists in this branch.',
+    'max_discount' => 'Maximum discount',
+    'max_discount_helper' => 'The most this dish can be discounted. A bill discount skips a dish set to No discount and never takes more than the limit from a dish; the other dishes still get their discount.',
+    'max_discount_none' => 'No limit',
+    'max_discount_percent' => 'Up to a percent of the price',
+    'max_discount_fixed' => 'Up to an amount per piece',
+    'max_discount_zero' => 'No discount at all',
 ];

@@ -26,6 +26,7 @@ class MenuItem extends Model
         'branch_id', 'menu_category_id', 'name', 'name_bn',
         'description', 'description_bn', 'photo_path', 'barcode', 'aggregator_sku',
         'base_price', 'is_available', 'is_vegetarian', 'sort_order', 'pre_order_required', 'pre_order_lead_hours',
+        'max_discount_type', 'max_discount_value',
     ];
 
     protected $appends = ['cover_url', 'requires_pre_order', 'pre_order_lead'];
@@ -39,10 +40,27 @@ class MenuItem extends Model
         'sort_order' => 'integer',
         'pre_order_required' => 'boolean',
         'pre_order_lead_hours' => 'integer',
+        'max_discount_value' => 'decimal:2',
     ];
 
     /** @var array<int, array{required: bool, lead: ?int}> */
     private static array $categoryRules = [];
+
+    /**
+     * The most a line of this dish may be discounted in total: null when it has no limit, 0 when it is never
+     * discounted. A percent limit is of the line amount; a fixed limit is per unit.
+     */
+    public function discountCeiling(float $lineAmount, int $quantity): ?float
+    {
+        if ($this->max_discount_type === null || $this->max_discount_value === null) {
+            return null;
+        }
+
+        $value = max(0.0, (float) $this->max_discount_value);
+        $ceiling = $this->max_discount_type === 'percent' ? $lineAmount * min($value, 100.0) / 100 : $value * $quantity;
+
+        return round(min($ceiling, $lineAmount), 2);
+    }
 
     /** @return MorphMany<Media, $this> */
     public function media(): MorphMany

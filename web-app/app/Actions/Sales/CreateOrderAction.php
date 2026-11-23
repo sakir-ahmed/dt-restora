@@ -26,6 +26,7 @@ use App\Models\Setting;
 use App\Models\Shift;
 use App\Models\User;
 use App\Services\CouponService;
+use App\Services\DiscountAllocation;
 use App\Services\InvoiceNumberService;
 use App\Services\PosSettings;
 use App\Services\StockService;
@@ -143,15 +144,27 @@ class CreateOrderAction
             }
 
             $subtotal = round($items->sum(fn (array $item) => (float) $item['line_total']), 2);
+            $ceilings = $items->map(fn (array $item): ?float => $item['discount_ceiling'] ?? null)->values();
             $adjustments = $this->lineAdjustments(
                 $lines->values(),
                 $items->map(fn (array $item): float => (float) $item['line_total'])->values(),
+                $ceilings,
             );
             $lineDiscounts = $adjustments['discount'];
             $extraTotal = $adjustments['extra'];
 
             $billBase = max(0, round($subtotal - $lineDiscounts, 2));
-            $manualDiscount = $this->discountAmount($discount, $billBase);
+
+            // Dishes with a maximum discount take no more than it, and a dish set to 0 is skipped by the bill discount.
+            $capped = $ceilings->contains(fn (?float $ceiling): bool => $ceiling !== null);
+            $billShares = null;
+
+            if ($capped) {
+                $billShares = $this->manualShares($discount, $adjustments['bases'], $adjustments['caps']);
+                $manualDiscount = round(array_sum($billShares), 2);
+            } else {
+                $manualDiscount = $this->discountAmount($discount, $billBase);
+            }
 
             $coupon = null;
             $couponDiscount = 0.0;
@@ -166,6 +179,23 @@ class CreateOrderAction
 
                     $coupon = $result['coupon'];
                     $couponDiscount = $result['discount'];
+
+                    if ($capped && $billShares !== null) {
+                        $left = [];
+                        $room = [];
+
+                        foreach ($adjustments['bases'] as $index => $base) {
+                            $left[$index] = max(0.0, $base - $billShares[$index]);
+                            $room[$index] = max(0.0, min($adjustments['caps'][$index] - $billShares[$index], $left[$index]));
+                        }
+
+                        $couponShares = DiscountAllocation::fixed((float) $couponDiscount, $left, $room);
+                        $couponDiscount = round(array_sum($couponShares), 2);
+
+                        foreach ($couponShares as $index => $share) {
+                            $billShares[$index] = round($billShares[$index] + $share, 2);
+                        }
+                    }
                 } catch (ValidationException $exception) {
                     // A coupon kept from the old bill that no longer fits the new items is dropped, not an error.
                     if (! $keptCoupon) {
@@ -193,6 +223,7 @@ class CreateOrderAction
                 $adjustments['lines'],
                 round($manualDiscount + $couponDiscount, 2),
                 $serviceCharge,
+                $billShares,
             );
 
             $vatBase = round($afterDiscount + $extraTotal + $serviceCharge, 2);
@@ -406,6 +437,7 @@ class CreateOrderAction
             'add_ons_total' => number_format($addOnsTotal, 2, '.', ''),
             'line_total' => number_format($lineTotal, 2, '.', ''),
             'line_cost' => number_format(round($lineCost, 4), 4, '.', ''),
+            'discount_ceiling' => $item->discountCeiling($lineTotal, $quantity),
         ];
     }
 
@@ -588,6 +620,7 @@ class CreateOrderAction
             'add_ons_total' => (string) $line->add_ons_total,
             'line_total' => (string) $line->line_total,
             'line_cost' => (string) $line->line_cost,
+            'discount_ceiling' => MenuItem::query()->find($line->menu_item_id)?->discountCeiling((float) $line->line_total, $line->quantity),
         ];
     }
 
@@ -625,17 +658,27 @@ class CreateOrderAction
     /**
      * @param  Collection<int, OrderLineInput>  $lines
      * @param  Collection<int, float>  $grosses
-     * @return array{discount: float, extra: float, lines: array<int, array{net: float, vat_percent: float|null}>}
+     * @param  Collection<int, float|null>|null  $ceilings  The most each dish may be discounted in total (null: no limit)
+     * @return array{discount: float, extra: float, lines: array<int, array{net: float, vat_percent: float|null}>, bases: array<int, float>, caps: array<int, float>}
      */
-    private function lineAdjustments(Collection $lines, Collection $grosses): array
+    private function lineAdjustments(Collection $lines, Collection $grosses, ?Collection $ceilings = null): array
     {
         $discount = 0.0;
         $extra = 0.0;
         $priced = [];
+        $bases = [];
+        $caps = [];
 
         foreach ($grosses as $index => $gross) {
             $input = $lines[$index];
+            $ceiling = $ceilings?->get($index);
             $lineDiscount = $this->lineDiscountAmount($input, $gross);
+
+            // A discount typed on the line cannot pass the dish's own maximum.
+            if ($ceiling !== null) {
+                $lineDiscount = round(min($lineDiscount, $ceiling), 2);
+            }
+
             $lineExtra = round(max((float) ($input['extra_charge'] ?? 0), 0), 2);
             $vatPercent = array_key_exists('vat_percent', $input) && $input['vat_percent'] !== null && $input['vat_percent'] !== ''
                 ? (float) $input['vat_percent']
@@ -647,12 +690,16 @@ class CreateOrderAction
                 'net' => round($gross - $lineDiscount + $lineExtra, 2),
                 'vat_percent' => $vatPercent,
             ];
+            $bases[$index] = round(max(0.0, $gross - $lineDiscount), 2);
+            $caps[$index] = $ceiling === null ? $bases[$index] : round(max(0.0, min($ceiling - $lineDiscount, $bases[$index])), 2);
         }
 
         return [
             'discount' => round($discount, 2),
             'extra' => round($extra, 2),
             'lines' => $priced,
+            'bases' => $bases,
+            'caps' => $caps,
         ];
     }
 
@@ -676,14 +723,17 @@ class CreateOrderAction
 
     /**
      * @param  array<int, array{net: float, vat_percent: float|null}>  $lines
+     * @param  array<int, float>|null  $shares  What the bill discount took from each line, when dishes have a maximum
      */
-    private function combinedVat(Branch $branch, array $lines, float $billDiscount, float $serviceCharge): float
+    private function combinedVat(Branch $branch, array $lines, float $billDiscount, float $serviceCharge, ?array $shares = null): float
     {
         $netTotal = array_sum(array_column($lines, 'net'));
         $vat = 0.0;
 
-        foreach ($lines as $line) {
-            $share = $netTotal > 0 ? ($line['net'] / $netTotal) * $billDiscount : 0.0;
+        foreach ($lines as $index => $line) {
+            $share = $shares !== null
+                ? (float) ($shares[$index] ?? 0.0)
+                : ($netTotal > 0 ? ($line['net'] / $netTotal) * $billDiscount : 0.0);
             $taxable = max(0, $line['net'] - $share);
             $vat += $this->vatOn($taxable, $line['vat_percent'] ?? (float) $branch->vat_percent, (bool) $branch->vat_inclusive);
         }
@@ -704,6 +754,25 @@ class CreateOrderAction
         }
 
         return $amount * $rate / 100;
+    }
+
+    /**
+     * What the bill discount takes from each line when some dishes have a maximum discount.
+     *
+     * @param  DiscountInput  $discount
+     * @param  array<int, float>  $bases
+     * @param  array<int, float>  $caps
+     * @return array<int, float>
+     */
+    private function manualShares(?array $discount, array $bases, array $caps): array
+    {
+        if ($discount === null || (float) $discount['value'] <= 0) {
+            return array_fill_keys(array_keys($bases), 0.0);
+        }
+
+        return $discount['type'] === 'percent'
+            ? DiscountAllocation::percent((float) $discount['value'], $bases, $caps)
+            : DiscountAllocation::fixed((float) $discount['value'], $bases, $caps);
     }
 
     /**

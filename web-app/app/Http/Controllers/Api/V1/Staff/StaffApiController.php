@@ -658,6 +658,8 @@ class StaffApiController extends Controller
             'is_vegetarian' => ['boolean'],
             'pre_order_required' => ['nullable', 'boolean'],
             'pre_order_lead_hours' => ['nullable', 'integer', 'min:0', 'max:720'],
+            'max_discount_type' => ['nullable', 'in:percent,fixed'],
+            'max_discount_value' => ['nullable', 'required_with:max_discount_type', 'numeric', 'min:0', 'max:9999999'],
             'variants' => ['nullable', 'array'],
             'variants.*.name' => ['required_with:variants', 'string', 'max:150'],
             'variants.*.price' => ['required_with:variants', 'numeric', 'min:0'],

@@ -290,4 +290,9 @@ return [
     'adding_items_hint' => 'The items already sent stay as they are. New items go to the kitchen as round :round.',
     'send_added_items' => 'Send added items to kitchen',
     'bill_so_far' => 'Bill so far',
+    'no_discount_item' => 'No discount on this dish',
+    'max_discount_item' => 'Discount up to :amount',
+    'no_discount_item_hint' => 'This dish cannot be discounted, so bill discounts skip it.',
+    'max_discount_item_hint' => 'This dish can be discounted by :amount at most.',
+    'discount_limited_hint' => 'Dishes with a discount limit are skipped or limited by the bill discount.',
 ];

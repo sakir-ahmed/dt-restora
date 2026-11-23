@@ -31,6 +31,8 @@ class MenuItemRequest extends FormRequest
             'sort_order' => ['integer', 'min:0'],
             'pre_order_required' => ['nullable', 'boolean'],
             'pre_order_lead_hours' => ['nullable', 'integer', 'min:0', 'max:720'],
+            'max_discount_type' => ['nullable', 'in:percent,fixed'],
+            'max_discount_value' => ['nullable', 'required_with:max_discount_type', 'numeric', 'min:0', 'max:9999999'],
             'variants' => ['array'],
             'variants.*.id' => ['nullable', 'integer', 'exists:menu_item_variants,id'],
             'variants.*.name' => ['required_with:variants', 'string', 'max:150'],
