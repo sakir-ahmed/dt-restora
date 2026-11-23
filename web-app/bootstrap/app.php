@@ -7,6 +7,9 @@ use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetLocale;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
+use App\Support\DependencyInspector;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Foundation\Application;
@@ -59,6 +62,33 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        // Any delete the database refuses because other records still use the row is explained the same way
+        // in every module: what uses it, how many, in which order to clear it, and where.
+        $exceptions->render(function (QueryException $e, Request $request) {
+            $violation = in_array((int) ($e->errorInfo[1] ?? 0), [1451, 1217], true)
+                || str_contains($e->getMessage(), 'FOREIGN KEY constraint failed');
+
+            if (! $violation || ! $request->isMethod('DELETE')) {
+                return null;
+            }
+
+            $model = collect($request->route()?->parameters() ?? [])->first(fn ($value) => $value instanceof Model);
+
+            if (! $model instanceof Model) {
+                return null;
+            }
+
+            $name = (string) ($model->name ?? class_basename($model).' #'.$model->getKey());
+            $message = __('common.in_use', ['name' => $name]);
+            $steps = DependencyInspector::steps($model);
+
+            if ($request->is('api/*')) {
+                return response()->json(['success' => false, 'error' => ['code' => 'IN_USE', 'message' => $message, 'details' => $steps]], 409);
+            }
+
+            return back()->with('error', $message)->with('error_steps', $steps);
+        });
 
         $exceptions->render(function (Throwable $e, Request $request) {
             if ($request->is('api/*')) {

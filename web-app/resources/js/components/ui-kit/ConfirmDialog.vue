@@ -176,7 +176,10 @@ function submit() {
 
                     <dl v-if="facts.length" class="mt-3 space-y-1 rounded-lg border border-border bg-background/50 p-3">
                         <div v-for="fact in facts" :key="fact.label" class="flex items-center justify-between gap-4 text-[13px]">
-                            <dt class="text-muted">{{ fact.label }}</dt>
+                            <dt class="text-muted">
+                                <Link v-if="fact.url" :href="fact.url" class="text-primary underline-offset-2 hover:underline" @click="submit">{{ fact.label }}</Link>
+                                <template v-else>{{ fact.label }}</template>
+                            </dt>
                             <dd class="font-medium text-foreground tabular-nums">{{ fact.value }}</dd>
                         </div>
                     </dl>

@@ -34,7 +34,7 @@ router.on('success', (event) => {
     const flash = event.detail.page.props?.flash ?? {};
 
     if (lastMethod === 'delete' && flash.error) {
-        showRefusal(flash.error, flash.error_link ?? null);
+        showRefusal(flash.error, flash.error_link ?? null, flash.error_steps ?? []);
     }
 });
 

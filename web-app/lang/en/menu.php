@@ -59,7 +59,7 @@ return [
     'required_note' => '* required',
     'media_note' => 'Photos and videos save as soon as you add or change them. The Save button below applies to the dish details.',
     'related_items' => 'menu items',
-    'item_has_orders' => '“:name” is on :orders past order(s), for example :invoices. Deleting it would break your sales history and reports. To stop selling it, edit the item and turn off Available; it disappears from the menu and POS and past orders stay correct.',
+    'item_has_orders' => '“:name” is on :orders orders, so it cannot be deleted. Turn off Available on the item to stop selling it.',
     'view_orders' => 'View these orders',
     'qr_button' => 'Menu QR',
     'qr_title' => 'Public menu QR code',

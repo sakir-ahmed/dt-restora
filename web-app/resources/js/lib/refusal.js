@@ -7,7 +7,7 @@ import { t } from '@/lib/i18n';
  * (for example deleting a dish that is on past orders). A toast is too easy to miss and, worse,
  * could be read as success.
  */
-export function showRefusal(message, link = null) {
+export function showRefusal(message, link = null, steps = []) {
     markRefusal(message);
 
     return useConfirm()({
@@ -15,6 +15,7 @@ export function showRefusal(message, link = null) {
         level: 'simple',
         hideCancel: true,
         link,
+        facts: steps ?? [],
         title: t('common.action_blocked'),
         message: String(message),
         confirmText: t('common.understood'),

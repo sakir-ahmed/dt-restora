@@ -197,11 +197,46 @@ it('refuses to delete a menu item that already sits on an order instead of faili
 
     $this->actingAs($this->manager, 'staff')->delete("/admin/menu/items/{$item->id}")
         ->assertRedirect()
-        ->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'BR01-DEL-0001') && str_contains($message, '1 past order'))
+        ->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'is on 1 orders'))
         ->assertSessionHas('error_link.url', fn (string $url): bool => str_contains($url, '/admin/orders?search='));
 
     expect(MenuItem::query()->find($item->id))->not->toBeNull();
 
     $this->actingAs($this->manager, 'staff')->get('/admin/orders?search='.urlencode($item->name))
         ->assertInertia(fn ($page) => $page->has('orders', 1));
+});
+
+it('lists every order the refusal message counts when the View these orders link is opened', function (): void {
+    $item = MenuItem::factory()->create(['branch_id' => $this->branch->id, 'menu_category_id' => $this->category->id, 'name' => 'Morog Polao']);
+    $other = MenuItem::factory()->create(['branch_id' => $this->branch->id, 'menu_category_id' => $this->category->id, 'name' => 'Plain Rice']);
+
+    foreach (range(1, 130) as $number) {
+        $order = \App\Models\Order::query()->create([
+            'branch_id' => $this->branch->id,
+            'invoice_no' => sprintf('BR01-CNT-%04d', $number),
+            'order_type' => 'takeaway',
+            'channel' => 'pos',
+            // Some are void: the list hides those by default, but a search must still show them.
+            'status' => $number % 10 === 0 ? 'void' : 'paid',
+            'subtotal' => '100.00',
+            'total' => '100.00',
+        ]);
+
+        // Two lines of the same dish in one order still count as one order.
+        foreach ([$item, $item, $other] as $line) {
+            \App\Models\OrderItem::query()->create([
+                'order_id' => $order->id, 'menu_item_id' => $line->id, 'name' => $line->name,
+                'unit_price' => '100.00', 'quantity' => 1, 'line_total' => '100.00',
+            ]);
+        }
+    }
+
+    $response = $this->actingAs($this->manager, 'staff')->delete("/admin/menu/items/{$item->id}");
+
+    $response->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'is on 130 orders'));
+
+    $url = session('error_link.url');
+
+    $this->actingAs($this->manager, 'staff')->get($url)
+        ->assertInertia(fn ($page) => $page->has('orders', 130));
 });

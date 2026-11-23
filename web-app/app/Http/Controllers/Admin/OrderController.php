@@ -79,9 +79,11 @@ class OrderController extends Controller
                     ->where('invoice_no', 'like', "%{$search}%")
                     ->orWhereHas('items', fn ($items) => $items->where('name', 'like', "%{$search}%")->orWhere('name_bn', 'like', "%{$search}%")));
             })
-            ->when(! Setting::showsDeletedItems(), fn ($query) => $query->where('status', '!=', OrderStatus::Void->value))
+            // A search must find every match (for example all orders of one dish, void ones included), so it
+            // keeps neither the hidden-deleted rule nor the 100 row cap of the plain list.
+            ->when(! Setting::showsDeletedItems() && ! $request->filled('search'), fn ($query) => $query->where('status', '!=', OrderStatus::Void->value))
             ->latest()
-            ->limit(100)
+            ->limit($request->filled('search') ? 2000 : 100)
             ->get()
             ->map(fn (Order $order): array => $order->toArray() + ['next_statuses' => $order->nextKitchenStatuses()])
             ->values();
