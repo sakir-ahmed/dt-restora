@@ -172,7 +172,7 @@ const emptyItem = () => ({
     barcode: '', base_price: '0.00', is_available: true, is_vegetarian: false,
     sort_order: 0,
     pre_order_required: false, pre_order_lead_hours: '',
-    max_discount_type: '', max_discount_value: '',
+    discount_allowed: true, max_discount_type: 'percent', max_discount_value: '',
     variants: [],
     addons: [],
 });
@@ -209,9 +209,10 @@ function openItem(item = null, categoryId = null) {
             sort_order: item.sort_order,
             pre_order_required: item.pre_order_required === true,
             pre_order_lead_hours: item.pre_order_lead_hours ?? '',
-            // A maximum of 0 is shown as "No discount".
-            max_discount_type: item.max_discount_type && Number(item.max_discount_value) === 0 ? 'none' : (item.max_discount_type ?? ''),
-            max_discount_value: item.max_discount_value ?? '',
+            // A maximum of 0 is the switch turned off; any other maximum shows in the box.
+            discount_allowed: ! (item.max_discount_type && Number(item.max_discount_value) === 0),
+            max_discount_type: item.max_discount_type ?? 'percent',
+            max_discount_value: item.max_discount_type && Number(item.max_discount_value) > 0 ? item.max_discount_value : '',
             variants: (item.variants ?? []).map((variant) => ({ ...variant })),
             addons: (item.add_ons ?? []).map((addOn) => ({ ...addOn })),
         }
@@ -249,9 +250,9 @@ function saveItem() {
         pre_order_required: preOrderTouched.value && data.pre_order_required !== categoryNeedsPreOrder.value ? data.pre_order_required : null,
         // Notice hours only mean something while the dish needs a pre-order.
         pre_order_lead_hours: itemNeedsPreOrder.value ? data.pre_order_lead_hours : null,
-        // No limit sends nothing; "No discount" is a maximum of 0.
-        max_discount_type: data.max_discount_type === 'none' ? 'percent' : (data.max_discount_type || null),
-        max_discount_value: data.max_discount_type === 'none' ? 0 : (data.max_discount_type ? data.max_discount_value : null),
+        // Discount switched off is a maximum of 0; an empty box is no limit.
+        max_discount_type: data.discount_allowed ? (data.max_discount_value === '' || data.max_discount_value === null ? null : data.max_discount_type) : 'percent',
+        max_discount_value: data.discount_allowed ? (data.max_discount_value === '' || data.max_discount_value === null ? null : data.max_discount_value) : 0,
     }));
 
     if (editingItemId.value === null) {
@@ -586,28 +587,21 @@ function reload() {
                     <SwitchField v-model="itemForm.is_vegetarian" :label="t('menu.is_vegetarian')" />
                 </div>
 
-                <FormField :label="t('menu.max_discount')" :helper="t('menu.max_discount_helper')" :error="itemForm.errors.max_discount_value ?? itemForm.errors.max_discount_type">
-                    <template #default="{ id }">
-                        <div class="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-2">
-                            <select :id="id" v-model="itemForm.max_discount_type" class="h-7 w-full rounded-md border border-border bg-surface px-2 text-[13px] text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/40">
-                                <option value="">{{ t('menu.max_discount_none') }}</option>
-                                <option value="percent">{{ t('menu.max_discount_percent') }}</option>
-                                <option value="fixed">{{ t('menu.max_discount_fixed') }}</option>
-                                <option value="none">{{ t('menu.max_discount_zero') }}</option>
-                            </select>
-                            <input
-                                v-model="itemForm.max_discount_value"
-                                type="text"
-                                inputmode="decimal"
-                                v-numeric
-                                min="0"
-                                :disabled="itemForm.max_discount_type !== 'percent' && itemForm.max_discount_type !== 'fixed'"
-                                :aria-label="t('menu.max_discount')"
-                                class="h-7 w-full rounded-md border border-border bg-surface px-2 text-right text-[13px] tabular-nums text-foreground outline-none focus:border-accent disabled:opacity-50"
-                            >
-                        </div>
-                    </template>
-                </FormField>
+                <div class="space-y-2">
+                    <SwitchField v-model="itemForm.discount_allowed" :label="t('menu.discount_allowed')" />
+                    <p class="text-xs text-muted">{{ itemForm.discount_allowed ? t('menu.discount_allowed_on_helper') : t('menu.discount_allowed_off_helper') }}</p>
+                    <FormField v-if="itemForm.discount_allowed" :label="t('menu.max_discount')" :helper="t('menu.max_discount_helper')" :error="itemForm.errors.max_discount_value ?? itemForm.errors.max_discount_type">
+                        <template #default="{ id }">
+                            <div class="flex items-center gap-2">
+                                <div class="flex items-stretch overflow-hidden rounded border border-border bg-surface">
+                                    <button type="button" class="h-7 w-8 text-[13px] font-semibold" :class="itemForm.max_discount_type === 'percent' ? 'bg-accent text-accent-foreground' : 'text-muted hover:text-foreground'" @click="itemForm.max_discount_type = 'percent'">%</button>
+                                    <button type="button" class="h-7 w-8 border-l border-border text-[13px] font-semibold" :class="itemForm.max_discount_type === 'fixed' ? 'bg-accent text-accent-foreground' : 'text-muted hover:text-foreground'" @click="itemForm.max_discount_type = 'fixed'">৳</button>
+                                </div>
+                                <input :id="id" v-model="itemForm.max_discount_value" type="text" inputmode="decimal" v-numeric min="0" :placeholder="t('menu.max_discount_placeholder')" class="h-7 w-32 rounded-md border border-border bg-surface px-2 text-right text-[13px] tabular-nums text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/40">
+                            </div>
+                        </template>
+                    </FormField>
+                </div>
 
                 <div class="space-y-2">
                     <SwitchField v-model="itemNeedsPreOrder" :label="t('menu.pre_order_required')" />
