@@ -384,6 +384,7 @@ Route::prefix('admin')
         Route::get('orders/{order}/kitchen-token', [ReceiptController::class, 'kitchenToken'])->name('orders.kitchen-token')->middleware('permission:orders.view');
 
         Route::post('shifts/open', [ShiftController::class, 'open'])->name('shifts.open')->middleware('permission:shifts.manage');
+        Route::get('shifts/{shift}/summary', [ShiftController::class, 'summary'])->name('shifts.summary')->middleware('permission:shifts.manage');
         Route::post('shifts/{shift}/close', [ShiftController::class, 'close'])->name('shifts.close')->middleware('permission:shifts.manage');
 
         Route::get('kds', [KdsController::class, 'index'])->name('kds.index')->middleware('permission:kds.access');

@@ -12,7 +12,7 @@ import { useConfirm, useConfirmState } from '@/components/ui-kit/useConfirm.js';
 import { t } from '@/lib/i18n';
 import { formatMoney } from '@/lib/format';
 import { dishKind, localized } from '@/lib/site';
-import { cacheBootstrap, findOutbox, getCachedMenu, getDataVersion, getDeviceId, getLocalShift, nextLocalInvoice, queueOutbox, rememberInvoiceCursor, rememberLocalShift, updateOutboxPayload } from '@/lib/offline';
+import { cacheBootstrap, findOutbox, getCachedMenu, getDataVersion, getDeviceId, getLocalShift, nextLocalInvoice, outboxCount, queueOutbox, rememberInvoiceCursor, rememberLocalShift, updateOutboxPayload } from '@/lib/offline';
 import { useIncomingOrders } from '@/lib/incomingOrders';
 import { notify } from '@/lib/notify';
 import { parseInvoiceSequence, shortInvoice } from '@/lib/invoice';
@@ -48,7 +48,9 @@ const categories = ref(props.categories);
 const tables = ref(props.tables);
 const branch = ref(props.branch);
 const localShift = ref(null);
-const openShift = computed(() => props.openShift || localShift.value);
+// A close that is waiting to sync (offline) already counts as closed on this screen.
+const shiftCloseQueued = ref(false);
+const openShift = computed(() => (shiftCloseQueued.value ? null : (props.openShift || localShift.value)));
 
 const TICKET_KEY = 'pos-open-ticket';
 
@@ -174,6 +176,12 @@ const payMode = computed(() => {
 // Whether a wallet payment waits for a manager here; off means the money is in at once.
 const walletVerification = computed(() => branch.value?.pos_settings?.wallet_verification_enabled ?? false);
 const shiftDialogOpen = ref(false);
+// Closing the shift: the cash counted in the drawer, what the shift still has open, then the figures after.
+const closeShiftOpen = ref(false);
+const countedCash = ref('');
+const closeShiftInfo = ref({ open_orders: 0, unsynced: 0, loading: false });
+const shiftSummary = ref(null);
+const closingShift = ref(false);
 const tablePickerOpen = ref(false);
 const heldListOpen = ref(false);
 const editingOrder = ref(null);
@@ -1937,7 +1945,81 @@ function receiptLines() {
     }));
 }
 
+// Ask what the shift still has open (unpaid bills, orders not yet synced) before the cashier counts the drawer.
+async function openCloseShift() {
+    countedCash.value = '';
+    closeShiftInfo.value = { open_orders: 0, unsynced: await outboxCount(), loading: true };
+    closeShiftOpen.value = true;
+
+    const id = openShift.value?.id;
+
+    if (! navigator.onLine || ! Number.isInteger(id)) {
+        closeShiftInfo.value.loading = false;
+
+        return;
+    }
+
+    try {
+        const response = await fetch(route('admin.shifts.summary', id), { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+
+        if (response.ok) {
+            closeShiftInfo.value.open_orders = (await response.json()).open_orders ?? 0;
+        }
+    } finally {
+        closeShiftInfo.value.loading = false;
+    }
+}
+
+// A payment method's name for the shift summary, the way the pay buttons name it.
+function methodName(method) {
+    const entry = payMethodList.value.find((candidate) => candidate.method === method);
+
+    return entry ? localized(entry, 'name') : String(method).replaceAll('_', ' ');
+}
+
+async function submitCloseShift() {
+    const counted = Number(countedCash.value);
+
+    if (countedCash.value === '' || ! Number.isFinite(counted) || counted < 0) {
+        notify.error(t('orders.counted_cash_required'));
+
+        return;
+    }
+
+    const id = openShift.value?.id;
+
+    // Offline, or a shift that is itself still waiting to sync: the close joins the queue behind it.
+    if (! navigator.onLine || ! Number.isInteger(id)) {
+        await queueOutbox('shift', { action: 'close', branch_id: branch.value.id, counted_cash: counted });
+        localShift.value = null;
+        await rememberLocalShift(null);
+        shiftCloseQueued.value = true;
+        closeShiftOpen.value = false;
+        notify.info(t('orders.shift_close_queued'));
+
+        return;
+    }
+
+    closingShift.value = true;
+
+    router.post(route('admin.shifts.close', id), { counted_cash: counted }, {
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: (page) => {
+            closeShiftOpen.value = false;
+            shiftSummary.value = page.props.flash?.shift_closed ?? null;
+            localShift.value = null;
+        },
+        onError: (errors) => notify.error(String(Object.values(errors)[0] ?? t('common.error_occurred'))),
+        onFinish: () => {
+            closingShift.value = false;
+        },
+    });
+}
+
 async function startShift() {
+    shiftCloseQueued.value = false;
+
     if (! navigator.onLine) {
         await queueOutbox('shift', {
             action: 'open',
@@ -3120,12 +3202,13 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         v-if="openShift || canManageShifts"
                         type="button"
                         class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs font-medium disabled:cursor-default"
-                        :class="openShift ? 'border-success/40 bg-success/10 text-success' : 'border-accent bg-accent text-accent-foreground hover:opacity-90'"
-                        :disabled="!! openShift"
-                        @click="openShiftDialog"
+                        :class="openShift ? 'border-success/40 bg-success/10 text-success hover:bg-success/20' : 'border-accent bg-accent text-accent-foreground hover:opacity-90'"
+                        :disabled="!! openShift && ! canManageShifts"
+                        :title="openShift ? t('orders.shift_open_status') : undefined"
+                        @click="openShift ? openCloseShift() : openShiftDialog()"
                     >
                         <span class="h-1.5 w-1.5 rounded-full" :class="openShift ? 'bg-success' : 'bg-foreground'" />
-                        {{ openShift ? t('orders.shift_open_status') : t('orders.open_shift') }}
+                        {{ openShift ? t('orders.close_shift') : t('orders.open_shift') }}
                     </button>
                 </div>
 
@@ -3971,6 +4054,69 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                     <div class="mt-4 flex justify-end gap-2">
                         <button type="button" class="h-9 rounded-md border border-border px-3 text-sm text-foreground hover:bg-background" @click="shiftDialogOpen = false">{{ t('common.cancel') }}</button>
                         <button type="button" class="h-9 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90" @click="startShift">{{ t('orders.open_shift') }}</button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- Close shift: count the drawer -->
+        <Teleport to="body">
+            <div v-if="closeShiftOpen && openShift" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @keydown.esc="closeShiftOpen = false">
+                <form novalidate class="w-full max-w-sm rounded-xl border border-border bg-surface p-4" @submit.prevent="submitCloseShift">
+                    <h2 class="text-lg font-semibold text-foreground">{{ t('orders.close_shift') }}</h2>
+                    <p class="mt-0.5 text-sm text-muted">{{ t('orders.close_shift_hint') }}</p>
+
+                    <p v-if="closeShiftInfo.open_orders > 0" class="mt-3 rounded-md border border-warning/50 bg-warning/10 px-2 py-1.5 text-[13px] text-foreground">
+                        {{ t('orders.close_shift_open_orders', { count: closeShiftInfo.open_orders }) }}
+                    </p>
+                    <p v-if="closeShiftInfo.unsynced > 0" class="mt-2 rounded-md border border-warning/50 bg-warning/10 px-2 py-1.5 text-[13px] text-foreground">
+                        {{ t('orders.close_shift_unsynced', { count: closeShiftInfo.unsynced }) }}
+                    </p>
+
+                    <div class="mt-3">
+                        <FormField :label="t('orders.counted_cash')" required>
+                            <MoneyInput v-model="countedCash" />
+                        </FormField>
+                    </div>
+
+                    <div class="mt-4 flex justify-end gap-2">
+                        <button type="button" class="h-9 rounded-md border border-border px-3 text-sm text-foreground hover:bg-background" @click="closeShiftOpen = false">{{ t('common.cancel') }}</button>
+                        <button type="submit" :disabled="closingShift" class="h-9 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">{{ t('orders.close_shift') }}</button>
+                    </div>
+                </form>
+            </div>
+        </Teleport>
+
+        <!-- Shift closed: expected against counted -->
+        <Teleport to="body">
+            <div v-if="shiftSummary" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @keydown.esc="shiftSummary = null">
+                <div class="w-full max-w-sm rounded-xl border border-border bg-surface p-4">
+                    <h2 class="text-lg font-semibold text-foreground">{{ t('orders.shift_summary_title') }}</h2>
+
+                    <dl class="mt-3 space-y-1 text-[13px]">
+                        <div class="flex justify-between"><dt class="text-muted">{{ t('orders.opening_cash') }}</dt><dd class="tabular-nums">{{ formatMoney(shiftSummary.opening_cash) }}</dd></div>
+                        <div class="flex justify-between"><dt class="text-muted">{{ t('orders.shift_cash_sales') }}</dt><dd class="tabular-nums">{{ formatMoney(shiftSummary.cash_sales) }}</dd></div>
+                        <div class="flex justify-between border-t border-border pt-1"><dt class="text-muted">{{ t('orders.expected_cash') }}</dt><dd class="tabular-nums">{{ formatMoney(shiftSummary.expected_cash) }}</dd></div>
+                        <div class="flex justify-between"><dt class="text-muted">{{ t('orders.counted_cash') }}</dt><dd class="tabular-nums">{{ formatMoney(shiftSummary.counted_cash) }}</dd></div>
+                        <div
+                            class="flex justify-between border-t border-border pt-1 text-sm font-semibold"
+                            :class="Number(shiftSummary.difference) === 0 ? 'text-success' : 'text-danger'"
+                        >
+                            <dt>{{ Number(shiftSummary.difference) === 0 ? t('orders.shift_balanced') : (Number(shiftSummary.difference) < 0 ? t('orders.shift_short') : t('orders.shift_over')) }}</dt>
+                            <dd class="tabular-nums">{{ formatMoney(Math.abs(Number(shiftSummary.difference))) }}</dd>
+                        </div>
+                    </dl>
+
+                    <dl class="mt-3 space-y-1 border-t border-border pt-2 text-[13px]">
+                        <div class="flex justify-between"><dt class="text-muted">{{ t('orders.shift_orders') }}</dt><dd class="tabular-nums">{{ shiftSummary.orders }}</dd></div>
+                        <div class="flex justify-between"><dt class="text-muted">{{ t('orders.shift_sales_total') }}</dt><dd class="tabular-nums">{{ formatMoney(shiftSummary.sales_total) }}</dd></div>
+                        <template v-for="(amount, method) in shiftSummary.methods" :key="method">
+                            <div v-if="method !== 'cash'" class="flex justify-between"><dt class="text-muted">{{ methodName(method) }}</dt><dd class="tabular-nums">{{ formatMoney(amount) }}</dd></div>
+                        </template>
+                    </dl>
+
+                    <div class="mt-4 flex justify-end">
+                        <button type="button" class="h-9 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90" @click="shiftSummary = null">{{ t('common.done') }}</button>
                     </div>
                 </div>
             </div>

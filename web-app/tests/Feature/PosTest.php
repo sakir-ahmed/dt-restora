@@ -327,6 +327,79 @@ it('opens and closes a cashier shift with expected versus counted cash', functio
         ->and($closed->closed_at)->not->toBeNull();
 });
 
+it('closes the cashier\'s own shift from the POS and hands back expected against counted cash', function (): void {
+    $order = createPosOrder($this);
+
+    app(PayOrderAction::class)->executeCash($order, 500, $this->cashier);
+
+    $this->actingAs($this->cashier, 'staff')
+        ->from('/admin/pos')
+        ->post("/admin/shifts/{$this->shift->id}/close", ['counted_cash' => 1400])
+        ->assertRedirect('/admin/pos')
+        ->assertSessionHas('success', __('orders.shift_closed', ['expected' => '1462.00', 'difference' => '-62.00']))
+        ->assertSessionHas('shift_closed', [
+            'id' => $this->shift->id,
+            'opening_cash' => '1000.00',
+            'counted_cash' => '1400.00',
+            'expected_cash' => '1462.00', // 1000 opening + 462 cash sale
+            'difference' => '-62.00',
+            'orders' => 1,
+            'open_orders' => 0,
+            'sales_total' => '462.00',
+            'cash_sales' => '462.00',
+            'methods' => ['cash' => '462.00'],
+        ]);
+
+    expect($this->shift->fresh()->closed_at)->not->toBeNull();
+
+    // The next POS load no longer offers the shift and carries the figures to the screen.
+    $this->actingAs($this->cashier, 'staff')
+        ->get('/admin/pos')
+        ->assertInertia(fn ($page) => $page
+            ->where('openShift', null)
+            ->where('flash.shift_closed.counted_cash', '1400.00')
+            ->where('flash.shift_closed.difference', '-62.00'));
+});
+
+it('refuses to close a shift without a counted amount and leaves it open', function (): void {
+    $this->actingAs($this->cashier, 'staff')
+        ->post("/admin/shifts/{$this->shift->id}/close")
+        ->assertSessionHasErrors(['counted_cash' => __('validation.required', ['attribute' => 'counted cash'])]);
+
+    $this->actingAs($this->cashier, 'staff')
+        ->post("/admin/shifts/{$this->shift->id}/close", ['counted_cash' => -5])
+        ->assertSessionHasErrors(['counted_cash' => __('validation.min.numeric', ['attribute' => 'counted cash', 'min' => 0])]);
+
+    expect($this->shift->fresh()->closed_at)->toBeNull();
+});
+
+it('lets only the shift\'s own cashier or a manager close it, and nobody from another branch', function (): void {
+    $url = "/admin/shifts/{$this->shift->id}/close";
+    $otherBranch = Branch::factory()->create(['code' => 'BR09']);
+
+    $this->post($url, ['counted_cash' => 1400])->assertRedirect('/login');
+    $this->actingAs(User::factory()->role('cashier', $this->branch->id)->create(), 'staff')->post($url, ['counted_cash' => 1400])->assertForbidden();
+    $this->actingAs(User::factory()->role('rider', $this->branch->id)->create(), 'staff')->post($url, ['counted_cash' => 1400])->assertForbidden();
+    $this->actingAs(User::factory()->role('cashier', $otherBranch->id)->create(), 'staff')->post($url, ['counted_cash' => 1400])->assertNotFound();
+
+    expect($this->shift->fresh()->closed_at)->toBeNull();
+
+    // A manager closes a cashier's shift when the cashier has already left.
+    $this->actingAs($this->manager, 'staff')->post($url, ['counted_cash' => 1000])->assertRedirect();
+
+    expect($this->shift->fresh()->counted_cash)->toBe('1000.00');
+});
+
+it('refuses to close a shift twice and keeps the first count', function (): void {
+    app(CloseShiftAction::class)->execute($this->shift, 1400);
+
+    $this->actingAs($this->cashier, 'staff')
+        ->post("/admin/shifts/{$this->shift->id}/close", ['counted_cash' => 900])
+        ->assertSessionHasErrors(['shift' => __('orders.shift_already_closed')]);
+
+    expect($this->shift->fresh()->counted_cash)->toBe('1400.00');
+});
+
 it('drives the whole flow through the controller endpoints', function (): void {
     $response = $this->actingAs($this->cashier, 'staff')->post('/admin/orders', [
         'order_type' => 'takeaway',

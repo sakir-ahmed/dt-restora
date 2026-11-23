@@ -9,6 +9,7 @@ use App\Actions\Sales\OpenShiftAction;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Shift;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
@@ -49,11 +50,45 @@ class ShiftController extends Controller
         ]);
 
         $closed = $action->execute($shift, (float) $validated['counted_cash']);
+        $summary = $action->summary($closed);
 
         return back()->with('success', __('orders.shift_closed', [
             'expected' => $closed->expected_cash,
             'difference' => $closed->difference,
-        ]));
+        ]))->with('shift_closed', [
+            'id' => $closed->id,
+            'opening_cash' => $closed->opening_cash,
+            'counted_cash' => $closed->counted_cash,
+            'expected_cash' => $closed->expected_cash,
+            'difference' => $closed->difference,
+            'orders' => $summary['orders'],
+            'open_orders' => $summary['open_orders'],
+            'sales_total' => $summary['sales_total'],
+            'cash_sales' => $summary['cash_sales'],
+            'methods' => $summary['methods'],
+        ]);
+    }
+
+    /**
+     * What the cashier should know before counting the drawer: bills of this shift still unpaid. The expected cash
+     * is not shown here, so the count is made without looking at it.
+     */
+    public function summary(Request $request, Shift $shift, CloseShiftAction $action): JsonResponse
+    {
+        $this->authorize('shifts.manage');
+
+        $user = $request->user('staff');
+
+        abort_unless($user->canAccessBranch($shift->branch_id), 404);
+        abort_unless($user->id === $shift->user_id || $user->can('orders.void'), 403);
+
+        $summary = $action->summary($shift);
+
+        return response()->json([
+            'orders' => $summary['orders'],
+            'open_orders' => $summary['open_orders'],
+            'opened_at' => $shift->opened_at?->toIso8601String(),
+        ]);
     }
 
     private function currentBranch(Request $request): Branch

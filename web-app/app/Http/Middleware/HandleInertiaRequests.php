@@ -94,6 +94,8 @@ class HandleInertiaRequests extends Middleware
                 'pending_payments' => $request->session()->get('pending_payments'),
                 // Whether a verification closed the bill, so the paid finish plays only then.
                 'order_paid' => $request->session()->get('order_paid'),
+                // The shift the POS just closed, so the cashier sees expected against counted cash.
+                'shift_closed' => $request->session()->get('shift_closed'),
                 'placed' => $request->session()->get('placed_order'),
                 'device_token' => $request->session()->get('device_token'),
                 'device_name' => $request->session()->get('device_name'),
