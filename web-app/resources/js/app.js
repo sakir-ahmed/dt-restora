@@ -19,11 +19,15 @@ import { notify } from './lib/notify';
 import { vNumeric } from './lib/numericInput';
 import { registerServiceWorker } from './lib/pwa';
 import { showRefusal } from './lib/refusal';
+import { installSearchableSelects } from './lib/searchableSelect';
 import { pageTitle } from './lib/title';
 import { Ziggy } from './ziggy';
 
 // A delete the server refuses comes back as a normal redirect carrying an error flash. Show it as a
 // warning dialog for every page, and keep page callbacks from announcing a success that did not happen.
+// Every dropdown with more than a few options gets a search box.
+installSearchableSelects();
+
 let lastMethod = '';
 
 router.on('before', (event) => {
