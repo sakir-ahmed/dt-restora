@@ -11,4 +11,6 @@ return [
     'mark_ready' => 'প্রস্তুত করুন',
     'mark_served' => 'পরিবেশিত করুন',
     'prepared_by' => 'রান্না করছেন: :name',
+    'round' => 'রাউন্ড :number',
+    'added_items' => 'যোগ করা আইটেম',
 ];

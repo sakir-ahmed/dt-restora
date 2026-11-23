@@ -30,4 +30,5 @@ return [
         'takeaway' => 'Takeaway',
         'delivery' => 'Delivery',
     ],
+    'kitchen_round' => 'Added items - round :round',
 ];

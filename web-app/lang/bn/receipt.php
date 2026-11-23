@@ -30,4 +30,5 @@ return [
         'takeaway' => 'টেকঅওয়ে',
         'delivery' => 'ডেলিভারি',
     ],
+    'kitchen_round' => 'যোগ করা আইটেম - রাউন্ড :round',
 ];

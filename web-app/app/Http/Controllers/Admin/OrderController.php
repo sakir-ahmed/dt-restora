@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
+use App\Actions\Sales\AddItemsToOrderAction;
 use App\Actions\Sales\ApproveOrderVoidAction;
 use App\Actions\Sales\CreateOrderAction;
 use App\Actions\Sales\HandOrderToKitchenAction;
@@ -17,9 +18,11 @@ use App\Enums\OrderType;
 use App\Events\OrderCreated;
 use App\Events\OrderStatusChanged;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\AddOrderItemsRequest;
 use App\Http\Requests\Admin\CreateOrderRequest;
 use App\Models\Branch;
 use App\Models\Customer;
+use App\Models\KitchenTicket;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
@@ -49,7 +52,7 @@ class OrderController extends Controller
 
         $orders = Order::query()
             ->where('branch_id', $branch->id)
-            ->with(['table:id,name', 'waiter:id,name', 'cashier:id,name', 'customer:id,name,mobile', 'items:id,order_id,name,name_bn,quantity,unit_price,add_ons,add_ons_total,line_total', 'voidRequest', 'payments', 'aggregatorChannel:id,key,name'])
+            ->with(['table:id,name', 'waiter:id,name', 'cashier:id,name', 'customer:id,name,mobile', 'items:id,order_id,kitchen_ticket_id,name,name_bn,quantity,unit_price,add_ons,add_ons_total,line_total', 'voidRequest', 'payments', 'aggregatorChannel:id,key,name', 'tickets:id,order_id,number,status'])
             ->with('preparer:id,name')
             ->when($request->string('kind')->toString(), fn ($query, $kind) => $query->where('kind', $kind))
             ->when($request->integer('cashier'), fn ($query, $id) => $query->where('cashier_id', $id))
@@ -299,6 +302,40 @@ class OrderController extends Controller
     }
 
     /**
+     * Add items to an order that is already with the kitchen. The invoice stays one; the new items are
+     * their own kitchen ticket, so a ticket being cooked or served is never changed.
+     */
+    public function addItems(AddOrderItemsRequest $request, Order $order, AddItemsToOrderAction $action): RedirectResponse
+    {
+        $user = $request->user('staff');
+        abort_unless($user->canAccessBranch($order->branch_id), 404);
+
+        $ticket = $action->execute($order, $request->validated('items'), $user);
+        $order->refresh();
+
+        $this->broadcastSafely(fn () => broadcast(new OrderCreated($order->branch_id, [
+            'order_id' => $order->id,
+            'invoice_no' => $order->invoice_no,
+            'order_type' => $order->order_type->value,
+            'table' => $order->table?->name,
+            'ticket' => $ticket->number,
+            'items' => $ticket->items->map(fn ($item) => [
+                'name' => $item->name,
+                'quantity' => $item->quantity,
+            ])->all(),
+        ]))->toOthers());
+
+        return back()->with('success', __('orders.items_added', ['invoice' => $order->invoice_no, 'round' => $ticket->number]))->with('order', [
+            'id' => $order->id,
+            'invoice_no' => $order->invoice_no,
+            'total' => $order->total,
+            'balance' => $order->balanceDue(),
+            'ticket_id' => $ticket->id,
+            'ticket_number' => $ticket->number,
+        ]);
+    }
+
+    /**
      * Put the customer's mobile number on an order that has no customer yet, so the number sent an invoice
      * to is kept in the customer list. An order that already has a customer keeps them.
      */
@@ -450,12 +487,13 @@ class OrderController extends Controller
                 return back()->with('error', __('orders.invalid_status'));
             }
 
-            // An order still open carries the step as its status too. A paid one stays paid.
-            $order->update(($order->status->isKitchenActive()
-                ? ['status' => $next->value, 'kitchen_status' => $next->value]
-                : ['kitchen_status' => $next->value])
-                // The kitchen user who picks the order up is shown on its ticket.
-                + ($next === OrderStatus::Preparing ? ['prepared_by' => $request->user('staff')->id] : []));
+            // The kitchen user who picks the order up is shown on its ticket.
+            if ($next === OrderStatus::Preparing) {
+                $order->update(['prepared_by' => $request->user('staff')->id]);
+            }
+
+            // Every ticket of the order is brought to the step; the order follows its least advanced ticket.
+            $order->moveTickets($next, $request->user('staff')->id);
 
             activity()->performedOn($order)->causedBy($request->user('staff'))
                 ->withProperties(['from' => $current->value, 'to' => $next->value])
@@ -467,6 +505,70 @@ class OrderController extends Controller
         $this->broadcastSafely(fn () => broadcast(new OrderStatusChanged($order->branch_id, [
             'order_id' => $order->id,
             'invoice_no' => $order->invoice_no,
+            'status' => $next->value,
+        ])));
+
+        return back()->with('success', __('orders.status_updated'));
+    }
+
+    /**
+     * The Kitchen Display moves one ticket (one batch of items of an invoice) to its next step. The other
+     * tickets of the same invoice are not touched; the order follows its least advanced ticket.
+     */
+    public function updateTicketStatus(Request $request, KitchenTicket $ticket): RedirectResponse
+    {
+        $validated = $request->validate([
+            'status' => ['required', 'in:pending,preparing,ready,served'],
+        ]);
+
+        $user = $request->user('staff');
+        abort_unless($user->can('orders.create') || $user->can('kds.access'), 403);
+
+        $order = $ticket->order;
+        abort_unless($user->canAccessBranch($order->branch_id), 404);
+
+        if ($order->isAwaitingApproval()) {
+            return back()->with('error', __('orders.awaiting_approval_locked'));
+        }
+
+        if ($order->isHeldBack(PosSettings::preorderReleaseMinutes($order->branch))) {
+            return back()->with('error', __('orders.held_back_locked'));
+        }
+
+        $next = OrderStatus::from($validated['status']);
+
+        $goesBack = KitchenTicket::step($next) < KitchenTicket::step($ticket->status);
+
+        if ($order->isVoid() || $next === $ticket->status || ($goesBack && $order->aggregator_channel_id !== null)) {
+            return back()->with('error', __('orders.invalid_status'));
+        }
+
+        $before = $ticket->status;
+
+        $ticket->update([
+            'status' => $next->value,
+            'prepared_by' => $next === OrderStatus::Preparing ? $user->id : $ticket->prepared_by,
+        ]);
+
+        $wasStatus = $order->kitchen_status;
+        $order->syncKitchenStatus();
+
+        if ($next === OrderStatus::Preparing) {
+            $order->update(['prepared_by' => $user->id]);
+        }
+
+        activity()->performedOn($order)->causedBy($user)
+            ->withProperties(['from' => $before->value, 'to' => $next->value, 'ticket' => $ticket->number])
+            ->log('order.status_changed');
+
+        // The delivery platform is told the order is ready only when every ticket is.
+        $nowReady = $order->kitchen_status === OrderStatus::Ready && $wasStatus !== OrderStatus::Ready;
+        app(PushOrderToPlatformAction::class)->execute($order, $nowReady ? 'ready' : null);
+
+        $this->broadcastSafely(fn () => broadcast(new OrderStatusChanged($order->branch_id, [
+            'order_id' => $order->id,
+            'invoice_no' => $order->invoice_no,
+            'ticket' => $ticket->number,
             'status' => $next->value,
         ])));
 

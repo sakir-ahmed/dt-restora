@@ -118,8 +118,17 @@ class ReceiptController extends Controller
 
         $order->load(['items', 'branch', 'table']);
 
+        // A ticket slip lists only the items of that batch. Without one, the whole order is printed.
+        $ticket = $request->integer('ticket') > 0
+            ? $order->tickets()->where('id', $request->integer('ticket'))->firstOrFail()
+            : null;
+
+        if ($ticket !== null) {
+            $order->setRelation('items', $order->items->where('kitchen_ticket_id', $ticket->id)->values());
+        }
+
         return response()
-            ->view('receipts.kitchen', ['order' => $order])
+            ->view('receipts.kitchen', ['order' => $order, 'ticket' => $ticket, 'rounds' => $order->tickets()->count()])
             ->header('Content-Type', 'text/html; charset=UTF-8');
     }
 }

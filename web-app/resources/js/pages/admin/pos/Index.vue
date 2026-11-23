@@ -178,6 +178,8 @@ const heldListOpen = ref(false);
 const editingOrder = ref(null);
 // A paid sale or one completed on due: only its items and discount change, and its payments stay.
 const dueEditing = computed(() => !! editingOrder.value?.settled);
+// Items are being added to an order the kitchen has already started: the cart holds only the new items.
+const addingItems = computed(() => !! editingOrder.value?.adding);
 const openingCash = ref('0.00');
 const locked = ref(false);
 const pin = ref('');
@@ -449,6 +451,17 @@ function editOrder(order) {
         holdOrder();
     }
 
+    // The kitchen has started this order: its lines stay as sent and only new items can be added, as a new kitchen ticket.
+    if (order.kitchen_started && ! order.settled && ! (Number(order.advance) > 0)) {
+        startNewOrder();
+        orderType.value = order.order_type;
+        tableId.value = order.restaurant_table_id;
+        tablePickerOpen.value = false;
+        editingOrder.value = { ...order, adding: true };
+
+        return;
+    }
+
     const lines = [];
 
     for (const entry of order.items) {
@@ -658,6 +671,10 @@ const reviewAmounts = computed(() => {
 const invoiceLayout = computed(() => branch.value.pos_settings?.invoice_layout ?? 'classic');
 const invoicePaper = computed(() => branch.value.pos_settings?.invoice_paper ?? '80mm');
 const primarySpanClass = computed(() => {
+    if (addingItems.value) {
+        return 'col-span-6';
+    }
+
     const visible = ['send_to_kitchen', 'confirm_payment', 'quick_save'].filter((key) => posActions.value[key].enabled).length;
 
     return { 1: 'col-span-6', 2: 'col-span-3', 3: 'col-span-2' }[visible] ?? 'col-span-6';
@@ -1472,6 +1489,12 @@ async function submitOrder(mode = 'send_to_kitchen', reviewed = false) {
         payload.discount = orderDiscount;
     }
 
+    if (addingItems.value) {
+        sendAddedItems(payload);
+
+        return;
+    }
+
     if (dueEditing.value) {
         saveDueEdit(payload);
 
@@ -1582,6 +1605,41 @@ async function submitOrder(mode = 'send_to_kitchen', reviewed = false) {
                 return;
             }
 
+            const first = Object.values(errors)[0];
+            notify.error(String(first ?? t('common.error_occurred')));
+        },
+    });
+}
+
+// Send only the new items. The invoice stays one; the kitchen gets them as a new ticket and prints its own slip.
+function sendAddedItems(payload) {
+    if (! navigator.onLine) {
+        notify.error(t('orders.edit_needs_internet'));
+
+        return;
+    }
+
+    const target = editingOrder.value;
+
+    router.post(route('admin.orders.items.store', target.id), { items: payload.items }, {
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: (page) => {
+            const order = page.props.flash?.order ?? null;
+            const flags = posActions.value.send_to_kitchen;
+
+            playSound('order_created');
+            notify.success(t('orders.items_added', { invoice: target.invoice_no, round: order?.ticket_number ?? '' }));
+
+            if (order?.ticket_id && flags.instant_print && flags.print_kitchen) {
+                printSequence([{ url: route('admin.orders.kitchen-token', { order: target.id, ticket: order.ticket_id }) }]);
+            }
+
+            startNewOrder();
+            mobileTab.value = 'menu';
+            router.reload({ only: ['openOrders'], preserveScroll: true });
+        },
+        onError: (errors) => {
             const first = Object.values(errors)[0];
             notify.error(String(first ?? t('common.error_occurred')));
         },
@@ -2839,10 +2897,16 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
             <div v-if="editingOrder" class="flex items-center justify-between gap-2 border-b border-warning/40 bg-warning/15 px-2 py-1 text-[13px] text-foreground">
                 <span class="flex min-w-0 items-center gap-1.5">
                     <AppIcon name="pen-to-square" size="12" />
-                    <span class="truncate font-medium">{{ t('orders.editing_order', { invoice: editingOrder.invoice_no }) }}</span>
+                    <span class="truncate font-medium">
+                        {{ addingItems ? t('orders.adding_items', { invoice: editingOrder.invoice_no }) : t('orders.editing_order', { invoice: editingOrder.invoice_no }) }}
+                    </span>
                 </span>
                 <button type="button" class="h-6 shrink-0 rounded-md border border-border bg-surface px-2 text-xs font-medium hover:text-danger" @click="cancelEditing">{{ t('common.cancel') }}</button>
             </div>
+            <p v-if="addingItems" class="border-b border-border bg-background px-2 py-1 text-xs text-muted">
+                {{ t('orders.adding_items_hint', { round: (editingOrder.tickets_count ?? 1) + 1 }) }}
+                {{ t('orders.bill_so_far') }}: {{ formatMoney(editingOrder.total) }}
+            </p>
 
             <!-- Selected items -->
             <div class="thin-scrollbar min-h-0 flex-1 overflow-y-auto px-2">
@@ -3191,10 +3255,10 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         @click="submitOrder('send_to_kitchen')"
                     >
                         <AppIcon name="utensils" size="12" />
-                        {{ editingOrder ? t('orders.update_order') : t('orders.send_kitchen') }}
+                        {{ addingItems ? t('orders.send_added_items') : editingOrder ? t('orders.update_order') : t('orders.send_kitchen') }}
                     </button>
                     <button
-                        v-if="! dueEditing && posActions.quick_save.enabled && payMethods.includes('cash')"
+                        v-if="! dueEditing && ! addingItems && posActions.quick_save.enabled && payMethods.includes('cash')"
                         type="button"
                         :disabled="! canCreateOrders || cart.length === 0 || !! latestOrder || discountBlocked"
                         class="flex h-7 items-center justify-center gap-1 rounded-md bg-accent text-[13px] font-semibold text-accent-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
@@ -3205,7 +3269,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         {{ t('orders.quick_save') }}
                     </button>
                     <button
-                        v-if="! dueEditing && posActions.confirm_payment.enabled"
+                        v-if="! dueEditing && ! addingItems && posActions.confirm_payment.enabled"
                         type="button"
                         :disabled="! canConfirmPayment"
                         class="flex h-7 items-center justify-center gap-1 rounded-md bg-success text-[13px] font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
@@ -3216,7 +3280,7 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                         {{ confirmPaymentLabel }}
                     </button>
                     <button
-                        v-if="! dueEditing && posActions.due_sale.enabled"
+                        v-if="! dueEditing && ! addingItems && posActions.due_sale.enabled"
                         type="button"
                         :disabled="! canQuickDue"
                         :title="t('orders.due_sale_title')"

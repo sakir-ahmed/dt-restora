@@ -11,6 +11,7 @@ use App\Enums\OrderType;
 use App\Models\Concerns\BelongsToBranch;
 use App\Services\PosSettings;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -65,6 +66,12 @@ class Order extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class);
+    }
+
+    /** @return HasMany<KitchenTicket, $this> */
+    public function tickets(): HasMany
+    {
+        return $this->hasMany(KitchenTicket::class)->orderBy('number');
     }
 
     /** @return HasMany<Payment, $this> */
@@ -177,6 +184,99 @@ class Order extends Model
         $goesBack = array_search($next, $steps, true) < array_search($current, $steps, true);
 
         return ! ($goesBack && $this->aggregator_channel_id !== null);
+    }
+
+    /**
+     * The order's kitchen tickets, creating the first one when the order has none yet (an order from
+     * before tickets existed, or one saved without them). Its items not on any ticket go onto it.
+     *
+     * @return Collection<int, KitchenTicket>
+     */
+    public function ensureTickets(): Collection
+    {
+        $tickets = $this->tickets()->get();
+
+        if ($tickets->isEmpty()) {
+            $current = $this->kitchen_status ?? OrderStatus::Pending;
+
+            $first = $this->tickets()->create([
+                'number' => 1,
+                'status' => $current->isKitchenActive() ? $current->value : OrderStatus::Served->value,
+                'prepared_by' => $this->prepared_by,
+            ]);
+
+            $tickets = new Collection([$first]);
+        }
+
+        $this->items()->whereNull('kitchen_ticket_id')->update(['kitchen_ticket_id' => $tickets->first()->id]);
+
+        return $tickets;
+    }
+
+    /**
+     * A new pending ticket for items added after the order was first sent to the kitchen.
+     */
+    public function openTicket(): KitchenTicket
+    {
+        $tickets = $this->ensureTickets();
+
+        return $this->tickets()->create([
+            'number' => (int) $tickets->max('number') + 1,
+            'status' => OrderStatus::Pending->value,
+        ]);
+    }
+
+    /**
+     * Whether the kitchen has picked up any of the order's tickets. A full edit would rewrite what it
+     * is cooking or has served, so only adding items is allowed from then on.
+     */
+    public function isKitchenStarted(): bool
+    {
+        if ($this->tickets()->exists()) {
+            return $this->tickets()->where('status', '!=', OrderStatus::Pending->value)->exists();
+        }
+
+        return ($this->kitchen_status ?? OrderStatus::Pending) !== OrderStatus::Pending;
+    }
+
+    /**
+     * The order's own kitchen step follows its least advanced ticket: it is served only when every
+     * ticket is served, and a freshly added ticket brings an order back to pending. An open order
+     * carries the step as its status too; a paid one stays paid.
+     */
+    public function syncKitchenStatus(): void
+    {
+        $least = $this->ensureTickets()
+            ->sortBy(fn (KitchenTicket $ticket): int => KitchenTicket::step($ticket->status))
+            ->first()
+            ->status;
+
+        $this->forceFill($this->status->isKitchenActive()
+            ? ['status' => $least->value, 'kitchen_status' => $least->value]
+            : ['kitchen_status' => $least->value])->save();
+    }
+
+    /**
+     * Move the whole order to a kitchen step from the orders list: tickets behind the step are brought
+     * up to it going forward, and tickets ahead of it are brought back to it going back.
+     */
+    public function moveTickets(OrderStatus $next, ?int $preparerId = null): void
+    {
+        $forward = KitchenTicket::step($next) > KitchenTicket::step($this->kitchen_status ?? OrderStatus::Pending);
+        $target = KitchenTicket::step($next);
+
+        foreach ($this->ensureTickets() as $ticket) {
+            $step = KitchenTicket::step($ticket->status);
+
+            if (($forward && $step < $target) || (! $forward && $step > $target)) {
+                $ticket->update([
+                    'status' => $next->value,
+                    'prepared_by' => $next === OrderStatus::Preparing && $preparerId !== null ? $preparerId : $ticket->prepared_by,
+                ]);
+            }
+        }
+
+        $this->syncKitchenStatus();
     }
 
     /**

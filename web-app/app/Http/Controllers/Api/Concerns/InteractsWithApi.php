@@ -105,7 +105,7 @@ trait InteractsWithApi
      */
     protected function orderPayload(Order $order, bool $kitchen = false): array
     {
-        $order->loadMissing(['items', 'payments', 'table', 'cashier', 'voidRequest', 'customer']);
+        $order->loadMissing(['items', 'payments', 'table', 'cashier', 'voidRequest', 'customer', 'tickets']);
 
         return [
             'id' => $order->id,
@@ -115,6 +115,12 @@ trait InteractsWithApi
             ...($kitchen ? [
                 'kitchen_status' => $order->kitchen_status->value,
                 'next_statuses' => $order->nextKitchenStatuses(),
+                // One entry per batch of items sent to the kitchen (round 1, then each add-on round).
+                'kitchen_tickets' => $order->tickets->map(fn ($ticket) => [
+                    'id' => $ticket->id,
+                    'number' => $ticket->number,
+                    'status' => $ticket->status->value,
+                ])->all(),
             ] : []),
             'order_type' => $order->order_type->value,
             'total' => (string) $order->total,
@@ -147,6 +153,7 @@ trait InteractsWithApi
                 'unit_price' => (string) $item->unit_price,
                 'add_ons' => $item->add_ons,
                 'line_total' => (string) $item->line_total,
+                'kitchen_ticket_id' => $item->kitchen_ticket_id,
             ])->all(),
             'payments' => $order->payments->map(fn ($payment) => [
                 'id' => $payment->id,

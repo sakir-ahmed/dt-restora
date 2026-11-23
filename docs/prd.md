@@ -72,7 +72,7 @@ For today / week / month and per branch:
 - Menu items support **variants** (size) and **add-ons**, used by POS and website.
 - Payment methods: **Cash** (change calculator), **bKash**, **Nagad**, **SSLCommerz** (card / online), and **split payments** across methods.
 - Orders tagged with waiter, cashier, terminal, table, channel and branch.
-- Kitchen Display System (KDS) updated in real time via Reverb.
+- Kitchen Display System (KDS) updated in real time via Reverb. Every batch of items sent to the kitchen is its own kitchen ticket: items added to a running order keep the same invoice but reach the KDS as a new ticket (round 2, 3 ...) with its own step, printed on its own kitchen slip. A ticket being cooked or served is never changed; once the kitchen has started an order its lines cannot be edited, only added to.
 - Receipt printing (80mm thermal) and reprint with audit log.
 
 ### D. Recipes, Inventory & Purchasing

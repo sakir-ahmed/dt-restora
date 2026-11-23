@@ -66,7 +66,7 @@ it('shows the kitchen board to a chef role holding only kds access', function ()
     $this->actingAs($this->chef, 'staff')
         ->get(route('admin.kds.index'))
         ->assertOk()
-        ->assertInertia(fn ($page) => $page->where('orders.0.id', $orderId)->where('orders.0.status', 'pending'));
+        ->assertInertia(fn ($page) => $page->where('orders.0.order_id', $orderId)->where('orders.0.status', 'pending'));
 });
 
 it('lets the chef run every kitchen step from the display', function (): void {

@@ -15,8 +15,10 @@ use App\Models\CouponRedemption;
 use App\Models\Customer;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
+use App\Models\KitchenTicket;
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Recipe;
 use App\Models\Reservation;
 use App\Models\RestaurantTable;
@@ -27,6 +29,7 @@ use App\Services\CouponService;
 use App\Services\InvoiceNumberService;
 use App\Services\PosSettings;
 use App\Services\StockService;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -75,6 +78,7 @@ class CreateOrderAction
         ?int $reservationId = null,
         ?int $preorderId = null,
         bool $overridePreorder = false,
+        bool $appending = false,
     ): Order {
         if ($clientId !== null && $revising === null) {
             $existing = Order::query()->where('client_id', $clientId)->first();
@@ -86,17 +90,18 @@ class CreateOrderAction
 
         $lines = collect($lines);
 
-        return DB::transaction(function () use ($branch, $type, $lines, $cashier, $waiter, $tableId, $customer, $discount, $note, $channel, $clientId, $shift, $terminalCode, $deliveryFee, $deliveryZoneId, $deliveryAddress, $scheduledFor, $couponCode, $invoiceNo, $revising, $revisingSettled, $kind, $reservationId, $preorderId, $overridePreorder): Order {
+        return DB::transaction(function () use ($branch, $type, $lines, $cashier, $waiter, $tableId, $customer, $discount, $note, $channel, $clientId, $shift, $terminalCode, $deliveryFee, $deliveryZoneId, $deliveryAddress, $scheduledFor, $couponCode, $invoiceNo, $revising, $revisingSettled, $kind, $reservationId, $preorderId, $overridePreorder, $appending): Order {
             $branch = Branch::query()->whereKey($branch->id)->lockForUpdate()->firstOrFail();
 
             $keptCoupon = false;
 
             if ($revising !== null) {
-                if (! PosSettings::orderEditEnabled($branch)) {
+                // Adding items to a running order leaves its existing lines alone, so it is not an edit.
+                if (! $appending && ! PosSettings::orderEditEnabled($branch)) {
                     throw ValidationException::withMessages(['order' => __('orders.edit_disabled')]);
                 }
 
-                $revising = $this->releaseForRevision($revising, $tableId, $type, $revisingSettled);
+                $revising = $this->releaseForRevision($revising, $tableId, $type, $revisingSettled, $appending);
 
                 // The coupon stays on the revised bill if it still applies; its old use is cleared so it counts once.
                 if ($couponCode === null && $revising->coupon_id !== null) {
@@ -108,7 +113,7 @@ class CreateOrderAction
 
             // Percent discounts above the limit need the override permission.
             // Fixed amounts are checked against the subtotal once lines are priced.
-            if ($discount !== null && $discount['type'] === 'percent' && (float) $discount['value'] > 0) {
+            if (! $appending && $discount !== null && $discount['type'] === 'percent' && (float) $discount['value'] > 0) {
                 $limit = (float) Setting::current()->discount_limit_percent;
 
                 if ((float) $discount['value'] > $limit && ($cashier === null || ! $cashier->can('discounts.override'))) {
@@ -118,9 +123,20 @@ class CreateOrderAction
                 }
             }
 
-            $items = $lines->map(function (array $line) use ($branch): array {
+            $newLines = $lines->values();
+            $newItems = $newLines->map(function (array $line) use ($branch): array {
                 return $this->resolveLine($branch, $line);
             });
+
+            $items = $newItems;
+
+            // Items added to a running order are priced with the lines already on the bill, at the prices they
+            // were sold at, so the one invoice totals the whole table.
+            if ($appending && $revising !== null) {
+                $kept = $revising->items;
+                $lines = $kept->map(fn (OrderItem $line): array => $this->storedLine($line))->concat($newLines)->values();
+                $items = $kept->map(fn (OrderItem $line): array => $this->storedItem($line))->concat($newItems)->values();
+            }
 
             if ($revising === null && $channel !== OrderChannel::Aggregator) {
                 $this->assertPreorderRules($items, $kind, $scheduledFor, $overridePreorder);
@@ -160,7 +176,7 @@ class CreateOrderAction
 
             $discountBeforeCoupon = round($lineDiscounts + $manualDiscount, 2);
 
-            if ($subtotal > 0 && ($discountBeforeCoupon / $subtotal * 100) > (float) Setting::current()->discount_limit_percent && ($cashier === null || ! $cashier->can('discounts.override'))) {
+            if (! $appending && $subtotal > 0 && ($discountBeforeCoupon / $subtotal * 100) > (float) Setting::current()->discount_limit_percent && ($cashier === null || ! $cashier->can('discounts.override'))) {
                 throw ValidationException::withMessages([
                     'discount' => __('orders.discount_limit_exceeded'),
                 ]);
@@ -240,8 +256,25 @@ class CreateOrderAction
                 ]);
             }
 
-            foreach ($items as $item) {
-                $order->items()->create([
+            $ticket = match (true) {
+                $appending => $order->openTicket(),
+                $revising !== null => $this->ticketForRevision($order, $revisingSettled),
+                default => $order->tickets()->create(['number' => 1, 'status' => OrderStatus::Pending->value]),
+            };
+
+            $created = new EloquentCollection;
+
+            foreach ($newItems as $index => $item) {
+                $input = $newLines[$index];
+                $lineDiscount = $input['discount'] ?? null;
+                $hasDiscount = is_array($lineDiscount) && (float) ($lineDiscount['value'] ?? 0) > 0;
+
+                $created->push($order->items()->create([
+                    'kitchen_ticket_id' => $ticket->id,
+                    'line_discount_type' => $hasDiscount ? ($lineDiscount['type'] ?? 'percent') : null,
+                    'line_discount_value' => $hasDiscount ? (float) $lineDiscount['value'] : null,
+                    'line_vat_percent' => isset($input['vat_percent']) && $input['vat_percent'] !== '' ? (float) $input['vat_percent'] : null,
+                    'line_extra_charge' => isset($input['extra_charge']) && (float) $input['extra_charge'] > 0 ? (float) $input['extra_charge'] : null,
                     'menu_item_id' => $item['menu_item_id'],
                     'variant_id' => $item['variant_id'],
                     'name' => $item['name'],
@@ -252,7 +285,12 @@ class CreateOrderAction
                     'add_ons_total' => $item['add_ons_total'],
                     'line_total' => $item['line_total'],
                     'line_cost' => $item['line_cost'],
-                ]);
+                ]));
+            }
+
+            if ($revising !== null) {
+                $order->unsetRelation('items');
+                $order->syncKitchenStatus();
             }
 
             if ($coupon !== null) {
@@ -261,13 +299,13 @@ class CreateOrderAction
 
             $reservation = null;
 
-            if (! $revisingSettled && $type === OrderType::DineIn && $tableId !== null) {
+            if (! $appending && ! $revisingSettled && $type === OrderType::DineIn && $tableId !== null) {
                 RestaurantTable::query()->whereKey($tableId)->update(['status' => 'occupied']);
                 $reservation = Reservation::seatAt($tableId);
             }
 
             try {
-                $this->deductStock($branch, $order);
+                $this->deductStock($branch, $order, $created);
             } catch (InsufficientStockException $exception) {
                 throw ValidationException::withMessages([
                     'items' => __('inventory.insufficient_stock', [
@@ -428,9 +466,22 @@ class CreateOrderAction
      * Prepare an unpaid order for a new set of lines: give its stock back,
      * drop the old lines and free (or move) its table.
      */
-    private function releaseForRevision(Order $order, ?int $newTableId, OrderType $type, bool $revisingSettled = false): Order
+    private function releaseForRevision(Order $order, ?int $newTableId, OrderType $type, bool $revisingSettled = false, bool $appending = false): Order
     {
         $order = Order::query()->whereKey($order->id)->lockForUpdate()->with('items')->firstOrFail();
+
+        if ($appending) {
+            if (! $order->status->isKitchenActive()) {
+                throw ValidationException::withMessages(['order' => __('orders.add_items_closed')]);
+            }
+
+            return $order;
+        }
+
+        // Replacing the lines would change tickets the kitchen is already cooking or has served.
+        if (! $revisingSettled && $order->isKitchenStarted()) {
+            throw ValidationException::withMessages(['order' => __('orders.edit_started')]);
+        }
 
         $revisable = $revisingSettled
             ? $order->status === OrderStatus::Paid
@@ -484,17 +535,74 @@ class CreateOrderAction
         return $order;
     }
 
-    private function deductStock(Branch $branch, Order $order): void
+    /**
+     * The first ticket of an order whose lines were replaced. Only an order the kitchen has not started
+     * (or a settled one, which is long served) gets here, so extra pending tickets fold into the first.
+     */
+    private function ticketForRevision(Order $order, bool $settled): KitchenTicket
     {
-        $order->loadMissing('items');
+        $first = $order->ensureTickets()->first();
 
+        if (! $settled) {
+            $order->tickets()->where('id', '!=', $first->id)->delete();
+        }
+
+        return $first;
+    }
+
+    /**
+     * A line already on the bill, in the shape a new line is sent, so its discount, VAT and extra charge are
+     * priced the same way again.
+     *
+     * @return array<string, mixed>
+     */
+    private function storedLine(OrderItem $line): array
+    {
+        return [
+            'menu_item_id' => $line->menu_item_id,
+            'discount' => $line->line_discount_type !== null
+                ? ['type' => $line->line_discount_type, 'value' => (float) $line->line_discount_value]
+                : null,
+            'vat_percent' => $line->line_vat_percent !== null ? (float) $line->line_vat_percent : null,
+            'extra_charge' => (float) ($line->line_extra_charge ?? 0),
+        ];
+    }
+
+    /**
+     * A line already on the bill, at the price it was sold at (not today's menu price).
+     *
+     * @return array<string, mixed>
+     */
+    private function storedItem(OrderItem $line): array
+    {
+        return [
+            'menu_item_id' => $line->menu_item_id,
+            'variant_id' => $line->variant_id,
+            'name' => $line->name,
+            'name_bn' => $line->name_bn,
+            'requires_pre_order' => false,
+            'pre_order_lead' => 0,
+            'unit_price' => (string) $line->unit_price,
+            'quantity' => $line->quantity,
+            'add_ons' => $line->add_ons,
+            'add_ons_total' => (string) $line->add_ons_total,
+            'line_total' => (string) $line->line_total,
+            'line_cost' => (string) $line->line_cost,
+        ];
+    }
+
+    /**
+     * @param  EloquentCollection<int, OrderItem>  $lines
+     */
+    private function deductStock(Branch $branch, Order $order, EloquentCollection $lines): void
+    {
         $recipes = Recipe::query()
             ->with('items')
-            ->whereIn('menu_item_id', $order->items->pluck('menu_item_id'))
+            ->whereIn('menu_item_id', $lines->pluck('menu_item_id'))
             ->get()
             ->keyBy('menu_item_id');
 
-        foreach ($order->items as $orderItem) {
+        foreach ($lines as $orderItem) {
             $recipe = $recipes->get($orderItem->menu_item_id);
 
             if ($recipe === null) {

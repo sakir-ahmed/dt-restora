@@ -43,6 +43,9 @@
 <body>
     <div class="center bold large">{{ __('receipt.kitchen_token') }}</div>
     <div class="center bold">{{ $order->invoice_no }}</div>
+    @if (($ticket?->number ?? 1) > 1)
+        <div class="center bold">{{ __('receipt.kitchen_round', ['round' => $ticket->number]) }}</div>
+    @endif
     <div class="center">{{ \Illuminate\Support\Carbon::parse($order->created_at)->format('d M Y, h:i A') }}</div>
 
     <div class="hr"></div>

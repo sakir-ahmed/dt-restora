@@ -13,6 +13,7 @@ use App\Actions\Inventory\ReceivePurchaseAction;
 use App\Actions\Inventory\ReceiveStockTransferAction;
 use App\Actions\Inventory\SaveRecipeAction;
 use App\Actions\Payroll\CalculateStaffPayAction;
+use App\Actions\Sales\AddItemsToOrderAction;
 use App\Actions\Sales\ApproveOrderVoidAction;
 use App\Actions\Sales\CloseShiftAction;
 use App\Actions\Sales\CreateOrderAction;
@@ -205,6 +206,45 @@ class StaffApiController extends Controller
         return $this->success($this->orderPayload($order, kitchen: true));
     }
 
+    /**
+     * Add items to an order already with the kitchen: same invoice, new kitchen ticket (round).
+     */
+    public function addItems(Request $request, string $branch, Order $order, AddItemsToOrderAction $action): JsonResponse
+    {
+        $user = $this->staffUser($request);
+        $this->permit($user, 'orders.create');
+        $branchModel = $this->branchOrFail($request, $branch);
+        abort_unless($order->branch_id === $branchModel->id, 404);
+
+        $validated = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.menu_item_id' => ['required', 'integer'],
+            'items.*.variant_id' => ['nullable', 'integer'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:999'],
+            'items.*.add_ons' => ['nullable', 'array'],
+            'items.*.add_ons.*.id' => ['required', 'integer'],
+            'items.*.add_ons.*.qty' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $ticket = $action->execute($order, $validated['items'], $user);
+        $order->refresh();
+
+        try {
+            broadcast(new OrderCreated($order->branch_id, [
+                'order_id' => $order->id,
+                'invoice_no' => $order->invoice_no,
+                'order_type' => $order->order_type->value,
+                'table' => $order->table?->name,
+                'ticket' => $ticket->number,
+                'items' => $ticket->items->map(fn ($item) => ['name' => $item->name, 'quantity' => $item->quantity])->all(),
+            ]))->toOthers();
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
+        return $this->success($this->orderPayload($order->fresh(), kitchen: true), __('orders.items_added', ['invoice' => $order->invoice_no, 'round' => $ticket->number]));
+    }
+
     public function updateStatus(Request $request, string $branch, Order $order): JsonResponse
     {
         $user = $this->staffUser($request);
@@ -235,12 +275,13 @@ class StaffApiController extends Controller
         } else {
             abort_unless($order->canMoveKitchenStatus($next), 422, __('orders.invalid_status'));
 
-            // An order still open carries the step as its status too. A paid one stays paid.
-            $order->update(($order->status->isKitchenActive()
-                ? ['status' => $next->value, 'kitchen_status' => $next->value]
-                : ['kitchen_status' => $next->value])
-                // The kitchen user who picks the order up is shown on its ticket.
-                + ($next === OrderStatus::Preparing ? ['prepared_by' => $user->id] : []));
+            // The kitchen user who picks the order up is shown on its ticket.
+            if ($next === OrderStatus::Preparing) {
+                $order->update(['prepared_by' => $user->id]);
+            }
+
+            // Every ticket of the order is brought to the step; the order follows its least advanced ticket.
+            $order->moveTickets($next, $user->id);
 
             activity()->performedOn($order)->causedBy($user)
                 ->withProperties(['from' => $current->value, 'to' => $next->value])

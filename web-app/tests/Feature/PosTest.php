@@ -668,7 +668,6 @@ it('names the payment methods alongside the orders so the payment column can bad
 
 it('keeps the kitchen status of an order when its items are edited', function (): void {
     $order = createPosOrder($this);
-    $order->update(['status' => OrderStatus::Served->value]);
 
     $this->actingAs($this->cashier, 'staff')
         ->put(route('admin.orders.update', $order), [
@@ -677,12 +676,28 @@ it('keeps the kitchen status of an order when its items are edited', function ()
         ])
         ->assertSessionHasNoErrors();
 
-    expect($order->fresh()->status)->toBe(OrderStatus::Served);
+    expect($order->fresh()->status)->toBe(OrderStatus::Pending)
+        ->and($order->tickets()->count())->toBe(1);
+});
+
+it('refuses a full edit once the kitchen has started the order', function (): void {
+    $order = createPosOrder($this);
+    $order->moveTickets(OrderStatus::Preparing);
+
+    $this->actingAs($this->cashier, 'staff')
+        ->put(route('admin.orders.update', $order), [
+            'order_type' => 'takeaway',
+            'items' => [['menu_item_id' => $this->item->id, 'quantity' => 5]],
+        ])
+        ->assertSessionHasErrors('order');
+
+    expect($order->fresh()->items->sum('quantity'))->toBe(2)
+        ->and($order->fresh()->status)->toBe(OrderStatus::Preparing);
 });
 
 it('moves an order back to an earlier kitchen step, but not a delivery platform order or a deleted one', function (): void {
     $order = createPosOrder($this);
-    $order->update(['status' => OrderStatus::Served->value, 'kitchen_status' => OrderStatus::Served->value]);
+    $order->moveTickets(OrderStatus::Served);
 
     $this->actingAs($this->cashier, 'staff')
         ->patch(route('admin.orders.status', $order), ['status' => 'ready'])
@@ -707,7 +722,8 @@ it('moves an order back to an earlier kitchen step, but not a delivery platform 
     ]);
 
     $platform = createPosOrder($this);
-    $platform->update(['status' => OrderStatus::Served->value, 'kitchen_status' => OrderStatus::Served->value, 'aggregator_channel_id' => $channel->id]);
+    $platform->moveTickets(OrderStatus::Served);
+    $platform->update(['aggregator_channel_id' => $channel->id]);
 
     $this->actingAs($this->cashier, 'staff')
         ->patch(route('admin.orders.status', $platform), ['status' => 'ready'])

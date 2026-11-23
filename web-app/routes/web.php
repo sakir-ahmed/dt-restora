@@ -373,6 +373,8 @@ Route::prefix('admin')
         Route::post('payments/{payment}/reject', [PaymentController::class, 'rejectManual'])->name('payments.reject')->middleware('permission:payments.manage');
         // The kitchen display advances tickets with kds.access alone; paid still needs orders.create.
         Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.status')->middleware('permission:orders.create|kds.access');
+        Route::patch('kitchen-tickets/{ticket}/status', [OrderController::class, 'updateTicketStatus'])->name('kitchen-tickets.status')->middleware('permission:orders.create|kds.access');
+        Route::post('orders/{order}/items', [OrderController::class, 'addItems'])->name('orders.items.store')->middleware('permission:orders.create');
         Route::post('orders/{order}/approve', [OrderController::class, 'approve'])->name('orders.approve')->middleware('permission:orders.approve');
         Route::post('orders/{order}/release', [OrderController::class, 'release'])->name('orders.release')->middleware('permission:orders.approve');
         Route::post('orders/{order}/delete', [OrderController::class, 'deleteOrder'])->name('orders.delete')->middleware('permission:orders.void');

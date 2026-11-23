@@ -35,6 +35,10 @@ const isEditable = computed(() => ! isVoid.value && (
     (isOpen.value && (props.order?.payments ?? []).length === 0)
     || status.value === 'paid'
 ));
+// Once the kitchen has picked up any ticket the lines are frozen: only new items can be added.
+const kitchenStarted = computed(() => (props.order?.tickets ?? []).some((ticket) => ticket.status !== 'pending'));
+const roundOf = (item) => (props.order?.tickets ?? []).find((ticket) => ticket.id === item.kitchen_ticket_id)?.number ?? 1;
+const hasRounds = computed(() => (props.order?.tickets ?? []).length > 1);
 const hasDue = computed(() => ! isVoid.value && !! props.order?.is_due && Number(props.order?.balance ?? 0) > 0);
 const pendingPayment = computed(() => (props.order?.payments ?? []).find((payment) => payment.status === 'pending_verification') ?? null);
 
@@ -119,7 +123,10 @@ const buttonBase = 'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-
                 <ul class="divide-y divide-border rounded-md border border-border">
                     <li v-for="(item, index) in order.items" :key="item.id ?? index" class="flex items-start justify-between gap-3 px-2 py-1.5">
                         <div class="min-w-0">
-                            <p class="font-medium">{{ item.quantity }} x {{ itemName(item) }}</p>
+                            <p class="font-medium">
+                                {{ item.quantity }} x {{ itemName(item) }}
+                                <span v-if="hasRounds" class="ml-1 rounded bg-background px-1.5 py-0.5 text-[11px] font-semibold text-muted">{{ t('kds.round', { number: roundOf(item) }) }}</span>
+                            </p>
                             <p v-if="addOnText(item)" class="text-xs text-muted">{{ addOnText(item) }}</p>
                             <p class="text-xs text-muted"><MoneyText :value="item.unit_price" /></p>
                         </div>
@@ -182,7 +189,7 @@ const buttonBase = 'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-
                 </button>
                 <button v-if="canEdit && isEditable" type="button" :class="[buttonBase, 'border border-border bg-surface text-foreground hover:bg-background']" @click="emit('edit', order)">
                     <AppIcon name="pen-to-square" size="12" />
-                    {{ t('common.edit') }}
+                    {{ kitchenStarted && status !== 'paid' ? t('orders.add_items') : t('common.edit') }}
                 </button>
                 <button v-if="canApprovePayments && pendingPayment" type="button" :class="[buttonBase, 'border border-warning/60 text-warning hover:bg-warning/10']" @click="emit('approve', pendingPayment)">
                     <AppIcon name="user-shield" size="12" />

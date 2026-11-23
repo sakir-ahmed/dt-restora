@@ -86,7 +86,7 @@ function advance(order) {
     // pending -> preparing -> ready -> served. A ready order is served and leaves the board.
     const next = ({ pending: 'preparing', preparing: 'ready', ready: 'served' })[order.status] ?? 'served';
 
-    router.patch(route('admin.orders.status', order.id), { status: next }, {
+    router.patch(route('admin.kitchen-tickets.status', order.id), { status: next }, {
         preserveState: true,
         preserveScroll: true,
         onSuccess: () => {
@@ -201,6 +201,15 @@ onBeforeUnmount(() => {
                                     {{ order.invoice_no }}
                                     <ChannelBadge :channel="order.channel" :aggregator="order.aggregator_channel" />
                                 </p>
+                                <p v-if="order.rounds > 1" class="mt-1 flex items-center gap-1.5 text-xs font-semibold">
+                                    <span
+                                        class="whitespace-nowrap rounded px-1.5 py-0.5"
+                                        :class="order.ticket_no > 1 ? 'bg-warning/20 text-foreground' : 'bg-background text-muted'"
+                                    >
+                                        {{ t('kds.round', { number: order.ticket_no }) }} / {{ order.rounds }}
+                                    </span>
+                                    <span v-if="order.ticket_no > 1" class="text-accent">{{ t('kds.added_items') }}</span>
+                                </p>
                             </div>
                             <span class="flex items-center gap-1 text-xs font-semibold tabular-nums" :class="elapsed(order) > 15 ? 'text-danger' : 'text-muted'">
                                 <AppIcon name="clock" size="10" />
@@ -222,6 +231,8 @@ onBeforeUnmount(() => {
                                 <span v-if="item.add_ons?.length" class="text-right text-xs text-muted">{{ item.add_ons.map((a) => a.name).join(', ') }}</span>
                             </li>
                         </ul>
+
+                        <p v-if="order.note" class="mt-2 text-xs italic text-muted">{{ order.note }}</p>
 
                         <button
                             v-if="order.status !== 'served'"

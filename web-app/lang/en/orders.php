@@ -281,4 +281,13 @@ return [
     'due_confirm_title' => 'Put :invoice on due?',
     'due_confirm_message' => 'The whole bill is booked as owed by this customer and moves to Dues. Nothing is received now.',
     'put_on_due' => 'Put on due',
+    'edit_started' => 'The kitchen has already started this order, so it cannot be edited. Use Add items to send more to the kitchen.',
+    'add_items' => 'Add items',
+    'add_items_closed' => 'Items can only be added to an order that is not yet paid.',
+    'add_items_locked' => 'Items cannot be added to this order (delivery platform order, or booking money is on the bill).',
+    'items_added' => 'Items added to :invoice as kitchen round :round',
+    'adding_items' => 'Adding items to :invoice',
+    'adding_items_hint' => 'The items already sent stay as they are. New items go to the kitchen as round :round.',
+    'send_added_items' => 'Send added items to kitchen',
+    'bill_so_far' => 'Bill so far',
 ];

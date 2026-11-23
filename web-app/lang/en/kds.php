@@ -11,4 +11,6 @@ return [
     'mark_ready' => 'Mark ready',
     'mark_served' => 'Mark served',
     'prepared_by' => 'Preparing: :name',
+    'round' => 'Round :number',
+    'added_items' => 'Added items',
 ];

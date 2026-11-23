@@ -70,11 +70,11 @@ class PosController extends Controller
                 ->withSum(['payments as advance_paid' => fn (Builder $payments) => $payments->where('is_advance', true)->where('status', 'completed')], 'amount')
                 ->withSum(['payments as received_paid' => fn (Builder $payments) => $payments->where('is_advance', false)->where('status', 'completed')], 'amount')
                 ->withSum(['payments as verifying_paid' => fn (Builder $payments) => $payments->where('status', 'pending_verification')], 'amount')
-                ->with(['items:id,order_id,menu_item_id,variant_id,name,quantity,add_ons', 'customer:id,mobile'])
+                ->with(['items:id,order_id,menu_item_id,variant_id,name,quantity,add_ons', 'customer:id,mobile', 'tickets:id,order_id,number,status'])
                 ->latest()
                 ->limit(60)
-                ->get(['id', 'invoice_no', 'order_type', 'restaurant_table_id', 'customer_id', 'status', 'discount_type', 'discount_value', 'total', 'created_at'])
-                ->map(fn (Order $order): array => $order->toArray() + [
+                ->get(['id', 'invoice_no', 'order_type', 'restaurant_table_id', 'customer_id', 'status', 'kitchen_status', 'discount_type', 'discount_value', 'total', 'created_at'])
+                ->map(fn (Order $order): array => $order->toArray() + $this->kitchenProgress($order) + [
                     'advance' => (float) ($order->advance_paid ?? 0),
                     'paid' => (float) ($order->received_paid ?? 0),
                     'pending' => (float) ($order->verifying_paid ?? 0),
@@ -372,7 +372,7 @@ class PosController extends Controller
             ->where('branch_id', $branch->id)
             ->where('status', '!=', OrderStatus::Void->value)
             ->withSum(['payments as advance_paid' => fn (Builder $payments) => $payments->where('is_advance', true)->where('status', 'completed')], 'amount')
-            ->with(['items:id,order_id,menu_item_id,variant_id,name,quantity,add_ons', 'customer:id,mobile'])
+            ->with(['items:id,order_id,menu_item_id,variant_id,name,quantity,add_ons', 'customer:id,mobile', 'tickets:id,order_id,number,status'])
             ->find($id);
 
         if ($order === null) {
@@ -386,11 +386,29 @@ class PosController extends Controller
             + [
                 'items' => $order->items,
                 'customer' => $order->customer,
+            ]
+            + $this->kitchenProgress($order)
+            + [
                 'is_due' => (bool) $order->is_due,
                 'settled' => $settled,
                 'paid' => $paid,
                 'advance' => (float) ($order->advance_paid ?? 0),
                 'balance' => max(0, round((float) $order->total - $paid, 2)),
             ];
+    }
+
+    /**
+     * Whether the kitchen has started the order (so only items can be added, not a full edit) and how
+     * many kitchen tickets it has. Needs the order's tickets loaded.
+     *
+     * @return array{kitchen_started: bool, tickets_count: int}
+     */
+    private function kitchenProgress(Order $order): array
+    {
+        $started = $order->tickets->isNotEmpty()
+            ? $order->tickets->contains(fn ($ticket): bool => $ticket->status !== OrderStatus::Pending)
+            : ($order->kitchen_status ?? OrderStatus::Pending) !== OrderStatus::Pending;
+
+        return ['kitchen_started' => $started, 'tickets_count' => max(1, $order->tickets->count())];
     }
 }
