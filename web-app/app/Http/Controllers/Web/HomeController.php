@@ -14,6 +14,7 @@ use App\Models\MenuItem;
 use App\Models\Setting;
 use App\Services\PublicCache;
 use App\Services\SeoBuilder;
+use App\Support\WebsiteThemes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
@@ -27,7 +28,7 @@ class HomeController extends Controller
     {
         $locale = app()->getLocale();
 
-        return Inertia::render('web/Home', PublicCache::remember('home:'.$locale, fn (): array => $this->props()));
+        return Inertia::render('web/Home', PublicCache::remember('home:'.$locale.':'.WebsiteThemes::current(), fn (): array => $this->props()));
     }
 
     /**
@@ -76,6 +77,7 @@ class HomeController extends Controller
             ->values();
 
         return [
+            'tiles' => WebsiteThemes::current() === 'bistro' ? $this->categoryTiles($branches) : [],
             'branches' => $branches->toArray(),
             'featured' => $featured->toArray(),
             'categories' => $categories->all(),
@@ -121,6 +123,34 @@ class HomeController extends Controller
             canonical: url('/'),
             jsonLd: $graph,
         );
+    }
+
+    /**
+     * Up to four menu categories, each with the photo of one of its dishes,
+     * for the category tiles of themes that show them.
+     *
+     * @param  Collection<int, Branch>  $branches
+     * @return list<array<string, mixed>>
+     */
+    private function categoryTiles($branches): array
+    {
+        return MenuItem::query()
+            ->where('branch_id', $branches->first()?->id)
+            ->whereNotNull('photo_path')
+            ->available()
+            ->whereHas('category', fn ($query) => $query->where('is_active', true))
+            ->with('category:id,name,name_bn')
+            ->orderBy('sort_order')
+            ->get()
+            ->unique('menu_category_id')
+            ->take(4)
+            ->map(fn (MenuItem $item): array => [
+                'name' => $item->category?->name,
+                'name_bn' => $item->category?->name_bn,
+                'photo' => $item->cover_url,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

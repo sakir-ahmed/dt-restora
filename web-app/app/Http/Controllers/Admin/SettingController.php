@@ -19,6 +19,7 @@ use App\Services\Sms\SmsFeatures;
 use App\Services\Sms\SmsProviders;
 use App\Services\Sms\SmsTemplates;
 use App\Services\SmsService;
+use App\Support\WebsiteThemes;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -127,7 +128,9 @@ class SettingController extends Controller
                 'social_whatsapp',
                 'established_year',
                 'website_enabled',
+                'website_theme',
             ]),
+            'websiteThemes' => WebsiteThemes::ALL,
         ]);
     }
 
@@ -152,6 +155,7 @@ class SettingController extends Controller
             'social_whatsapp' => ['nullable', 'url:http,https', 'max:255'],
             'established_year' => ['nullable', 'integer', 'min:1800', 'max:'.now()->year],
             'website_enabled' => ['sometimes', 'boolean'],
+            'website_theme' => ['sometimes', 'string', Rule::in(WebsiteThemes::ALL)],
         ], [], [
             'discount_limit_percent' => __('settings.discount_limit'),
             'wastage_spike_multiplier' => __('settings.wastage_spike'),
@@ -169,6 +173,7 @@ class SettingController extends Controller
             'social_whatsapp' => __('settings.social_whatsapp'),
             'established_year' => __('settings.established_year'),
             'website_enabled' => __('settings.website_enabled'),
+            'website_theme' => __('settings.website_theme'),
         ]);
 
         Setting::current()->update($validated);

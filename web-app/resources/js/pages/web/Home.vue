@@ -1,5 +1,5 @@
 <script setup>
-import { Link } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
 import BranchCard from '@/components/site/BranchCard.vue';
@@ -14,6 +14,7 @@ import SectionHeading from '@/components/site/SectionHeading.vue';
 import TiltCard from '@/components/site/TiltCard.vue';
 import { t, currentLocale } from '@/lib/i18n';
 import { localized, menuUrl } from '@/lib/site';
+import BistroHome from '@/themes/bistro/BistroHome.vue';
 
 const props = defineProps({
     branches: { type: Array, required: true },
@@ -23,7 +24,10 @@ const props = defineProps({
     posts: { type: Array, default: () => [] },
     stats: { type: Object, required: true },
     seo: { type: Object, default: null },
+    tiles: { type: Array, default: () => [] },
 });
+
+const theme = computed(() => usePage().props.site?.theme ?? 'default');
 
 const firstBranch = computed(() => props.branches[0] ?? null);
 const menuHref = computed(() => (firstBranch.value ? menuUrl(firstBranch.value.code) : '/menu'));
@@ -54,7 +58,8 @@ const statTiles = computed(() => [
 </script>
 
 <template>
-    <div>
+    <BistroHome v-if="theme === 'bistro'" v-bind="props" />
+    <div v-else>
         <!-- Hero -->
         <section class="border-b border-border bg-surface">
             <div class="mx-auto grid max-w-6xl items-center gap-8 px-4 py-10 sm:py-10 lg:grid-cols-2">

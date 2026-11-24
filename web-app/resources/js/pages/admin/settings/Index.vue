@@ -12,6 +12,7 @@ import SmsProviderSetup from '@/components/admin/SmsProviderSetup.vue';
 import InvoicePrintSetup from '@/components/admin/InvoicePrintSetup.vue';
 import BranchPosForm from '@/components/admin/BranchPosForm.vue';
 import DeliveryZoneManager from '@/components/admin/DeliveryZoneManager.vue';
+import WebsiteThemePicker from '@/components/admin/WebsiteThemePicker.vue';
 import PaymentMethodManager from '@/components/admin/PaymentMethodManager.vue';
 import { t } from '@/lib/i18n';
 import { notify } from '@/lib/notify';
@@ -28,6 +29,7 @@ const props = defineProps({
     layouts: { type: Array, default: () => [] },
     papers: { type: Array, default: () => [] },
     sms: { type: Object, default: null },
+    websiteThemes: { type: Array, default: () => ['default'] },
     smsFeatures: { type: Array, default: () => [] },
     smsTemplates: { type: Array, default: () => [] },
     unitList: { type: Array, default: () => [] },
@@ -54,6 +56,7 @@ const form = useForm({
     social_whatsapp: props.settings.social_whatsapp ?? '',
     established_year: props.settings.established_year ?? '',
     website_enabled: Boolean(props.settings.website_enabled),
+    website_theme: props.settings.website_theme ?? 'default',
 });
 
 function save() {
@@ -71,7 +74,7 @@ const inputClass = 'h-7 w-full rounded-md border border-border bg-surface px-2 t
 
         <div class="mb-3 flex flex-wrap gap-1" role="tablist">
             <button
-                v-for="entry in [{ key: 'general', label: t('settings.tab_general') }, { key: 'methods', label: t('settings.tab_methods') }, { key: 'pos', label: t('settings.tab_pos') }, { key: 'invoice', label: t('settings.tab_invoice') }, { key: 'sms', label: t('settings.tab_sms') }, { key: 'units', label: t('settings.tab_units') }, { key: 'areas', label: t('settings.tab_areas') }]"
+                v-for="entry in [{ key: 'general', label: t('settings.tab_general') }, { key: 'website', label: t('settings.tab_website') }, { key: 'methods', label: t('settings.tab_methods') }, { key: 'pos', label: t('settings.tab_pos') }, { key: 'invoice', label: t('settings.tab_invoice') }, { key: 'sms', label: t('settings.tab_sms') }, { key: 'units', label: t('settings.tab_units') }, { key: 'areas', label: t('settings.tab_areas') }]"
                 :key="entry.key"
                 type="button"
                 role="tab"
@@ -111,7 +114,7 @@ const inputClass = 'h-7 w-full rounded-md border border-border bg-surface px-2 t
 
         <DeliveryZoneManager v-show="tab === 'areas'" :zones="deliveryZones" :branch-name="branchName" :delivery-enabled="deliveryEnabled" />
 
-        <form v-show="tab === 'general'" novalidate class="max-w-2xl rounded-lg border border-border bg-surface p-4" @submit.prevent="save">
+        <form v-show="tab === 'website'" novalidate class="max-w-3xl rounded-lg border border-border bg-surface p-4" @submit.prevent="save">
             <h2 class="mb-2 text-[13px] font-semibold text-foreground">{{ t('settings.section_website') }}</h2>
             <div class="mb-3 grid grid-cols-2 gap-x-4 gap-y-3">
                 <div class="col-span-2 flex flex-col gap-0.5">
@@ -126,7 +129,23 @@ const inputClass = 'h-7 w-full rounded-md border border-border bg-surface px-2 t
                 </FormField>
             </div>
 
-            <h2 class="mb-2 border-t border-border pt-3 text-[13px] font-semibold text-foreground">{{ t('settings.section_business') }}</h2>
+            <h2 class="mb-2 border-t border-border pt-3 text-[13px] font-semibold text-foreground">{{ t('settings.website_theme') }}</h2>
+            <WebsiteThemePicker v-model="form.website_theme" :themes="websiteThemes" :current="settings.website_theme ?? 'default'" :error="form.errors.website_theme" />
+
+            <div class="mt-4 flex justify-end">
+                <button
+                    type="submit"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="form.processing"
+                >
+                    <AppIcon v-if="form.processing" name="spinner" size="12" spin />
+                    {{ t('common.save') }}
+                </button>
+            </div>
+        </form>
+
+        <form v-show="tab === 'general'" novalidate class="max-w-2xl rounded-lg border border-border bg-surface p-4" @submit.prevent="save">
+            <h2 class="mb-2 text-[13px] font-semibold text-foreground">{{ t('settings.section_business') }}</h2>
             <div class="mb-3 grid grid-cols-2 gap-x-4 gap-y-3">
                 <FormField :label="t('settings.tax_registration_no')" :helper="t('settings.tax_registration_no_helper')" :error="form.errors.tax_registration_no">
                     <template #default="{ id }">

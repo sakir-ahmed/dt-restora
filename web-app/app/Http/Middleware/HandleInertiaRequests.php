@@ -14,6 +14,7 @@ use App\Services\PublicCache;
 use App\Services\SmsService;
 use App\Services\StaffAlerts;
 use App\Support\Brand;
+use App\Support\WebsiteThemes;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -156,6 +157,7 @@ class HandleInertiaRequests extends Middleware
                 ])
                 ->values()
                 ->all(),
+            'theme' => WebsiteThemes::current(),
             'social' => Setting::current()->only(['social_facebook', 'social_instagram', 'social_youtube', 'social_tiktok', 'social_whatsapp']),
         ];
     }

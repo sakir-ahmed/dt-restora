@@ -14,8 +14,12 @@ import { formatMoney, localDigits } from '@/lib/format';
 import { branchAddress, locationUrl } from '@/lib/site';
 import SocialIcon from '@/components/site/SocialIcon.vue';
 import { currentLocale } from '@/lib/i18n';
+import BistroLayout from '@/themes/bistro/BistroLayout.vue';
 
 const page = usePage();
+
+// The owner picks the website design in Settings; other designs replace the frame and keep the same pages.
+const theme = computed(() => page.props.site?.theme ?? 'default');
 
 const mounted = ref(false);
 const wordmark = computed(() => page.props.brand?.wordmark ?? null);
@@ -113,7 +117,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="site flex min-h-screen flex-col bg-background text-foreground">
+    <BistroLayout v-if="theme === 'bistro'" :full-bleed="fullBleed"><slot /></BistroLayout>
+    <div v-else class="site flex min-h-screen flex-col bg-background text-foreground">
         <SeoHead />
 
         <a href="#main" class="sr-only z-[60] rounded-lg bg-accent px-4 py-2 font-semibold text-accent-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-[calc(1rem+var(--demo-banner-h))]">

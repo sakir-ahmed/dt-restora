@@ -26,6 +26,7 @@ class Setting extends Model
         'social_whatsapp',
         'established_year',
         'website_enabled',
+        'website_theme',
         'online_delivery_enabled',
         'sms_provider',
         'sms_config',

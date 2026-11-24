@@ -230,4 +230,17 @@ return [
     'invoice_mushak_helper' => 'For Bangladesh VAT. When on, every invoice of this branch is printed as a Mushak-6.3 tax invoice: the heading, the BIN and the invoice number as the challan number. Off by default.',
     'mushak_bin' => 'BIN for this branch',
     'mushak_bin_helper' => 'Leave empty to use the business BIN from General settings.',
+
+    'website_theme' => 'Website design',
+    'website_theme_helper' => 'Choose how the public website looks. Every design shows the same menu, branches and photos.',
+    'website_theme_default' => 'Default',
+    'website_theme_bistro' => 'Bistro (dark and gold)',
+
+    'tab_website' => 'Website',
+    'website_theme_default_text' => 'Clean light layout with blue accents.',
+    'website_theme_bistro_text' => 'Dark and gold, big photos, signature dishes and a booking call to action.',
+    'website_current' => 'In use',
+    'website_pick' => 'Use this design',
+    'website_preview_hint' => 'Click a design to select it, then save. Every design shows the same menu, branches and photos.',
+    'website_open_site' => 'Open the website',
 ];

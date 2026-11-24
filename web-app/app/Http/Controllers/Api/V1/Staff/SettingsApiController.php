@@ -20,6 +20,7 @@ use App\Services\Sms\SmsProviders;
 use App\Services\Sms\SmsTemplates;
 use App\Services\SmsPromotionService;
 use App\Services\SmsService;
+use App\Support\WebsiteThemes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -38,7 +39,7 @@ class SettingsApiController extends Controller
         'discount_limit_percent', 'wastage_spike_multiplier', 'pos_pin_minutes', 'pos_lock_enabled',
         'delete_confirm_delay_enabled', 'delete_confirm_delay_seconds', 'show_deleted_items', 'delivery_otp_enabled',
         'tax_registration_no', 'social_facebook', 'social_instagram', 'social_youtube', 'social_tiktok',
-        'social_whatsapp', 'established_year', 'website_enabled',
+        'social_whatsapp', 'established_year', 'website_enabled', 'website_theme',
     ];
 
     public function index(Request $request): JsonResponse
@@ -86,6 +87,7 @@ class SettingsApiController extends Controller
             'social_whatsapp' => ['nullable', 'url:http,https', 'max:255'],
             'established_year' => ['nullable', 'integer', 'min:1800', 'max:'.now()->year],
             'website_enabled' => ['sometimes', 'boolean'],
+            'website_theme' => ['sometimes', 'string', Rule::in(WebsiteThemes::ALL)],
         ]);
 
         Setting::current()->update($validated);

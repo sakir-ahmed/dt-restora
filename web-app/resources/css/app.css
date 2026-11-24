@@ -131,6 +131,27 @@
     --book-red: var(--color-danger);
     --footer-bg: color-mix(in srgb, var(--color-primary) 55%, black);
 }
+/*
+ * Website theme "bistro" (Settings > General > Website design): dark and gold on warm cream.
+ * It re-points the brand tokens inside its wrapper, so every public page picks up the palette.
+ */
+.theme-bistro {
+    --color-background: #faf6ef;
+    --color-surface: #ffffff;
+    --color-foreground: #1a1410;
+    --color-muted: #6a5e51;
+    --color-border: #e8dec9;
+    --color-primary: #a8741a;
+    --color-primary-foreground: #ffffff;
+    --color-accent: #e2b866;
+    --color-accent-foreground: #1a1410;
+    --font-display: ui-serif, Georgia, 'Times New Roman', 'Noto Serif Bengali', 'Noto Sans Bengali', serif;
+    --footer-bg: #120e0a;
+    --book-accent-light: #e2b866;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+}
+
 html {
     background-color: var(--color-background);
 }

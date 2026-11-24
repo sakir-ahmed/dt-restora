@@ -352,3 +352,23 @@ it('approves wallet payments still waiting when verification is switched off', f
     expect($payment->fresh()->status)->toBe(Payment::STATUS_COMPLETED)
         ->and($order->fresh()->status)->toBe(OrderStatus::Paid);
 });
+
+it('lets the owner choose the website design and shows it on the public site', function (): void {
+    $owner = User::factory()->role('owner')->create();
+
+    $this->get('/')->assertInertia(fn ($page) => $page->where('site.theme', 'default'));
+
+    $this->actingAs($owner, 'staff')
+        ->put(route('admin.settings.update'), settingsPayload(['website_theme' => 'bistro']))
+        ->assertSessionHasNoErrors();
+
+    expect(Setting::current()->website_theme)->toBe('bistro');
+
+    auth('staff')->logout();
+
+    $this->get('/')->assertInertia(fn ($page) => $page->where('site.theme', 'bistro')->has('tiles'));
+
+    $this->actingAs($owner, 'staff')
+        ->put(route('admin.settings.update'), settingsPayload(['website_theme' => 'unknown']))
+        ->assertSessionHasErrors('website_theme');
+});
