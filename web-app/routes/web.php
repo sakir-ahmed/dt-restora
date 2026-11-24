@@ -354,6 +354,7 @@ Route::prefix('admin')
         Route::get('pos', [PosController::class, 'index'])->name('pos.index')->middleware('permission:pos.access');
         Route::post('pos/unlock', [PosController::class, 'unlock'])->name('pos.unlock')->middleware('permission:pos.access');
         Route::get('pos/tables', [FloorController::class, 'index'])->name('pos.floor')->middleware('permission:pos.access');
+        Route::post('pos/tables/{table}/detach', [PosController::class, 'detachTable'])->name('pos.tables.detach')->middleware('permission:pos.access');
         Route::post('pos/tables/{table}/release', [PosController::class, 'releaseTable'])->name('pos.tables.release')->middleware('permission:pos.access');
         Route::post('pos/orders/{order}/clear', [PosController::class, 'clearOrder'])->name('pos.orders.clear')->middleware('permission:pos.access');
         Route::get('pos/customers', [PosController::class, 'customers'])->name('pos.customers')->middleware('permission:pos.access');

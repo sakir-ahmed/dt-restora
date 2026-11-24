@@ -311,4 +311,6 @@ return [
     'shift_orders' => 'Orders',
     'shift_sales_total' => 'Sales total',
     'seats_label' => 'Seats',
+    'table_freed' => ':table is free for other guests. The bill stays on its other tables.',
+    'table_not_joined' => 'This table is not joined with another table on a bill.',
 ];

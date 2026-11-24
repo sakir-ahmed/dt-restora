@@ -29,6 +29,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -195,6 +196,52 @@ class PosController extends Controller
         }
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Free one table of a bill that covers several joined tables, so it can seat other guests while the bill
+     * stays on the rest. The bill keeps its other tables (and the first of them becomes its main table when the
+     * freed one was), the freed table's seats leave the bill, and the table is free at once.
+     */
+    public function detachTable(Request $request, RestaurantTable $table): RedirectResponse
+    {
+        $this->authorize('pos.access');
+
+        $user = $request->user('staff');
+
+        abort_unless($user->canAccessBranch($table->branch_id), 404);
+
+        $order = Order::query()
+            ->where('branch_id', $table->branch_id)
+            ->where('status', '!=', OrderStatus::Void->value)
+            ->whereHas('tableLinks', fn (Builder $link) => $link->where('restaurant_table_id', $table->id))
+            ->with('tableLinks')
+            ->latest()
+            ->first();
+
+        if ($order === null || count($order->tableIds()) < 2) {
+            throw ValidationException::withMessages(['table' => __('orders.table_not_joined')]);
+        }
+
+        DB::transaction(function () use ($order, $table, $user): void {
+            $order->tableLinks()->where('restaurant_table_id', $table->id)->delete();
+
+            $remaining = $order->tableLinks()->pluck('restaurant_table_id');
+
+            if ($order->restaurant_table_id === $table->id) {
+                $order->update(['restaurant_table_id' => $remaining->first()]);
+            }
+
+            $table->update(['status' => 'free']);
+
+            activity()->performedOn($order)->causedBy($user)
+                ->withProperties(['table' => $table->name])
+                ->log('order.table_freed');
+        });
+
+        DataVersion::bump();
+
+        return back()->with('success', __('orders.table_freed', ['table' => $table->name]));
     }
 
     /**

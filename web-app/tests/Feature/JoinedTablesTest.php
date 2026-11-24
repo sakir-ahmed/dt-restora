@@ -185,3 +185,51 @@ it('tells the Table view which table carries the bill of joined tables', functio
 
     expect($order->restaurant_table_id)->toBe($this->t11->id);
 });
+
+it('frees one table of a joined bill for other guests and keeps the bill on the rest', function (): void {
+    $order = dineIn($this, [['id' => $this->t10->id, 'seats' => [1]], ['id' => $this->t11->id, 'seats' => [2, 3]], ['id' => $this->t12->id]]);
+
+    $this->actingAs($this->cashier, 'staff')
+        ->post(route('admin.pos.tables.detach', $this->t11))
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success');
+
+    expect($this->t11->fresh()->status)->toBe('free')
+        ->and($this->t10->fresh()->status)->toBe('occupied')
+        ->and($this->t12->fresh()->status)->toBe('occupied')
+        ->and($order->fresh()->tableIds())->toBe([$this->t10->id, $this->t12->id])
+        ->and($order->fresh()->restaurant_table_id)->toBe($this->t10->id);
+});
+
+it('gives the bill a new main table when the main table is the one freed', function (): void {
+    $order = dineIn($this, [['id' => $this->t10->id], ['id' => $this->t11->id]]);
+
+    $this->actingAs($this->cashier, 'staff')->post(route('admin.pos.tables.detach', $this->t10))->assertSessionHasNoErrors();
+
+    expect($order->fresh()->restaurant_table_id)->toBe($this->t11->id)
+        ->and($order->fresh()->tableIds())->toBe([$this->t11->id])
+        ->and($this->t10->fresh()->status)->toBe('free');
+
+    $this->actingAs($this->cashier, 'staff')
+        ->get(route('admin.pos.floor'))
+        ->assertInertia(fn ($page) => $page->where('tables', fn ($tables) => collect($tables)->pluck('state', 'name')->all() === ['T-10' => 'available', 'T-11' => 'running', 'T-12' => 'available']));
+});
+
+it('refuses to free a table that is not joined with another on its bill', function (): void {
+    $order = dineIn($this, [['id' => $this->t10->id]]);
+
+    $this->actingAs($this->cashier, 'staff')
+        ->post(route('admin.pos.tables.detach', $this->t10))
+        ->assertSessionHasErrors('table');
+
+    expect($this->t10->fresh()->status)->toBe('occupied')
+        ->and($order->fresh()->tableIds())->toBe([$this->t10->id]);
+});
+
+it('keeps the freed table\'s seats off the kitchen board and invoice label', function (): void {
+    $order = dineIn($this, [['id' => $this->t10->id, 'seats' => [1]], ['id' => $this->t11->id, 'seats' => [4]]]);
+
+    $this->actingAs($this->cashier, 'staff')->post(route('admin.pos.tables.detach', $this->t11));
+
+    expect(Order::query()->with('tableLinks.restaurantTable')->find($order->id)->tableLabel())->toBe('T-10 - Seats 1');
+});

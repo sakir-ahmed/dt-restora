@@ -40,4 +40,8 @@ return [
     'joined_tables' => 'যুক্ত :tables',
     'joined_with' => ':table এর সাথে যুক্ত',
     'joined_title' => 'যুক্ত টেবিল :tables এর একটাই বিল',
+    'free_table' => 'এই টেবিল খালি করুন',
+    'free_table_title' => 'অন্য অতিথিদের জন্য :table খালি করবেন?',
+    'free_table_message' => 'অতিথিরা :table ছেড়ে যাবেন এবং বিল :others এ থাকবে। টেবিলটি সাথে সাথে খালি হবে।',
+    'free_stale' => 'টেবিল খালি করুন',
 ];

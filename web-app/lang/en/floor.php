@@ -40,4 +40,8 @@ return [
     'joined_tables' => 'Joined :tables',
     'joined_with' => 'Joined with :table',
     'joined_title' => 'One bill for joined tables :tables',
+    'free_table' => 'Free this table',
+    'free_table_title' => 'Free :table for other guests?',
+    'free_table_message' => 'The guests leave :table and the bill stays on :others. The table becomes available at once.',
+    'free_stale' => 'Free table',
 ];

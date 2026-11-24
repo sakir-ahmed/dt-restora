@@ -251,6 +251,38 @@ function openOrder() {
     router.get(route('admin.pos.index'), { edit: runningOrderTable.value.last_order.id });
 }
 
+// One table of a joined bill leaves it and is free for other guests; the bill stays on the others.
+async function freeThisTable() {
+    const table = runningOrderTable.value;
+    const others = joinNames(table).split(' + ').filter((name) => name !== table.name).join(' + ');
+    const result = await confirm({
+        variant: 'warning',
+        level: 'simple',
+        title: t('floor.free_table_title', { table: table.name }),
+        message: t('floor.free_table_message', { table: table.name, others }),
+        confirmText: t('floor.free_table'),
+    });
+
+    if (! result.confirmed) {
+        return;
+    }
+
+    router.post(route('admin.pos.tables.detach', table.id), {}, {
+        preserveScroll: true,
+        onSuccess: (page) => {
+            if (page.props.flash?.error) {
+                notify.error(String(page.props.flash.error));
+
+                return;
+            }
+
+            picked.value = [];
+            notify.success(String(page.props.flash?.success ?? t('floor.released')));
+        },
+        onError: (errors) => notify.error(String(Object.values(errors)[0] ?? t('common.error_occurred'))),
+    });
+}
+
 function releaseTable() {
     router.post(route('admin.pos.tables.release', runningOrderTable.value.id), {}, {
         preserveScroll: true,
@@ -571,13 +603,16 @@ onBeforeUnmount(() => {
                         <button type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="previewInvoice">{{ t('floor.preview_invoice') }}</button>
                         <button type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="printInvoice">{{ t('receipt.print') }}</button>
                     </template>
-                    <button v-if="runningOrderTable.state === 'billed'" type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="releaseTable">
-                        {{ t('floor.release_table') }}
+                    <button v-if="isJoined(runningOrderTable)" type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="freeThisTable">
+                        {{ t('floor.free_table') }}
+                    </button>
+                    <button v-if="runningOrderTable.state === 'billed' || ! runningOrderTable.last_order" type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="releaseTable">
+                        {{ runningOrderTable.last_order ? t('floor.release_table') : t('floor.free_stale') }}
                     </button>
                     <button v-if="canPay && selectedOrder && selectedOrder.balance > 0" type="button" class="h-9 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90" @click="openPay">
                         {{ t('floor.collect_payment') }}
                     </button>
-                    <button type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="openOrder">
+                    <button v-if="runningOrderTable.last_order" type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="openOrder">
                         {{ t('floor.open_order') }}
                     </button>
                 </template>
