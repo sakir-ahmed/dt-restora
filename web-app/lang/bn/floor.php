@@ -29,4 +29,11 @@ return [
     'seats_total' => ':count টি আসন',
     'billed_hint' => 'বিল পরিশোধিত। অতিথিরা চলে গেলে টেবিল ছাড়ুন।',
     'running_hint' => 'অর্ডার চলছে: :invoice',
+    'occupied_since' => ':time থেকে দখলে',
+    'occupied_for' => ':time ধরে দখলে (:since থেকে)',
+    'total_due' => 'মোট :total, বাকি :due',
+    'cancel_order' => 'অর্ডার বাতিল',
+    'details' => 'বিস্তারিত',
+    'preview_invoice' => 'ইনভয়েস',
+    'collect_payment' => 'পেমেন্ট নিন',
 ];

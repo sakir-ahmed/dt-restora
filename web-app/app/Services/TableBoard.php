@@ -61,7 +61,9 @@ class TableBoard
             ->with(['customer:id,name,mobile', 'tableLinks'])
             ->latest()
             ->get()
-            // The latest bill of each table; a bill over joined tables counts for every one of them.
+            // A bill still to be paid comes before a paid one, so a table with an open bill never reads as billed.
+            ->sortBy(fn (Order $order): int => $order->status === OrderStatus::Paid ? 1 : 0)
+            // The bill each table shows; a bill over joined tables counts for every one of them.
             ->flatMap(fn (Order $order) => collect($order->tableIds())->map(fn (int $id): array => [$id, $order]))
             ->unique(fn (array $pair): int => $pair[0])
             ->mapWithKeys(fn (array $pair): array => [$pair[0] => $pair[1]]);
@@ -81,6 +83,7 @@ class TableBoard
                 'paid' => round((float) ($lastOrders[$table->id]->paid_amount ?? 0), 2),
                 'balance' => max(0.0, round((float) $lastOrders[$table->id]->total - (float) ($lastOrders[$table->id]->paid_amount ?? 0), 2)),
                 'at' => ($lastOrders[$table->id]->paid_at ?? $lastOrders[$table->id]->created_at)?->toIso8601String(),
+                'started_at' => $lastOrders[$table->id]->created_at?->toIso8601String(),
                 'customer' => $lastOrders[$table->id]->customer?->name,
             ] : null,
         ]);

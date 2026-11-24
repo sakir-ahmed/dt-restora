@@ -29,4 +29,11 @@ return [
     'seats_total' => ':count seats',
     'billed_hint' => 'Bill paid. Release the table when guests leave.',
     'running_hint' => 'Order running: :invoice',
+    'occupied_since' => 'Occupied since :time',
+    'occupied_for' => 'Occupied :time (since :since)',
+    'total_due' => 'Total :total, due :due',
+    'cancel_order' => 'Cancel order',
+    'details' => 'Details',
+    'preview_invoice' => 'Invoice',
+    'collect_payment' => 'Collect payment',
 ];

@@ -2,13 +2,31 @@
 import { Link, router } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AppIcon from '@/components/AppIcon.vue';
+import OrderDetailPanel from '@/components/admin/OrderDetailPanel.vue';
+import PayOrderModal from '@/components/admin/PayOrderModal.vue';
+import { useConfirm } from '@/components/ui-kit/useConfirm.js';
+import { formatMoney } from '@/lib/format';
 import { t } from '@/lib/i18n';
+import { openInvoiceImage } from '@/lib/invoiceImage';
 import { notify } from '@/lib/notify';
+import { printUrl } from '@/lib/print';
 
 const props = defineProps({
     tables: { type: Array, required: true },
+    orders: { type: Object, default: () => ({}) },
+    serverNow: { type: String, default: null },
     branchName: { type: String, default: '' },
+    methods: { type: Array, default: () => [] },
+    payMethods: { type: Array, default: () => [] },
+    walletVerificationEnabled: { type: Boolean, default: false },
+    canPay: { type: Boolean, default: false },
+    canVoid: { type: Boolean, default: false },
+    canEdit: { type: Boolean, default: false },
+    canApprovePayments: { type: Boolean, default: false },
+    shareImage: { type: Boolean, default: false },
 });
+
+const confirm = useConfirm();
 
 const filter = ref('all');
 const area = ref('all');
@@ -16,6 +34,29 @@ const search = ref('');
 // Tables picked for the new order, each with the seat numbers tapped on it.
 const picked = ref([]);
 let timer = null;
+let clock = null;
+
+// How long a table has been taken is counted on the server's clock, so a tablet with a wrong time still reads right.
+const skew = props.serverNow ? Date.parse(props.serverNow) - Date.now() : 0;
+const now = ref(Date.now());
+
+function occupiedMinutes(table) {
+    const started = table.last_order?.started_at;
+
+    return started ? Math.max(0, Math.floor((now.value + skew - Date.parse(started)) / 60000)) : null;
+}
+
+function durationText(minutes) {
+    if (minutes === null) {
+        return '';
+    }
+
+    return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+function longStay(table) {
+    return (occupiedMinutes(table) ?? 0) >= 90;
+}
 
 const STATE_STYLE = {
     available: { dot: 'bg-sky-500', text: 'text-sky-600', soft: 'bg-sky-500/10' },
@@ -127,6 +168,10 @@ function cardClass(table) {
     return 'border-border hover:border-accent/60';
 }
 
+function clockOf(iso) {
+    return iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+}
+
 function timeOf(iso) {
     return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -164,19 +209,161 @@ function openOrder() {
 function releaseTable() {
     router.post(route('admin.pos.tables.release', runningOrderTable.value.id), {}, {
         preserveScroll: true,
-        onSuccess: () => {
+        onSuccess: (page) => {
+            if (page.props.flash?.error) {
+                notify.error(String(page.props.flash.error));
+
+                return;
+            }
+
             picked.value = [];
             notify.success(t('floor.released'));
         },
+        onError: (errors) => notify.error(String(Object.values(errors)[0] ?? t('common.error_occurred'))),
+    });
+}
+
+// The order on the selected table, with the figures the bar and the order panel show.
+const detailOpen = ref(false);
+
+const selectedOrder = computed(() => {
+    const order = runningOrderTable.value ? props.orders[runningOrderTable.value.last_order?.id] : null;
+
+    if (! order) {
+        return null;
+    }
+
+    const paid = (order.payments ?? []).filter((payment) => payment.status === 'completed').reduce((sum, payment) => sum + Number(payment.amount), 0);
+
+    return {
+        ...order,
+        table_name: order.table_label ?? order.table?.name,
+        cashier_name: order.cashier?.name,
+        deleted: order.status === 'void',
+        paid,
+        balance: order.status === 'void' || (order.status === 'paid' && ! order.is_due) ? 0 : Math.max(0, Number(order.total) - paid),
+    };
+});
+
+function refreshFloor() {
+    router.reload({ only: ['tables', 'orders', 'serverNow'], preserveScroll: true });
+}
+
+function printInvoice() {
+    printUrl(route('admin.orders.receipt', selectedOrder.value.id));
+}
+
+// The invoice as a picture to look over, copy or share.
+function previewInvoice() {
+    const order = selectedOrder.value;
+
+    openInvoiceImage({
+        url: route('admin.orders.receipt', order.id),
+        invoiceNo: order.invoice_no,
+        orderId: order.id,
+        total: order.total,
+        mobile: order.customer?.mobile ?? '',
+        customerName: order.customer?.name ?? '',
+        hasCustomer: Boolean(order.customer),
+    });
+}
+
+async function cancelOrder() {
+    const order = selectedOrder.value;
+    const result = await confirm({
+        variant: 'danger',
+        level: 'reason',
+        title: t('orders.delete_title', { invoice: order.invoice_no }),
+        message: t('orders.delete_restore_message'),
+        confirmText: t('orders.delete_order'),
+        reasons: ['wrong_item', 'customer_changed_mind', 'kitchen_mistake', 'duplicate_order', 'payment_failed', 'other'],
+        facts: [
+            { label: t('inventory.invoice_no'), value: order.invoice_no },
+            { label: t('inventory.total'), value: formatMoney(order.total) },
+        ],
+    });
+
+    if (! result.confirmed) {
+        return;
+    }
+
+    router.post(route('admin.orders.delete', order.id), { reason_code: result.reason, note: result.note ?? null }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            detailOpen.value = false;
+            picked.value = [];
+            notify.success(t('orders.deleted'));
+        },
+        onError: (errors) => notify.error(String(Object.values(errors)[0] ?? t('common.error_occurred'))),
+    });
+}
+
+// Payment: the same modal as the Orders page, one row per payment so a bill can be settled from several sources.
+const payingOrder = ref(null);
+
+function openPay() {
+    const order = selectedOrder.value;
+
+    payingOrder.value = { id: order.id, invoice_no: order.invoice_no, total: order.total, paid: order.paid, balance: order.balance, payments: order.payments ?? [] };
+}
+
+function payMethodType(code) {
+    return props.payMethods.find((entry) => entry.method === code)?.type ?? 'other';
+}
+
+function submitPay({ lines }) {
+    const order = payingOrder.value;
+
+    if (! order) {
+        return;
+    }
+
+    let url;
+    let data;
+
+    if (lines.length > 1) {
+        url = route('admin.payments.split', order.id);
+        data = { lines };
+    } else if (payMethodType(lines[0].method) === 'cash') {
+        url = route('admin.orders.pay', order.id);
+        data = { tendered: lines[0].amount };
+    } else if (payMethodType(lines[0].method) === 'wallet') {
+        url = route('admin.payments.manual', order.id);
+        data = lines[0];
+    } else {
+        url = route('admin.payments.single', order.id);
+        data = lines[0];
+    }
+
+    router.post(url, data, {
+        preserveScroll: true,
+        onSuccess: (page) => {
+            payingOrder.value = null;
+
+            if (page.props.flash?.error) {
+                notify.error(String(page.props.flash.error));
+
+                return;
+            }
+
+            notify.success(String(page.props.flash?.success ?? t('orders.paid_success')));
+        },
+        onError: (errors) => notify.error(String(Object.values(errors)[0] ?? t('common.error_occurred'))),
     });
 }
 
 // The floor changes while the page is open (a table is paid, a guest is seated elsewhere), so it refreshes itself.
 onMounted(() => {
-    timer = setInterval(() => router.reload({ only: ['tables'], preserveScroll: true }), 20000);
+    timer = setInterval(refreshFloor, 20000);
+    clock = setInterval(() => {
+        now.value = Date.now();
+    }, 30000);
 });
 
-onBeforeUnmount(() => clearInterval(timer));
+onBeforeUnmount(() => {
+    clearInterval(timer);
+    clearInterval(clock);
+});
 </script>
 
 <template>
@@ -257,6 +444,19 @@ onBeforeUnmount(() => clearInterval(timer));
                             <span v-if="infoOf(table)" class="absolute right-1.5 top-1.5 text-muted" :aria-label="infoOf(table)">
                                 <AppIcon name="circle-info" size="12" />
                             </span>
+                            <span
+                                v-if="['running', 'billed'].includes(table.state) && occupiedMinutes(table) !== null"
+                                class="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
+                                :class="longStay(table) ? 'bg-danger/10 text-danger' : 'bg-background text-muted'"
+                                :title="t('floor.occupied_since', { time: clockOf(table.last_order.started_at) })"
+                            >
+                                <AppIcon name="clock" size="10" />
+                                {{ durationText(occupiedMinutes(table)) }}
+                            </span>
+                            <span v-if="table.last_order && ['running', 'billed'].includes(table.state)" class="absolute bottom-1 left-2 text-[11px] font-semibold tabular-nums text-foreground">
+                                {{ formatMoney(table.last_order.total) }}
+                                <span v-if="table.last_order.balance > 0" class="font-medium text-danger">/ {{ formatMoney(table.last_order.balance) }}</span>
+                            </span>
                             <span v-if="pickedEntry(table)?.seats.length" class="absolute bottom-1 right-2 text-[11px] font-semibold text-accent">{{ pickedEntry(table).seats.length }}/{{ table.seats }}</span>
                             <span v-else class="absolute bottom-1 right-2 text-[11px] text-muted">{{ table.seats }}</span>
                         </button>
@@ -287,7 +487,10 @@ onBeforeUnmount(() => clearInterval(timer));
                 <p class="text-sm font-semibold text-foreground">{{ t('floor.selection') }}</p>
                 <p class="text-xs text-muted">
                     <template v-if="pickedTables.length === 0">{{ t('floor.nothing_selected') }}</template>
-                    <template v-else-if="runningOrderTable">{{ infoOf(runningOrderTable) }}</template>
+                    <template v-else-if="runningOrderTable">
+                        {{ t('floor.occupied_for', { time: durationText(occupiedMinutes(runningOrderTable)), since: clockOf(runningOrderTable.last_order?.started_at) }) }}
+                        <template v-if="selectedOrder"> / {{ t('floor.total_due', { total: formatMoney(selectedOrder.total), due: formatMoney(selectedOrder.balance) }) }}</template>
+                    </template>
                     <template v-else>{{ seatsTaken > 0 ? t('floor.seats_count', { count: seatsTaken }) : pickedTables.length + ' ' + t('floor.selection') }}</template>
                 </p>
             </div>
@@ -302,15 +505,24 @@ onBeforeUnmount(() => clearInterval(timer));
             </div>
 
             <div class="ml-auto flex flex-wrap items-center gap-2">
-                <button type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="withoutTable">
+                <button v-if="! runningOrderTable" type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="withoutTable">
                     {{ t('floor.without_table') }}
                 </button>
 
                 <template v-if="runningOrderTable">
+                    <template v-if="selectedOrder">
+                        <button v-if="canVoid" type="button" class="h-9 rounded-lg border border-danger/50 px-3 text-sm font-medium text-danger hover:bg-danger/10" @click="cancelOrder">{{ t('floor.cancel_order') }}</button>
+                        <button type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="detailOpen = true">{{ t('floor.details') }}</button>
+                        <button type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="previewInvoice">{{ t('floor.preview_invoice') }}</button>
+                        <button type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="printInvoice">{{ t('receipt.print') }}</button>
+                    </template>
                     <button v-if="runningOrderTable.state === 'billed'" type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="releaseTable">
                         {{ t('floor.release_table') }}
                     </button>
-                    <button type="button" class="h-9 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90" @click="openOrder">
+                    <button v-if="canPay && selectedOrder && selectedOrder.balance > 0" type="button" class="h-9 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90" @click="openPay">
+                        {{ t('floor.collect_payment') }}
+                    </button>
+                    <button type="button" class="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:border-accent" @click="openOrder">
                         {{ t('floor.open_order') }}
                     </button>
                 </template>
@@ -319,6 +531,32 @@ onBeforeUnmount(() => clearInterval(timer));
                 </button>
             </div>
         </div>
+
+        <OrderDetailPanel
+            v-if="detailOpen"
+            :order="selectedOrder"
+            :methods="methods"
+            :can-pay="canPay"
+            :can-edit="canEdit"
+            :can-delete="canVoid"
+            :can-approve-payments="canApprovePayments"
+            :can-share-image="shareImage"
+            @close="detailOpen = false"
+            @pay="openPay"
+            @edit="openOrder"
+            @print="printInvoice"
+            @share-image="previewInvoice"
+            @delete="cancelOrder"
+        />
+
+        <PayOrderModal
+            :order="payingOrder"
+            :pay-methods="payMethods"
+            :methods="methods"
+            :verification-enabled="walletVerificationEnabled"
+            @close="payingOrder = null"
+            @confirm="submitPay"
+        />
     </div>
 </template>
 

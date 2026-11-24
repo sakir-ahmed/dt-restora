@@ -148,3 +148,28 @@ it('shows a running table, a billed table and a booked table on the Table view',
 
     expect($running->id)->not->toBe($billed->id);
 });
+
+it('reads a table as running while any bill on it is unpaid, even if a newer bill is paid', function (): void {
+    $open = dineIn($this, [['id' => $this->t10->id]]);
+    $paid = dineIn($this, [['id' => $this->t10->id]]);
+    app(PayOrderAction::class)->executeCash($paid, 500, $this->cashier);
+
+    $this->actingAs($this->cashier, 'staff')
+        ->get(route('admin.pos.floor'))
+        ->assertInertia(fn ($page) => $page
+            ->where('tables', fn ($tables) => collect($tables)->firstWhere('name', 'T-10')['state'] === 'running'
+                && collect($tables)->firstWhere('name', 'T-10')['last_order']['id'] === $open->id));
+});
+
+it('gives the Table view the full order of a busy table and what the cashier may do with it', function (): void {
+    $order = dineIn($this, [['id' => $this->t10->id, 'seats' => [1]]]);
+
+    $this->actingAs($this->cashier, 'staff')
+        ->get(route('admin.pos.floor'))
+        ->assertInertia(fn ($page) => $page
+            ->has("orders.{$order->id}.items", 1)
+            ->where("orders.{$order->id}.table_label", 'T-10 - Seats 1')
+            ->where('canPay', true)
+            ->has('payMethods')
+            ->has('serverNow'));
+});
