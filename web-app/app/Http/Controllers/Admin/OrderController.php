@@ -52,7 +52,7 @@ class OrderController extends Controller
 
         $orders = Order::query()
             ->where('branch_id', $branch->id)
-            ->with(['table:id,name', 'waiter:id,name', 'cashier:id,name', 'customer:id,name,mobile', 'items:id,order_id,kitchen_ticket_id,name,name_bn,quantity,unit_price,add_ons,add_ons_total,line_total', 'voidRequest', 'payments', 'aggregatorChannel:id,key,name', 'tickets:id,order_id,number,status'])
+            ->with(['table:id,name', 'waiter:id,name', 'cashier:id,name', 'customer:id,name,mobile', 'items:id,order_id,kitchen_ticket_id,name,name_bn,quantity,unit_price,add_ons,add_ons_total,line_total', 'voidRequest', 'payments', 'aggregatorChannel:id,key,name', 'tickets:id,order_id,number,status', 'tableLinks.restaurantTable'])
             ->with('preparer:id,name')
             ->when($request->string('kind')->toString(), fn ($query, $kind) => $query->where('kind', $kind))
             ->when($request->integer('cashier'), fn ($query, $id) => $query->where('cashier_id', $id))
@@ -88,7 +88,7 @@ class OrderController extends Controller
             ->latest()
             ->limit($request->filled('search') ? 2000 : 100)
             ->get()
-            ->map(fn (Order $order): array => $order->toArray() + ['next_statuses' => $order->nextKitchenStatuses()])
+            ->map(fn (Order $order): array => $order->toArray() + ['next_statuses' => $order->nextKitchenStatuses(), 'table_label' => $order->tableLabel()])
             ->values();
 
         return Inertia::render('admin/orders/Index', [
@@ -193,6 +193,7 @@ class OrderController extends Controller
             cashier: $user,
             waiter: $user,
             tableId: $request->validated('restaurant_table_id'),
+            tables: $request->validated('tables') ?: null,
             customer: $customer,
             discount: $discount,
             note: $request->validated('note'),
@@ -268,6 +269,7 @@ class OrderController extends Controller
             lines: $request->validated('items'),
             cashier: $user,
             tableId: $request->validated('restaurant_table_id'),
+            tables: $request->validated('tables') ?: null,
             customer: $customer,
             discount: $discount,
             note: $request->validated('note'),

@@ -289,8 +289,24 @@ const filteredItems = computed(() => {
 
 const selectedTable = computed(() => tables.value.find((table) => table.id === tableId.value) ?? null);
 
+// Tables and seats chosen on the Table view: [{ id, seats: [] }]. Empty when one table is picked here as usual.
+const floorTables = ref([]);
+
+// The table button's words: one table, or the joined tables, and how many seats were taken.
+const tableButtonLabel = computed(() => {
+    if (floorTables.value.length === 0) {
+        return selectedTable.value ? selectedTable.value.name : t('orders.tables_label');
+    }
+
+    const names = floorTables.value.map((entry) => tables.value.find((table) => table.id === entry.id)?.name).filter(Boolean).join(' + ');
+    const seats = floorTables.value.reduce((sum, entry) => sum + entry.seats.length, 0);
+
+    return seats > 0 ? `${names} (${seats})` : names;
+});
+
 function pickTable(id) {
     tableId.value = id;
+    floorTables.value = [];
     tablePickerOpen.value = false;
 }
 
@@ -1461,6 +1477,7 @@ function discountPayload() {
 
 function startNewOrder() {
     editingOrder.value = null;
+    floorTables.value = [];
     tableId.value = null;
     customerMobile.value = '';
     customerName.value = '';
@@ -1499,6 +1516,7 @@ async function submitOrder(mode = 'send_to_kitchen', reviewed = false) {
     const payload = {
         order_type: orderType.value,
         restaurant_table_id: orderType.value === 'dine_in' ? tableId.value : null,
+        ...(orderType.value === 'dine_in' && floorTables.value.length > 0 ? { tables: floorTables.value.map((entry) => ({ id: entry.id, seats: entry.seats })) } : {}),
         customer_mobile: customerMobile.value || null,
         customer_name: customerMobile.value ? (customerName.value.trim() || null) : null,
         note: null,
@@ -2386,6 +2404,33 @@ onMounted(() => {
 // The order screens link here with ?edit=<id> to change an open order.
 function openOrderFromQuery() {
     const params = new URLSearchParams(window.location.search);
+
+    // The Table view starts an order here: ?tables=10~1.2,11 (table, then its seats) or ?type=takeaway for none.
+    if (params.has('tables') || params.get('type') === 'takeaway') {
+        window.history.replaceState(window.history.state, '', window.location.pathname);
+        startNewOrder();
+
+        if (params.has('tables')) {
+            const picked = String(params.get('tables')).split(',')
+                .map((part) => {
+                    const [rawId, rawSeats = ''] = part.split('~');
+
+                    return { id: Number(rawId), seats: rawSeats.split('.').map(Number).filter((seat) => Number.isInteger(seat) && seat > 0) };
+                })
+                .filter((entry) => tables.value.some((table) => table.id === entry.id));
+
+            if (picked.length > 0) {
+                orderType.value = 'dine_in';
+                tableId.value = picked[0].id;
+                floorTables.value = picked;
+            }
+        } else {
+            orderType.value = 'takeaway';
+        }
+
+        return;
+    }
+
     const id = Number(params.get('edit'));
 
     if (! id) {
@@ -3187,12 +3232,12 @@ const changeDue = computed(() => Math.max(0, Number(tendered.value || 0) - order
                                     :disabled="orderType !== 'dine_in' && ! openOrders.length"
                                     :title="t('orders.select_table')"
                                     :aria-label="t('orders.select_table')"
-                                    class="inline-flex h-7 max-w-28 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[13px] font-medium outline-none focus-visible:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+                                    class="inline-flex h-7 max-w-40 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[13px] font-medium outline-none focus-visible:border-accent disabled:cursor-not-allowed disabled:opacity-50"
                                     :class="selectedTable ? 'border-accent bg-accent/15 font-semibold text-foreground' : 'border-border bg-background text-muted hover:text-foreground'"
                                     @click="tablePickerOpen = true"
                                 >
                                     <AppIcon name="table-cells-large" size="12" class="shrink-0" />
-                                    <span class="truncate">{{ selectedTable ? selectedTable.name : t('orders.tables_label') }}</span>
+                                    <span class="truncate">{{ tableButtonLabel }}</span>
                                     <span v-if="openOrders.length" class="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">{{ openOrders.length }}</span>
                                 </button>
                             </template>

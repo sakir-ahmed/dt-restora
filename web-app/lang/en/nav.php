@@ -46,4 +46,5 @@ return [
     'media' => 'Photos and videos',
     'careers' => 'Careers',
     'blog' => 'Blog',
+    'table_view' => 'Table view',
 ];

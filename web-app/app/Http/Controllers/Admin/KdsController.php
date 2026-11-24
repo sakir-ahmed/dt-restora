@@ -43,6 +43,7 @@ class KdsController extends Controller
                 'items:id,order_id,kitchen_ticket_id,name,name_bn,quantity,add_ons',
                 'preparer:id,name',
                 'order.table:id,name',
+                'order.tableLinks.restaurantTable',
                 'order.waiter:id,name',
                 'order.aggregatorChannel:id,key,name',
             ])
@@ -71,6 +72,7 @@ class KdsController extends Controller
                     'order_type' => $order->order_type->value,
                     'channel' => $order->channel->value,
                     'table' => $order->table,
+                    'table_label' => $order->tableLabel(),
                     'aggregator_channel' => $order->aggregatorChannel,
                     'note' => $order->note,
                     'ticket_no' => $ticket->number,

@@ -44,7 +44,7 @@
     <div class="bold">{{ $showMushak ? __('receipt.challan_no').': ' : '' }}{{ $order->invoice_no }}</div>
     <div>{{ \Illuminate\Support\Carbon::parse($order->created_at)->format('d M Y, h:i A') }}</div>
     <div>{{ __('receipt.order_type.' . $order->order_type->value) }}
-        @if ($order->table) - {{ __('receipt.table') }} {{ $order->table->name }} @endif
+        @if ($order->tableLabel()) - {{ __('receipt.table') }} {{ $order->tableLabel() }} @endif
     </div>
     @if ($showMushak && $order->customer)
         <div>{{ __('receipt.customer') }}: {{ $order->customer->name }}@if ($order->customer->mobile), {{ $order->customer->mobile }}@endif</div>

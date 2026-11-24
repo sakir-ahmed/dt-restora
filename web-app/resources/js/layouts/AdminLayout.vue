@@ -60,7 +60,8 @@ const nav = computed(() => {
             label: t('nav.sales'),
             items: [
                 { label: t('nav.dashboard'), href: '/admin', icon: 'chart-line', permission: null, exact: true },
-                { label: t('nav.pos'), href: '/admin/pos', icon: 'cash-register', permission: 'pos.access' },
+                { label: t('nav.pos'), href: '/admin/pos', icon: 'cash-register', permission: 'pos.access', exactPath: true },
+                { label: t('nav.table_view'), href: '/admin/pos/tables', icon: 'table-cells-large', permission: 'pos.access' },
                 { label: t('nav.orders'), href: '/admin/orders', icon: 'receipt', permission: 'orders.view' },
                 { label: t('nav.preorders'), href: '/admin/preorders', icon: 'bag-shopping', permission: 'preorders.view' },
                 { label: t('nav.dues'), href: '/admin/dues', icon: 'hand-holding-dollar', permission: 'orders.view' },
@@ -129,6 +130,10 @@ const nav = computed(() => {
 });
 
 const isActive = (item) => {
+    if (item.exactPath) {
+        return page.url.split('?')[0] === item.href;
+    }
+
     if (item.exact) {
         return page.url === item.href;
     }

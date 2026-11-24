@@ -310,4 +310,5 @@ return [
     'shift_over' => 'Cash over',
     'shift_orders' => 'Orders',
     'shift_sales_total' => 'Sales total',
+    'seats_label' => 'Seats',
 ];

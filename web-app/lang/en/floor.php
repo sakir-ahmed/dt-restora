@@ -1,0 +1,32 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    'title' => 'Table view',
+    'subtitle' => 'Pick a table, tap chairs for seats, or start without a table.',
+    'available' => 'Available',
+    'reserved' => 'Reserved',
+    'running' => 'Running order',
+    'billed' => 'Billed',
+    'soon' => 'Available soon',
+    'all_tables' => 'All tables',
+    'reservation' => 'Reservation',
+    'running_order' => 'Running order',
+    'search' => 'Search table',
+    'all_areas' => 'All areas',
+    'no_tables' => 'No tables match.',
+    'reserved_for' => 'Reserved for :name at :time',
+    'selection' => 'Table',
+    'nothing_selected' => 'Tap a table to start an order.',
+    'seats_count' => ':count seats taken',
+    'place_order' => 'Place order',
+    'without_table' => 'Without table',
+    'open_order' => 'Open order',
+    'release_table' => 'Release table',
+    'released' => 'Table released.',
+    'remove' => 'Remove table',
+    'seats_total' => ':count seats',
+    'billed_hint' => 'Bill paid. Release the table when guests leave.',
+    'running_hint' => 'Order running: :invoice',
+];

@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\DeliveryZoneController;
 use App\Http\Controllers\Admin\DueController;
 use App\Http\Controllers\Admin\EmployeeController;
 use App\Http\Controllers\Admin\ExpenseController;
+use App\Http\Controllers\Admin\FloorController;
 use App\Http\Controllers\Admin\IngredientCategoryController;
 use App\Http\Controllers\Admin\IngredientController;
 use App\Http\Controllers\Admin\KdsController;
@@ -352,6 +353,7 @@ Route::prefix('admin')
 
         Route::get('pos', [PosController::class, 'index'])->name('pos.index')->middleware('permission:pos.access');
         Route::post('pos/unlock', [PosController::class, 'unlock'])->name('pos.unlock')->middleware('permission:pos.access');
+        Route::get('pos/tables', [FloorController::class, 'index'])->name('pos.floor')->middleware('permission:pos.access');
         Route::post('pos/tables/{table}/release', [PosController::class, 'releaseTable'])->name('pos.tables.release')->middleware('permission:pos.access');
         Route::post('pos/orders/{order}/clear', [PosController::class, 'clearOrder'])->name('pos.orders.clear')->middleware('permission:pos.access');
         Route::get('pos/customers', [PosController::class, 'customers'])->name('pos.customers')->middleware('permission:pos.access');

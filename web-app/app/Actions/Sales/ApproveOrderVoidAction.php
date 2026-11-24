@@ -58,9 +58,9 @@ class ApproveOrderVoidAction
             app(LoyaltyService::class)->reverseForOrder($order);
             app(AccountingService::class)->postOrderVoided($order, $approver);
 
-            if ($order->restaurant_table_id !== null) {
+            if ($order->tableIds() !== []) {
                 RestaurantTable::query()
-                    ->whereKey($order->restaurant_table_id)
+                    ->whereKey($order->tableIds())
                     ->update(['status' => 'free']);
             }
 

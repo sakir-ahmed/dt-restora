@@ -92,6 +92,47 @@ class Order extends Model
         return $this->belongsTo(Branch::class);
     }
 
+    /** @return HasMany<OrderTable, $this> */
+    public function tableLinks(): HasMany
+    {
+        return $this->hasMany(OrderTable::class);
+    }
+
+    /**
+     * Every table the order sits at, the first one included. Older orders have only their single table.
+     *
+     * @return array<int, int>
+     */
+    public function tableIds(): array
+    {
+        $ids = $this->tableLinks()->pluck('restaurant_table_id')->map(fn ($id): int => (int) $id)->all();
+
+        if ($ids === [] && $this->restaurant_table_id !== null) {
+            $ids = [(int) $this->restaurant_table_id];
+        }
+
+        return $ids;
+    }
+
+    /**
+     * The tables and seats in words for the kitchen board, invoices and lists: "T-10, T-11 - seats 1, 2".
+     * Needs tableLinks.table loaded; falls back to the single table.
+     */
+    public function tableLabel(): ?string
+    {
+        $links = $this->relationLoaded('tableLinks') ? $this->tableLinks : collect();
+
+        if ($links->isEmpty()) {
+            // Not $this->table: inside the model that is Eloquent's own table name.
+            return $this->getRelationValue('table')?->name;
+        }
+
+        $names = $links->map(fn (OrderTable $link): string => (string) $link->restaurantTable?->name)->filter()->implode(', ');
+        $seats = $links->flatMap(fn (OrderTable $link): array => (array) $link->seats)->sort()->values();
+
+        return $seats->isEmpty() ? $names : $names.' - '.__('orders.seats_label').' '.$seats->implode(', ');
+    }
+
     /** @return BelongsTo<RestaurantTable, $this> */
     public function table(): BelongsTo
     {

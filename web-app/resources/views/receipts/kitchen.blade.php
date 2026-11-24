@@ -51,7 +51,7 @@
     <div class="hr"></div>
 
     <div class="bold">{{ __('receipt.order_type.' . $order->order_type->value) }}
-        @if ($order->table) - {{ __('receipt.table') }} {{ $order->table->name }} @endif
+        @if ($order->tableLabel()) - {{ __('receipt.table') }} {{ $order->tableLabel() }} @endif
     </div>
 
     <div class="hr"></div>

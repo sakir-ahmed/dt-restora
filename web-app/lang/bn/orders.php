@@ -310,4 +310,5 @@ return [
     'shift_over' => 'ক্যাশ বেশি',
     'shift_orders' => 'অর্ডার',
     'shift_sales_total' => 'মোট বিক্রি',
+    'seats_label' => 'আসন',
 ];

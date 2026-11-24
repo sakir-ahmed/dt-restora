@@ -194,7 +194,7 @@ onBeforeUnmount(() => {
                             <div>
                                 <p class="flex items-center gap-1.5 text-sm font-bold text-foreground">
                                     <AppIcon v-if="order.table" name="utensils" size="12" class="text-accent" />
-                                    {{ order.table ? `${t('receipt.table')} ${order.table.name}` : t('orders.type.' + order.order_type) }}
+                                    {{ order.table ? `${t('receipt.table')} ${order.table_label ?? order.table.name}` : t('orders.type.' + order.order_type) }}
                                     <span v-if="order.table" class="text-xs font-medium text-muted">{{ t('orders.type.' + order.order_type) }}</span>
                                 </p>
                                 <p class="flex items-center gap-1.5 text-xs text-muted">

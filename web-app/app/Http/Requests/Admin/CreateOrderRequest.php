@@ -21,6 +21,10 @@ class CreateOrderRequest extends FormRequest
         return [
             'order_type' => ['required', 'in:dine_in,takeaway,delivery'],
             'restaurant_table_id' => ['nullable', 'integer', 'exists:restaurant_tables,id'],
+            'tables' => ['nullable', 'array', 'max:12'],
+            'tables.*.id' => ['required', 'integer', 'exists:restaurant_tables,id'],
+            'tables.*.seats' => ['nullable', 'array', 'max:60'],
+            'tables.*.seats.*' => ['integer', 'min:1', 'max:99'],
             'customer_mobile' => ['nullable', 'string', 'max:20'],
             'customer_name' => ['nullable', 'string', 'max:100'],
             'client_id' => ['nullable', 'string', 'max:40'],

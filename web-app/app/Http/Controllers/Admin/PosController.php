@@ -16,13 +16,13 @@ use App\Models\IngredientStock;
 use App\Models\MenuCategory;
 use App\Models\Order;
 use App\Models\Recipe;
-use App\Models\Reservation;
 use App\Models\RestaurantTable;
 use App\Models\Setting;
 use App\Models\Shift;
 use App\Models\VoidRequest;
 use App\Services\PosSettings;
 use App\Services\Sms\SmsFeatures;
+use App\Services\TableBoard;
 use App\Support\Brand;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -60,7 +60,7 @@ class PosController extends Controller
         return Inertia::render('admin/pos/Index', [
             'invoiceSmsEnabled' => SmsFeatures::enabled('invoice'),
             'categories' => $categories,
-            'tables' => $this->tablesWithBookings($branch),
+            'tables' => TableBoard::forBranch($branch),
             'stockBook' => $this->stockBook($branch, $categories),
             'openOrders' => Order::query()
                 ->where('branch_id', $branch->id)
@@ -178,69 +178,6 @@ class PosController extends Controller
         ];
     }
 
-    /**
-     * The branch tables, each with the next booking that is running or starts within three hours,
-     * so the waiter sees a booked table before seating someone else there.
-     *
-     * @return Collection<int, array<string, mixed>>
-     */
-    private function tablesWithBookings(Branch $branch): Collection
-    {
-        // Each table with the first booking that touches it (a party can hold several tables).
-        $bookings = collect();
-
-        Reservation::query()
-            ->where('branch_id', $branch->id)
-            ->where('status', Reservation::BOOKED)
-            ->where('ends_at', '>', now())
-            ->where('starts_at', '<', now()->addHours(3))
-            ->with('tables:id')
-            ->orderBy('starts_at')
-            ->get()
-            ->each(function (Reservation $reservation) use ($bookings): void {
-                foreach ($reservation->tables as $table) {
-                    if (! $bookings->has($table->id)) {
-                        $bookings->put($table->id, $reservation);
-                    }
-                }
-            });
-
-        $tables = RestaurantTable::query()
-            ->where('branch_id', $branch->id)
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get(['id', 'name', 'area', 'seats', 'status']);
-
-        // What the last bill on an occupied table came to, so staff can see paid or due before clearing it.
-        $lastOrders = Order::query()
-            ->where('branch_id', $branch->id)
-            ->whereIn('restaurant_table_id', $tables->where('status', 'occupied')->pluck('id'))
-            ->where('status', '!=', OrderStatus::Void->value)
-            ->withSum(['payments as paid_amount' => fn (Builder $payments) => $payments->where('status', 'completed')], 'amount')
-            ->with('customer:id,name,mobile')
-            ->latest()
-            ->get()
-            ->unique('restaurant_table_id')
-            ->keyBy('restaurant_table_id');
-
-        return $tables->map(fn (RestaurantTable $table): array => $table->toArray() + [
-            'booking' => $bookings->has($table->id) ? [
-                'guest_name' => $bookings[$table->id]->guest_name,
-                'starts_at' => $bookings[$table->id]->starts_at->toIso8601String(),
-            ] : null,
-            'last_order' => $lastOrders->has($table->id) ? [
-                'invoice_no' => $lastOrders[$table->id]->invoice_no,
-                'status' => $lastOrders[$table->id]->status->value,
-                'is_due' => (bool) $lastOrders[$table->id]->is_due,
-                'total' => (float) $lastOrders[$table->id]->total,
-                'paid' => round((float) ($lastOrders[$table->id]->paid_amount ?? 0), 2),
-                'balance' => max(0.0, round((float) $lastOrders[$table->id]->total - (float) ($lastOrders[$table->id]->paid_amount ?? 0), 2)),
-                'at' => ($lastOrders[$table->id]->paid_at ?? $lastOrders[$table->id]->created_at)?->toIso8601String(),
-                'customer' => $lastOrders[$table->id]->customer?->name,
-            ] : null,
-        ]);
-    }
-
     public function unlock(Request $request): JsonResponse
     {
         $this->authorize('pos.access');
@@ -279,7 +216,7 @@ class PosController extends Controller
         ]);
 
         $running = $this->unpaidRunningOrders($table->branch_id)
-            ->where('restaurant_table_id', $table->id)
+            ->where(fn (Builder $onTable) => $onTable->where('restaurant_table_id', $table->id)->orWhereHas('tableLinks', fn (Builder $link) => $link->where('restaurant_table_id', $table->id)))
             ->get();
 
         if ($running->isNotEmpty()) {
@@ -296,7 +233,19 @@ class PosController extends Controller
             }
         }
 
-        $table->update(['status' => 'free']);
+        // A bill over joined tables frees all of them together, so no table is left occupied with nobody at it.
+        $joined = Order::query()
+            ->where('branch_id', $table->branch_id)
+            ->where('status', '!=', OrderStatus::Void->value)
+            ->whereHas('tableLinks', fn (Builder $link) => $link->where('restaurant_table_id', $table->id))
+            ->with('tableLinks')
+            ->latest()
+            ->first()
+            ?->tableIds() ?? [];
+
+        $joined = array_unique([...$joined, $table->id]);
+
+        RestaurantTable::query()->whereKey($joined)->update(['status' => 'free']);
 
         DataVersion::bump();
 

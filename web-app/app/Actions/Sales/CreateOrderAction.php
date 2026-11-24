@@ -80,6 +80,7 @@ class CreateOrderAction
         ?int $preorderId = null,
         bool $overridePreorder = false,
         bool $appending = false,
+        ?array $tables = null,
     ): Order {
         if ($clientId !== null && $revising === null) {
             $existing = Order::query()->where('client_id', $clientId)->first();
@@ -91,10 +92,12 @@ class CreateOrderAction
 
         $lines = collect($lines);
 
-        return DB::transaction(function () use ($branch, $type, $lines, $cashier, $waiter, $tableId, $customer, $discount, $note, $channel, $clientId, $shift, $terminalCode, $deliveryFee, $deliveryZoneId, $deliveryAddress, $scheduledFor, $couponCode, $invoiceNo, $revising, $revisingSettled, $kind, $reservationId, $preorderId, $overridePreorder, $appending): Order {
+        return DB::transaction(function () use ($branch, $type, $lines, $cashier, $waiter, $tableId, $customer, $discount, $note, $channel, $clientId, $shift, $terminalCode, $deliveryFee, $deliveryZoneId, $deliveryAddress, $scheduledFor, $couponCode, $invoiceNo, $revising, $revisingSettled, $kind, $reservationId, $preorderId, $overridePreorder, $appending, $tables): Order {
             $branch = Branch::query()->whereKey($branch->id)->lockForUpdate()->firstOrFail();
 
             $keptCoupon = false;
+            $previousTableIds = $revising !== null ? $revising->tableIds() : [];
+            $previousPrimary = $revising?->restaurant_table_id;
 
             if ($revising !== null) {
                 // Adding items to a running order leaves its existing lines alone, so it is not an edit.
@@ -102,7 +105,7 @@ class CreateOrderAction
                     throw ValidationException::withMessages(['order' => __('orders.edit_disabled')]);
                 }
 
-                $revising = $this->releaseForRevision($revising, $tableId, $type, $revisingSettled, $appending);
+                $revising = $this->releaseForRevision($revising, $revisingSettled, $appending);
 
                 // The coupon stays on the revised bill if it still applies; its old use is cleared so it counts once.
                 if ($couponCode === null && $revising->coupon_id !== null) {
@@ -243,7 +246,7 @@ class CreateOrderAction
 
             $attributes = [
                 'order_type' => $type->value,
-                'restaurant_table_id' => $type === OrderType::DineIn ? $tableId : null,
+                'restaurant_table_id' => $type === OrderType::DineIn ? ($tables[0]['id'] ?? $tableId) : null,
                 'customer_id' => $customer?->id,
                 'subtotal' => $subtotal,
                 'discount_type' => $discount['type'] ?? null,
@@ -330,9 +333,8 @@ class CreateOrderAction
 
             $reservation = null;
 
-            if (! $appending && ! $revisingSettled && $type === OrderType::DineIn && $tableId !== null) {
-                RestaurantTable::query()->whereKey($tableId)->update(['status' => 'occupied']);
-                $reservation = Reservation::seatAt($tableId);
+            if (! $appending && ! $revisingSettled) {
+                $reservation = $this->placeAtTables($order, $type, $tables, $tableId, $previousTableIds, $previousPrimary);
             }
 
             try {
@@ -495,10 +497,10 @@ class CreateOrderAction
     }
 
     /**
-     * Prepare an unpaid order for a new set of lines: give its stock back,
-     * drop the old lines and free (or move) its table.
+     * Prepare an unpaid order for a new set of lines: give its stock back and
+     * drop the old lines. Its tables are settled afterwards, in placeAtTables.
      */
-    private function releaseForRevision(Order $order, ?int $newTableId, OrderType $type, bool $revisingSettled = false, bool $appending = false): Order
+    private function releaseForRevision(Order $order, bool $revisingSettled = false, bool $appending = false): Order
     {
         $order = Order::query()->whereKey($order->id)->lockForUpdate()->with('items')->firstOrFail();
 
@@ -558,13 +560,55 @@ class CreateOrderAction
             return $order;
         }
 
-        $keepsTable = $type === OrderType::DineIn && $newTableId === $order->restaurant_table_id;
+        return $order;
+    }
 
-        if ($order->restaurant_table_id !== null && ! $keepsTable) {
-            RestaurantTable::query()->whereKey($order->restaurant_table_id)->update(['status' => 'free']);
+    /**
+     * Seat the order at its table or tables: occupy them, free the ones it no longer uses, and keep the seat
+     * numbers taken. An edit that names no tables keeps the order where it sits. Returns the booking the
+     * party arrived for, if any.
+     *
+     * @param  array<int, array{id: int, seats?: array<int, int>}>|null  $tables
+     * @param  array<int, int>  $previousTableIds
+     */
+    private function placeAtTables(Order $order, OrderType $type, ?array $tables, ?int $tableId, array $previousTableIds, ?int $previousPrimary): ?Reservation
+    {
+        if ($type !== OrderType::DineIn) {
+            $wanted = [];
+        } elseif ($tables !== null) {
+            $wanted = collect($tables)->unique('id')->values()->all();
+        } elseif ($previousTableIds !== [] && ($tableId === null || $tableId === $previousPrimary)) {
+            // The edit did not touch the tables: the order keeps every table it sits at.
+            return null;
+        } else {
+            $wanted = $tableId !== null ? [['id' => $tableId, 'seats' => []]] : [];
         }
 
-        return $order;
+        $ids = array_map(fn (array $entry): int => (int) $entry['id'], $wanted);
+
+        $order->tableLinks()->whereNotIn('restaurant_table_id', $ids)->delete();
+
+        foreach ($wanted as $entry) {
+            $seats = array_values(array_unique(array_map('intval', (array) ($entry['seats'] ?? []))));
+            sort($seats);
+
+            $order->tableLinks()->updateOrCreate(['restaurant_table_id' => (int) $entry['id']], ['seats' => $seats === [] ? null : $seats]);
+        }
+
+        $freed = array_diff($previousTableIds, $ids);
+
+        if ($freed !== []) {
+            RestaurantTable::query()->whereKey($freed)->update(['status' => 'free']);
+        }
+
+        $reservation = null;
+
+        foreach ($ids as $id) {
+            RestaurantTable::query()->whereKey($id)->update(['status' => 'occupied']);
+            $reservation ??= Reservation::seatAt($id);
+        }
+
+        return $reservation;
     }
 
     /**

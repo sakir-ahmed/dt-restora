@@ -28,7 +28,7 @@ class ReceiptController extends Controller
 
         abort_unless($request->user('staff')->canAccessBranch($order->branch_id), 404);
 
-        $order->load(['items', 'branch', 'table', 'waiter', 'payments']);
+        $order->load(['items', 'branch', 'table', 'tableLinks.restaurantTable', 'waiter', 'payments']);
 
         $isReprint = $request->boolean('reprint');
 
@@ -121,7 +121,7 @@ class ReceiptController extends Controller
 
         abort_unless($request->user('staff')->canAccessBranch($order->branch_id), 404);
 
-        $order->load(['items', 'branch', 'table']);
+        $order->load(['items', 'branch', 'table', 'tableLinks.restaurantTable']);
 
         // A ticket slip lists only the items of that batch. Without one, the whole order is printed.
         $ticket = $request->integer('ticket') > 0
