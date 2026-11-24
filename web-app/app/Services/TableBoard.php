@@ -76,6 +76,7 @@ class TableBoard
             'last_order' => $lastOrders->has($table->id) ? [
                 'id' => $lastOrders[$table->id]->id,
                 'table_ids' => $lastOrders[$table->id]->tableIds(),
+                'primary_table_id' => $lastOrders[$table->id]->restaurant_table_id,
                 'invoice_no' => $lastOrders[$table->id]->invoice_no,
                 'status' => $lastOrders[$table->id]->status->value,
                 'is_due' => (bool) $lastOrders[$table->id]->is_due,

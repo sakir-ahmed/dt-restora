@@ -36,4 +36,8 @@ return [
     'details' => 'Details',
     'preview_invoice' => 'Invoice',
     'collect_payment' => 'Collect payment',
+    'due_short' => 'due :due',
+    'joined_tables' => 'Joined :tables',
+    'joined_with' => 'Joined with :table',
+    'joined_title' => 'One bill for joined tables :tables',
 ];

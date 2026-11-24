@@ -36,4 +36,8 @@ return [
     'details' => 'বিস্তারিত',
     'preview_invoice' => 'ইনভয়েস',
     'collect_payment' => 'পেমেন্ট নিন',
+    'due_short' => 'বাকি :due',
+    'joined_tables' => 'যুক্ত :tables',
+    'joined_with' => ':table এর সাথে যুক্ত',
+    'joined_title' => 'যুক্ত টেবিল :tables এর একটাই বিল',
 ];

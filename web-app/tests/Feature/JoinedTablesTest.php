@@ -173,3 +173,15 @@ it('gives the Table view the full order of a busy table and what the cashier may
             ->has('payMethods')
             ->has('serverNow'));
 });
+
+it('tells the Table view which table carries the bill of joined tables', function (): void {
+    $order = dineIn($this, [['id' => $this->t11->id], ['id' => $this->t10->id]]);
+
+    $this->actingAs($this->cashier, 'staff')
+        ->get(route('admin.pos.floor'))
+        ->assertInertia(fn ($page) => $page
+            ->where('tables', fn ($tables) => collect($tables)->firstWhere('name', 'T-10')['last_order']['primary_table_id'] === $this->t11->id
+                && count(collect($tables)->firstWhere('name', 'T-10')['last_order']['table_ids']) === 2));
+
+    expect($order->restaurant_table_id)->toBe($this->t11->id);
+});

@@ -168,6 +168,51 @@ function cardClass(table) {
     return 'border-border hover:border-accent/60';
 }
 
+// Joined tables share one bill: the first table carries the amount, the others say whom they are joined with.
+const JOIN_COLORS = ['bg-violet-500', 'bg-teal-500', 'bg-pink-500', 'bg-lime-600', 'bg-cyan-500'];
+
+function joinedIds(table) {
+    const ids = table.last_order?.table_ids ?? [];
+
+    return ['running', 'billed'].includes(table.state) && ids.length > 1 ? ids : [];
+}
+
+function isJoined(table) {
+    return joinedIds(table).length > 0;
+}
+
+// The table that carries the bill of a joined group.
+function joinMain(table) {
+    return props.tables.find((entry) => entry.id === (table.last_order?.primary_table_id ?? joinedIds(table)[0])) ?? table;
+}
+
+function isJoinMain(table) {
+    return joinMain(table).id === table.id;
+}
+
+function joinNames(table) {
+    const main = joinMain(table).id;
+    const ids = [main, ...joinedIds(table).filter((id) => id !== main)];
+
+    return ids.map((id) => props.tables.find((entry) => entry.id === id)?.name).filter(Boolean).join(' + ');
+}
+
+function joinColor(table) {
+    return JOIN_COLORS[(table.last_order?.id ?? 0) % JOIN_COLORS.length];
+}
+
+// What the card writes under the table name: the bill total (the main table of a joined group only).
+function showsAmount(table) {
+    return !! table.last_order && ['running', 'billed'].includes(table.state) && (! isJoined(table) || isJoinMain(table));
+}
+
+// Only a part-paid bill says what is left; an unpaid or paid bill is just its total.
+function partPaid(table) {
+    const order = table.last_order;
+
+    return !! order && order.balance > 0 && order.balance < order.total;
+}
+
 function clockOf(iso) {
     return iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 }
@@ -453,12 +498,21 @@ onBeforeUnmount(() => {
                                 <AppIcon name="clock" size="10" />
                                 {{ durationText(occupiedMinutes(table)) }}
                             </span>
-                            <span v-if="table.last_order && ['running', 'billed'].includes(table.state)" class="absolute bottom-1 left-2 text-[11px] font-semibold tabular-nums text-foreground">
+                            <span v-if="showsAmount(table)" class="absolute left-2 text-[11px] font-semibold tabular-nums text-foreground" :class="isJoined(table) ? 'bottom-5' : 'bottom-1'">
                                 {{ formatMoney(table.last_order.total) }}
-                                <span v-if="table.last_order.balance > 0" class="font-medium text-danger">/ {{ formatMoney(table.last_order.balance) }}</span>
+                                <span v-if="partPaid(table)" class="font-medium text-danger">({{ t('floor.due_short', { due: formatMoney(table.last_order.balance) }) }})</span>
                             </span>
-                            <span v-if="pickedEntry(table)?.seats.length" class="absolute bottom-1 right-2 text-[11px] font-semibold text-accent">{{ pickedEntry(table).seats.length }}/{{ table.seats }}</span>
-                            <span v-else class="absolute bottom-1 right-2 text-[11px] text-muted">{{ table.seats }}</span>
+                            <span
+                                v-if="isJoined(table)"
+                                class="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 rounded-b-[10px] px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                                :class="joinColor(table)"
+                                :title="t('floor.joined_title', { tables: joinNames(table) })"
+                            >
+                                <AppIcon name="link" size="9" />
+                                {{ isJoinMain(table) ? t('floor.joined_tables', { tables: joinNames(table) }) : t('floor.joined_with', { table: joinMain(table).name }) }}
+                            </span>
+                            <span v-if="pickedEntry(table)?.seats.length" class="absolute right-2 text-[11px] font-semibold text-accent" :class="isJoined(table) ? 'bottom-5' : 'bottom-1'">{{ pickedEntry(table).seats.length }}/{{ table.seats }}</span>
+                            <span v-else class="absolute right-2 text-[11px] text-muted" :class="isJoined(table) ? 'bottom-5' : 'bottom-1'">{{ table.seats }}</span>
                         </button>
 
                         <div class="mt-1 flex flex-wrap justify-center gap-1.5">
@@ -490,6 +544,7 @@ onBeforeUnmount(() => {
                     <template v-else-if="runningOrderTable">
                         {{ t('floor.occupied_for', { time: durationText(occupiedMinutes(runningOrderTable)), since: clockOf(runningOrderTable.last_order?.started_at) }) }}
                         <template v-if="selectedOrder"> / {{ t('floor.total_due', { total: formatMoney(selectedOrder.total), due: formatMoney(selectedOrder.balance) }) }}</template>
+                        <template v-if="isJoined(runningOrderTable)"> / {{ t('floor.joined_title', { tables: joinNames(runningOrderTable) }) }}</template>
                     </template>
                     <template v-else>{{ seatsTaken > 0 ? t('floor.seats_count', { count: seatsTaken }) : pickedTables.length + ' ' + t('floor.selection') }}</template>
                 </p>
